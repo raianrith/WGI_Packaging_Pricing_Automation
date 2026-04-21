@@ -1,0 +1,19 @@
+# Dependencies & build output
+node_modules
+dist
+
+# Env & secrets (use .env.example for templates)
+.env
+.env.local
+.env.*.local
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# TypeScript incremental cache (if present)
+*.tsbuildinfo
+
+# Test / coverage (if added later)
+coverage

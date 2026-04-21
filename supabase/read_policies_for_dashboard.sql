@@ -7,6 +7,7 @@ alter table public.solutions enable row level security;
 alter table public.solution_tiers enable row level security;
 alter table public.tasks enable row level security;
 alter table public.solution_tier_pricing enable row level security;
+alter table public.package_solution_tiers enable row level security;
 alter table public.audit_log enable row level security;
 
 drop policy if exists "Allow public read packages" on public.packages;
@@ -29,6 +30,10 @@ create policy "Allow public read tasks"
 drop policy if exists "Allow public read solution_tier_pricing" on public.solution_tier_pricing;
 create policy "Allow public read solution_tier_pricing"
   on public.solution_tier_pricing for select using (true);
+
+drop policy if exists "Allow public read package_solution_tiers" on public.package_solution_tiers;
+create policy "Allow public read package_solution_tiers"
+  on public.package_solution_tiers for select using (true);
 
 drop policy if exists "Allow public read audit_log" on public.audit_log;
 create policy "Allow public read audit_log"

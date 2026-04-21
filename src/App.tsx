@@ -1,11 +1,17 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { APP_TITLE } from "./branding";
+import { isAgencyRoute } from "./lib/agencyRoutes";
 import { AdminGate } from "./components/AdminGate";
 import { GlobalKpiStrip } from "./components/GlobalKpiStrip";
+import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
+import { AgencyTabsShell } from "./views/AgencyTabsShell";
 import { AgencyView } from "./views/AgencyView";
 import { AdminView } from "./views/AdminView";
 
 export default function App() {
+  const location = useLocation();
+  const agencyTabActive = isAgencyRoute(location.pathname);
+
   return (
     <div style={{ minHeight: "100%" }}>
       <header className="app-top-bar">
@@ -20,9 +26,8 @@ export default function App() {
           <nav className="app-module-tabs" aria-label="Application area">
             <NavLink
               to="/"
-              end
-              className={({ isActive }) =>
-                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
+              className={() =>
+                `app-module-tab${agencyTabActive ? " app-module-tab--active" : ""}`
               }
             >
               Agency
@@ -40,7 +45,13 @@ export default function App() {
       </header>
       <GlobalKpiStrip />
       <Routes>
-        <Route path="/" element={<AgencyView />} />
+        <Route path="/catalog" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<AgencyTabsShell />}>
+          <Route index element={<AgencyView mode="catalog" />} />
+          <Route path="packages" element={<AgencyPackagesRedirect />} />
+          <Route path="package/standalone" element={<Navigate to="/" replace />} />
+          <Route path="package/:packageId" element={<AgencyView mode="package" />} />
+        </Route>
         <Route
           path="/admin"
           element={

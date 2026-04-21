@@ -16,10 +16,11 @@ import { todayISODate } from "../lib/dates";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { computeTierPricing } from "../lib/tierPricingMath";
-import { PricingPanel } from "../components/PricingPanel";
+import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import type {
   AuditLogRow,
   Package,
+  PackageSolutionTier,
   Solution,
   SolutionTier,
   SolutionTierPricing,
@@ -28,10 +29,7 @@ import type {
 
 type AdminTab =
   | "packages"
-  | "solutions"
-  | "tiers"
-  | "tasks"
-  | "pricing"
+  | "solutions_builder"
   | "bulk"
   | "glossary"
   | "audit";
@@ -55,15 +53,19 @@ function sortId(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function rowJson(row: object): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
+/** Next id in the `1-n` sequence (admin package builder). Ignores other id shapes. */
+function nextAutoPackageId(packages: Package[]): string {
+  let max = 0;
+  const re = /^1-(\d+)$/i;
+  for (const p of packages) {
+    const m = p.package_id.trim().match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `1-${max + 1}`;
 }
 
-function optNum(s: string): number | null {
-  const t = s.trim();
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
+function rowJson(row: object): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
 }
 
 export function AdminView() {
@@ -73,6 +75,7 @@ export function AdminView() {
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [tiers, setTiers] = useState<SolutionTier[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
+  const [packageTiers, setPackageTiers] = useState<PackageSolutionTier[]>([]);
   const [tierPricing, setTierPricing] = useState<SolutionTierPricing[]>([]);
   const [pricingLoadNote, setPricingLoadNote] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AuditLogRow[]>([]);
@@ -86,7 +89,8 @@ export function AdminView() {
   const [auditEntityType, setAuditEntityType] = useState<string>("all");
   const [auditTextSearch, setAuditTextSearch] = useState("");
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
     setLoadErr(null);
     setAuditLoadNote(null);
     setPricingLoadNote(null);
@@ -103,17 +107,20 @@ export function AdminView() {
       return;
     }
 
-    setLoading(true);
-    const [pRes, sRes, tRes, kRes, prRes, aRes] = await Promise.all([
+    if (!silent) {
+      setLoading(true);
+    }
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, aRes] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
       client.from("tasks").select("*").order("task_id"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
+      client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500),
     ]);
 
-    const err = pRes.error || sRes.error || tRes.error || kRes.error;
+    const err = pRes.error || sRes.error || tRes.error || kRes.error || ptRes.error;
     if (err) {
       setLoadErr(err.message);
       setLoading(false);
@@ -132,6 +139,7 @@ export function AdminView() {
     setSolutions(sols);
     setTiers(trs);
     setTasks(tks);
+    setPackageTiers((ptRes.data ?? []) as PackageSolutionTier[]);
 
     if (prRes.error) {
       setTierPricing([]);
@@ -159,6 +167,8 @@ export function AdminView() {
     setLoading(false);
     notifyPackagingDataChanged();
   }, []);
+
+  const refreshAfterSave = useCallback(() => refresh({ silent: true }), [refresh]);
 
   useEffect(() => {
     void refresh();
@@ -267,11 +277,8 @@ export function AdminView() {
           <div className="admin-tabs" role="tablist" aria-label="Admin sections">
             {(
               [
-                ["packages", "Packages"],
-                ["solutions", "Solutions"],
-                ["tiers", "Tiers"],
-                ["tasks", "Tasks"],
-                ["pricing", "Pricing"],
+                ["packages", "Package Builder"],
+                ["solutions_builder", "Solutions Builder"],
                 ["bulk", "Bulk Import"],
                 ["glossary", "Data Glossary"],
                 ["audit", "Change history"],
@@ -339,69 +346,41 @@ export function AdminView() {
               subTab={adminSubTab}
               packages={packages}
               solutions={solutions}
-              onSaved={refresh}
-              setOpErr={setOpErr}
-              setOpOk={setOpOk}
-              logAudit={logAudit}
-            />
-          )}
-          {tab === "solutions" && (
-            <SolutionsPanel
-              subTab={adminSubTab}
-              packages={packages}
-              solutions={solutions}
               tiers={tiers}
-              onSaved={refresh}
+              packageTiers={packageTiers}
+              onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
               logAudit={logAudit}
             />
           )}
-          {tab === "tiers" && (
-            <TiersPanel
+          {tab === "solutions_builder" && (
+            <SolutionsBuilderPanel
               subTab={adminSubTab}
               solutions={solutions}
               tiers={tiers}
               tasks={tasks}
-              onSaved={refresh}
+              tierPricing={tierPricing}
+              onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
               logAudit={logAudit}
-            />
-          )}
-          {tab === "tasks" && (
-            <TasksPanel
-              subTab={adminSubTab}
-              tiers={tiers}
-              tasks={tasks}
-              onSaved={refresh}
-              setOpErr={setOpErr}
-              setOpOk={setOpOk}
-              logAudit={logAudit}
-            />
-          )}
-          {tab === "pricing" && (
-            <PricingPanel
-              subTab={adminSubTab}
-              tiers={tiers}
-              pricing={tierPricing}
-              panelStyle={panel}
-              formGrid={formGrid}
-              lbl={lbl}
-              input={input}
-              textarea={textarea}
-              btn={btn}
-              btnPrimary={btnPrimary}
-              btnSm={btnSm}
-              tbl={tbl}
-              th={th}
-              td={td}
-              h2={h2}
-              muted={muted}
-              onSaved={refresh}
-              setOpErr={setOpErr}
-              setOpOk={setOpOk}
-              logAudit={logAudit}
+              styles={{
+                panel,
+                formGrid,
+                lbl,
+                input,
+                textarea,
+                btn,
+                btnPrimary,
+                btnSm,
+                btnDangerSm,
+                tbl,
+                th,
+                td,
+                h2,
+                muted,
+              }}
             />
           )}
           {tab === "bulk" && (
@@ -411,7 +390,8 @@ export function AdminView() {
               tiers={tiers}
               tasks={tasks}
               pricing={tierPricing}
-              onSaved={refresh}
+              packageTiers={packageTiers}
+              onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
             />
@@ -509,6 +489,7 @@ type BulkImportDoc = {
   tiers?: Partial<SolutionTier>[];
   tasks?: Partial<TaskRow>[];
   pricing?: Partial<SolutionTierPricing>[];
+  package_solution_tiers?: Partial<PackageSolutionTier>[];
 };
 
 type BulkPreview = {
@@ -517,17 +498,18 @@ type BulkPreview = {
   tiers: SolutionTier[];
   tasks: TaskRow[];
   pricing: Partial<SolutionTierPricing>[];
+  package_solution_tiers: PackageSolutionTier[];
 };
 
 type BulkValidationIssue = {
-  table: "packages" | "solutions" | "tiers" | "tasks" | "pricing";
+  table: "packages" | "solutions" | "tiers" | "tasks" | "pricing" | "package_solution_tiers";
   row: number;
   column?: string;
   message: string;
 };
 
 type ImportEntityCounts = {
-  table: "packages" | "solutions" | "tiers" | "tasks" | "pricing";
+  table: "packages" | "solutions" | "tiers" | "tasks" | "pricing" | "package_solution_tiers";
   total: number;
   created: number;
   updated: number;
@@ -535,7 +517,7 @@ type ImportEntityCounts = {
   skipped: number;
 };
 
-const BULK_TEMPLATE_VERSION = "2026.04.21";
+const BULK_TEMPLATE_VERSION = "2026.04.22";
 const BULK_IMPORT_CHUNK_SIZE = 200;
 
 let xlsxPromise: Promise<typeof import("xlsx")> | null = null;
@@ -589,10 +571,8 @@ function buildBulkPreview(doc: BulkImportDoc): BulkPreview {
     .map((r) => {
       const id = normStr(r.solution_id);
       if (!id) return null;
-      const p = normStr(r.package_id);
       return {
         solution_id: id,
-        package_id: p || null,
         solution_name: normStr(r.solution_name) || id,
         solution_created_date: normStr(r.solution_created_date) || today,
         solution_modified_date: normStr(r.solution_modified_date) || today,
@@ -700,7 +680,16 @@ function buildBulkPreview(doc: BulkImportDoc): BulkPreview {
     });
   }
 
-  return { packages, solutions, tiers, tasks, pricing };
+  const package_solution_tiers: PackageSolutionTier[] = (doc.package_solution_tiers ?? [])
+    .map((r) => {
+      const package_id = normStr(r.package_id);
+      const solution_tier_id = normStr(r.solution_tier_id);
+      if (!package_id || !solution_tier_id) return null;
+      return { package_id, solution_tier_id };
+    })
+    .filter((x): x is PackageSolutionTier => x != null);
+
+  return { packages, solutions, tiers, tasks, pricing, package_solution_tiers };
 }
 
 function isIsoDate(s: string): boolean {
@@ -786,14 +775,6 @@ function validateBulkPreview(
         row: i + 2,
         column: "solution_id",
         message: `Duplicate solution_id '${s.solution_id}' in upload.`,
-      });
-    }
-    if (s.package_id && !pkgIds.has(s.package_id)) {
-      errs.push({
-        table: "solutions",
-        row: i + 2,
-        column: "package_id",
-        message: `Missing package '${s.package_id}'.`,
       });
     }
     if (s.solution_created_date && !isIsoDate(s.solution_created_date)) {
@@ -917,6 +898,34 @@ function validateBulkPreview(
       }
     }
   }
+  const seenPstTier = new Set<string>();
+  for (const [i, row] of preview.package_solution_tiers.entries()) {
+    if (seenPstTier.has(row.solution_tier_id)) {
+      errs.push({
+        table: "package_solution_tiers",
+        row: i + 2,
+        column: "solution_tier_id",
+        message: `Duplicate solution_tier_id '${row.solution_tier_id}' in upload (each tier may appear once).`,
+      });
+    }
+    seenPstTier.add(row.solution_tier_id);
+    if (!pkgIds.has(row.package_id)) {
+      errs.push({
+        table: "package_solution_tiers",
+        row: i + 2,
+        column: "package_id",
+        message: `Missing package '${row.package_id}'.`,
+      });
+    }
+    if (!tierIds.has(row.solution_tier_id)) {
+      errs.push({
+        table: "package_solution_tiers",
+        row: i + 2,
+        column: "solution_tier_id",
+        message: `Missing tier '${row.solution_tier_id}'.`,
+      });
+    }
+  }
   return errs;
 }
 
@@ -951,6 +960,10 @@ function bulkDocFromWorkbook(
       "Pricing",
       "solution_tier_pricing",
     ]) as Partial<SolutionTierPricing>[],
+    package_solution_tiers: readSheetRows(workbook, xlsx, [
+      "package_solution_tiers",
+      "Package_solution_tiers",
+    ]) as Partial<PackageSolutionTier>[],
   };
 }
 
@@ -1012,6 +1025,7 @@ async function downloadBulkTemplateWorkbook(data: {
   tiers: SolutionTier[];
   tasks: TaskRow[];
   pricing: SolutionTierPricing[];
+  packageTiers: PackageSolutionTier[];
 }): Promise<void> {
   const xlsx = await loadXlsx();
   const wb = xlsx.utils.book_new();
@@ -1023,9 +1037,9 @@ async function downloadBulkTemplateWorkbook(data: {
     ["2) Upload this workbook in Admin > Bulk Import > Upload Excel file."],
     ["3) Click Preview import, fix issues if any, then Run import."],
     [""],
-    ["Standalone solution rule:"],
-    ["- In solutions sheet, leave package_id blank for standalone solutions."],
-    ["- Do NOT type 'standalone' in package_id; blank means standalone."],
+    ["Package ↔ tier links:"],
+    ["- Use the package_solution_tiers sheet: each row is package_id + solution_tier_id."],
+    ["- A tier may appear in at most one row (one package). Manage links in Package Builder too."],
     [""],
     ["Pricing calculator rule:"],
     [
@@ -1046,16 +1060,21 @@ async function downloadBulkTemplateWorkbook(data: {
 
   const solutionsWs = sheetFromRows(
     xlsx,
-    [
-      "solution_id",
-      "package_id",
-      "solution_name",
-      "solution_created_date",
-      "solution_modified_date",
-    ],
-    data.solutions.map((s) => ({ ...s, package_id: s.package_id ?? "" }))
+    ["solution_id", "solution_name", "solution_created_date", "solution_modified_date"],
+    data.solutions.map((s) => ({ ...s }))
   );
   xlsx.utils.book_append_sheet(wb, solutionsWs, "solutions");
+
+  const pstWs = sheetFromRows(
+    xlsx,
+    ["package_id", "solution_tier_id", "created_at"],
+    data.packageTiers.map((r) => ({
+      package_id: r.package_id,
+      solution_tier_id: r.solution_tier_id,
+      created_at: r.created_at ?? "",
+    }))
+  );
+  xlsx.utils.book_append_sheet(wb, pstWs, "package_solution_tiers");
 
   const tiersWs = sheetFromRows(
     xlsx,
@@ -1156,7 +1175,12 @@ async function downloadBulkTemplateWorkbook(data: {
 }
 
 const BULK_GLOSSARY: Record<
-  "packages" | "solutions" | "tiers" | "tasks" | "pricing",
+  | "packages"
+  | "solutions"
+  | "tiers"
+  | "tasks"
+  | "pricing"
+  | "package_solution_tiers",
   { label: string; columns: Array<{ name: string; description: string }> }
 > = {
   packages: {
@@ -1186,10 +1210,6 @@ const BULK_GLOSSARY: Record<
       {
         name: "solution_id",
         description: "Solution ID (for example: 2-2). Keep this value unique.",
-      },
-      {
-        name: "package_id",
-        description: "Parent package ID. Leave blank for standalone solutions.",
       },
       {
         name: "solution_name",
@@ -1271,6 +1291,23 @@ const BULK_GLOSSARY: Record<
       { name: "tags", description: "Optional tags (comma-separated)." },
     ],
   },
+  package_solution_tiers: {
+    label: "package_solution_tiers",
+    columns: [
+      {
+        name: "package_id",
+        description: "Package ID this tier belongs to (must exist in packages sheet).",
+      },
+      {
+        name: "solution_tier_id",
+        description: "Tier ID (must exist in tiers sheet). Each tier may appear in at most one row.",
+      },
+      {
+        name: "created_at",
+        description: "Optional timestamp; may be left blank on import.",
+      },
+    ],
+  },
 };
 
 function BulkImportPanel({
@@ -1279,6 +1316,7 @@ function BulkImportPanel({
   tiers,
   tasks,
   pricing,
+  packageTiers,
   onSaved,
   setOpErr,
   setOpOk,
@@ -1288,6 +1326,7 @@ function BulkImportPanel({
   tiers: SolutionTier[];
   tasks: TaskRow[];
   pricing: SolutionTierPricing[];
+  packageTiers: PackageSolutionTier[];
   onSaved: () => Promise<void>;
   setOpErr: (s: string | null) => void;
   setOpOk: (s: string | null) => void;
@@ -1318,7 +1357,7 @@ function BulkImportPanel({
         setOpErr(`Validation found ${errs.length} issue(s). Fix and preview again.`);
       } else {
         setOpOk(
-          `Preview ready: ${p.packages.length} packages, ${p.solutions.length} solutions, ${p.tiers.length} tiers, ${p.tasks.length} tasks, ${p.pricing.length} pricing rows.`
+          `Preview ready: ${p.packages.length} packages, ${p.solutions.length} solutions, ${p.tiers.length} tiers, ${p.tasks.length} tasks, ${p.pricing.length} pricing rows, ${p.package_solution_tiers.length} package ↔ tier links.`
         );
       }
     } catch (e) {
@@ -1383,12 +1422,16 @@ function BulkImportPanel({
     setImportReport(null);
     try {
       let completedChunks = 0;
+      const pstChunks = preview.package_solution_tiers.length
+        ? 1
+        : 0;
       const totalChunks =
         chunkRows(preview.packages, BULK_IMPORT_CHUNK_SIZE).length +
         chunkRows(preview.solutions, BULK_IMPORT_CHUNK_SIZE).length +
         chunkRows(preview.tiers, BULK_IMPORT_CHUNK_SIZE).length +
         chunkRows(preview.tasks, BULK_IMPORT_CHUNK_SIZE).length +
-        chunkRows(preview.pricing, BULK_IMPORT_CHUNK_SIZE).length;
+        chunkRows(preview.pricing, BULK_IMPORT_CHUNK_SIZE).length +
+        pstChunks;
       const tick = (phase: string) => {
         completedChunks += 1;
         setImportPhase(phase);
@@ -1500,6 +1543,37 @@ function BulkImportPanel({
         })
       );
 
+      if (preview.package_solution_tiers.length > 0) {
+        setImportPhase("Importing package ↔ tier links...");
+        const tierIds = preview.package_solution_tiers.map((r) => r.solution_tier_id);
+        const { error: pstDelErr } = await client
+          .from("package_solution_tiers")
+          .delete()
+          .in("solution_tier_id", tierIds);
+        if (pstDelErr) {
+          setOpErr(friendlyMutationMessage(pstDelErr.message));
+          tick("Package ↔ tier links");
+          return;
+        }
+        const { error: pstInsErr } = await client
+          .from("package_solution_tiers")
+          .insert(preview.package_solution_tiers);
+        if (pstInsErr) {
+          setOpErr(friendlyMutationMessage(pstInsErr.message));
+          tick("Package ↔ tier links");
+          return;
+        }
+        reports.push({
+          table: "package_solution_tiers",
+          total: preview.package_solution_tiers.length,
+          created: preview.package_solution_tiers.length,
+          updated: 0,
+          failed: 0,
+          skipped: 0,
+        });
+        tick("Package ↔ tier links");
+      }
+
       const stamp = new Date().toISOString();
       await insertAuditLog(client, {
         entityType: "packages",
@@ -1538,8 +1612,9 @@ function BulkImportPanel({
           </p>
           <ol className="admin-bulk-import__steps" style={muted}>
             <li>Click <strong>Download Excel template</strong>.</li>
-            <li>Fill the sheets: packages, solutions, tiers, tasks, pricing.</li>
-            <li>For standalone solutions, leave <code>package_id</code> blank in solutions.</li>
+            <li>
+              Fill the sheets: packages, solutions, tiers, tasks, pricing, package_solution_tiers.
+            </li>
             <li>Upload the file, then click <strong>Preview import</strong>.</li>
             <li>If preview looks good, click <strong>Run import</strong>.</li>
           </ol>
@@ -1548,7 +1623,14 @@ function BulkImportPanel({
               type="button"
               style={btn}
               onClick={() =>
-                void downloadBulkTemplateWorkbook({ packages, solutions, tiers, tasks, pricing })
+                void downloadBulkTemplateWorkbook({
+                  packages,
+                  solutions,
+                  tiers,
+                  tasks,
+                  pricing,
+                  packageTiers,
+                })
               }
               disabled={isImporting}
             >
@@ -1576,8 +1658,8 @@ function BulkImportPanel({
           </p>
         ) : null}
           <p className="admin-hint admin-bulk-import__hint" style={{ ...muted, marginTop: 4 }}>
-            For standalone solutions, leave <code>package_id</code> blank in the{" "}
-            <code>solutions</code> sheet.
+            Use the <code>package_solution_tiers</code> sheet to link tiers to packages (one row per
+            tier; each tier can appear at most once).
           </p>
         </div>
         <div
@@ -1681,6 +1763,10 @@ function BulkImportPanel({
                   <td style={td}>pricing</td>
                   <td style={td}>{preview.pricing.length}</td>
                 </tr>
+                <tr>
+                  <td style={td}>package_solution_tiers</td>
+                  <td style={td}>{preview.package_solution_tiers.length}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1779,6 +1865,7 @@ function DataGlossaryPanel() {
             <option value="tiers">tiers</option>
             <option value="tasks">tasks</option>
             <option value="pricing">pricing</option>
+            <option value="package_solution_tiers">package_solution_tiers</option>
           </select>
         </label>
         <div className="admin-table-scroll" style={{ marginTop: 10 }}>
@@ -1810,6 +1897,8 @@ function PackagesPanel({
   subTab,
   packages,
   solutions,
+  tiers,
+  packageTiers,
   onSaved,
   setOpErr,
   setOpOk,
@@ -1818,6 +1907,8 @@ function PackagesPanel({
   subTab: AdminSubTab;
   packages: Package[];
   solutions: Solution[];
+  tiers: SolutionTier[];
+  packageTiers: PackageSolutionTier[];
   onSaved: () => Promise<void>;
   setOpErr: (s: string | null) => void;
   setOpOk: (s: string | null) => void;
@@ -1826,25 +1917,95 @@ function PackagesPanel({
     p: Parameters<typeof insertAuditLog>[1]
   ) => Promise<void>;
 }) {
-  const [idField, setIdField] = useState("");
   const [nameField, setNameField] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
+  const [tierSearch, setTierSearch] = useState("");
 
   const startNew = () => {
     setEditingId(null);
-    setIdField("");
     setNameField("");
+    setSelectedTierIds([]);
+    setTierSearch("");
   };
 
-  const startEdit = (p: Package) => {
+  const loadPackageForEdit = (p: Package) => {
     setEditingId(p.package_id);
-    setIdField(p.package_id);
     setNameField(p.package_name);
+    setTierSearch("");
+    setSelectedTierIds(
+      packageTiers.filter((r) => r.package_id === p.package_id).map((r) => r.solution_tier_id)
+    );
   };
 
   useEffect(() => {
     if (subTab === "create") startNew();
   }, [subTab]);
+
+  const solutionById = useMemo(() => {
+    const m = new Map<string, Solution>();
+    for (const s of solutions) m.set(s.solution_id, s);
+    return m;
+  }, [solutions]);
+
+  const packageNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of packages) m.set(p.package_id, p.package_name);
+    return m;
+  }, [packages]);
+
+  const tierRows = useMemo(() => {
+    const q = tierSearch.trim().toLowerCase();
+    const rows = [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
+    if (!q) return rows;
+    return rows.filter((t) => {
+      const sol = solutionById.get(t.solution_id);
+      const solName = sol?.solution_name?.toLowerCase() ?? "";
+      return (
+        t.solution_tier_name.toLowerCase().includes(q) ||
+        t.solution_tier_id.toLowerCase().includes(q) ||
+        t.solution_id.toLowerCase().includes(q) ||
+        solName.includes(q)
+      );
+    });
+  }, [tiers, tierSearch, solutionById]);
+
+  const tierToPackageId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of packageTiers) m.set(r.solution_tier_id, r.package_id);
+    return m;
+  }, [packageTiers]);
+
+  const toggleTier = (tierId: string, include: boolean) => {
+    setSelectedTierIds((prev) => {
+      if (include) return prev.includes(tierId) ? prev : [...prev, tierId];
+      return prev.filter((x) => x !== tierId);
+    });
+  };
+
+  /** Each tier belongs to at most one package (unique solution_tier_id in junction). */
+  const applyPackageTierMembership = async (
+    client: SupabaseClient,
+    packageId: string,
+    wantedTierIds: string[]
+  ): Promise<string | null> => {
+    const { error: e0 } = await client
+      .from("package_solution_tiers")
+      .delete()
+      .eq("package_id", packageId);
+    if (e0) return friendlyMutationMessage(e0.message);
+    if (wantedTierIds.length === 0) return null;
+    const { error: e1 } = await client
+      .from("package_solution_tiers")
+      .delete()
+      .in("solution_tier_id", wantedTierIds);
+    if (e1) return friendlyMutationMessage(e1.message);
+    const { error: e2 } = await client.from("package_solution_tiers").insert(
+      wantedTierIds.map((solution_tier_id) => ({ package_id: packageId, solution_tier_id }))
+    );
+    if (e2) return friendlyMutationMessage(e2.message);
+    return null;
+  };
 
   const save = async () => {
     const client = getSupabase();
@@ -1852,38 +2013,47 @@ function PackagesPanel({
     setOpErr(null);
     setOpOk(null);
     const today = todayISODate();
+    const wanted = [...selectedTierIds];
+
     if (subTab === "create") {
-      const id = idField.trim();
       const name = nameField.trim();
-      if (!id || !name) {
-        setOpErr("Package id and name are required.");
+      if (!name) {
+        setOpErr("Package name is required.");
         return;
       }
+      const newId = nextAutoPackageId(packages);
       const row: Package = {
-        package_id: id,
+        package_id: newId,
         package_name: name,
         package_create_date: today,
         package_modified_date: today,
       };
       const { error } = await client.from("packages").insert(row);
       if (error) {
-        setOpErr(error.message);
+        setOpErr(friendlyMutationMessage(error.message));
+        return;
+      }
+      const assignErr = await applyPackageTierMembership(client, newId, wanted);
+      if (assignErr) {
+        setOpErr(`${assignErr} (Package ${newId} was created; fix links in Package Builder if needed.)`);
+        await onSaved();
         return;
       }
       await logAudit(client, {
         entityType: "packages",
-        entityId: id,
+        entityId: newId,
         action: "insert",
         before: null,
-        after: rowJson(row),
+        after: { ...(rowJson(row) as Record<string, unknown>), solution_tier_ids: wanted },
       });
-      setOpOk("Package created.");
+      setOpOk(`Package created as ${newId} with ${wanted.length} tier link(s).`);
       startNew();
       await onSaved();
       return;
     }
+
     if (!editingId) {
-      setOpErr("Click Edit on a row first, or switch to Create new to add a package.");
+      setOpErr("Select a package to update.");
       return;
     }
     const prev = packages.find((x) => x.package_id === editingId);
@@ -1898,34 +2068,49 @@ function PackagesPanel({
       .update({ package_name: name, package_modified_date: today })
       .eq("package_id", editingId);
     if (error) {
-      setOpErr(error.message);
+      setOpErr(friendlyMutationMessage(error.message));
       return;
     }
-    const after = { ...prev, package_name: name, package_modified_date: today };
+    const afterPkg = { ...prev, package_name: name, package_modified_date: today };
     await logAudit(client, {
       entityType: "packages",
       entityId: editingId,
       action: "update",
       before: rowJson(prev),
-      after: rowJson(after),
+      after: rowJson(afterPkg),
     });
-    setOpOk("Package saved.");
+    const assignErr = await applyPackageTierMembership(client, editingId, wanted);
+    if (assignErr) {
+      setOpErr(assignErr);
+      await onSaved();
+      return;
+    }
+    setOpOk("Package and tier links saved.");
     startNew();
     await onSaved();
   };
 
-  const remove = async (p: Package) => {
+  const removeCurrentPackage = async () => {
+    if (!editingId) {
+      setOpErr("Select a package first.");
+      return;
+    }
+    const p = packages.find((x) => x.package_id === editingId);
+    if (!p) return;
+    if (
+      !window.confirm(
+        `Delete package "${p.package_name}" (${p.package_id})? Tier links for this package will be removed.`
+      )
+    ) {
+      return;
+    }
     const client = getSupabase();
     if (!client) return;
     setOpErr(null);
     setOpOk(null);
-    if (solutions.some((s) => s.package_id === p.package_id)) {
-      setOpErr("Delete or reassign solutions under this package first.");
-      return;
-    }
     const { error } = await client.from("packages").delete().eq("package_id", p.package_id);
     if (error) {
-      setOpErr(error.message);
+      setOpErr(friendlyMutationMessage(error.message));
       return;
     }
     await logAudit(client, {
@@ -1942,1077 +2127,215 @@ function PackagesPanel({
 
   const isCreate = subTab === "create";
 
-  return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
-      <div className="admin-editor-layout">
-      <h2 style={h2}>Packages</h2>
-      {isCreate ? (
-        <>
-          <p className="admin-intro" style={muted}>
-            Add a new package. The id cannot be changed after creation.
-          </p>
-          <div className="admin-form-stack" style={formGrid}>
-            <label style={lbl}>
-              <AdminFieldCaption>Package id</AdminFieldCaption>
-              <input
-                style={input}
-                value={idField}
-                onChange={(e) => setIdField(e.target.value)}
-                placeholder="e.g. 1-1"
-              />
-            </label>
-            <label style={lbl}>
-              <AdminFieldCaption>Name</AdminFieldCaption>
-              <input
-                style={input}
-                value={nameField}
-                onChange={(e) => setNameField(e.target.value)}
-                placeholder="Display name"
-              />
-            </label>
-          </div>
-          <div className="admin-actions-row">
-            <button
-              type="button"
-              className="admin-btn-primary"
-              style={btnPrimary}
-              onClick={() => void save()}
-            >
-              Create package
-            </button>
-            <button type="button" style={btn} onClick={startNew}>
-              Clear form
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="admin-intro" style={muted}>
-            Choose Edit to load a row into the form, then save. Delete removes
-            the package if no solutions reference it.
-          </p>
-          <div className="admin-table-scroll">
-          <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
-            <thead>
+  const tierPickerIntro =
+    "Check each solution tier to include in this package. A tier can only belong to one package at a time; saving here moves it from another package if needed.";
+
+  const tierPickerBlock = (
+    <>
+      <p className="admin-intro" style={{ ...muted, marginTop: "0.75rem" }}>
+        {tierPickerIntro}
+      </p>
+      <label style={{ ...lbl, marginTop: 8 }}>
+        <AdminFieldCaption>Filter tiers</AdminFieldCaption>
+        <input
+          style={input}
+          value={tierSearch}
+          onChange={(e) => setTierSearch(e.target.value)}
+          placeholder="Tier name, tier id, solution id, or solution name…"
+        />
+      </label>
+      <div
+        className="admin-table-scroll"
+        style={{ maxHeight: "min(22rem, 50vh)", marginTop: 8, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8 }}
+      >
+        <table className="admin-data-table" style={{ ...tbl, marginTop: 0 }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, width: "2.25rem" }} aria-label="Include tier in package" />
+              <th style={th}>Solution</th>
+              <th style={th}>Tier</th>
+              <th style={th}>Tier id</th>
+              <th style={th}>Current package</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tierRows.length === 0 ? (
               <tr>
-                <th style={th}>Id</th>
-                <th style={th}>Name</th>
-                <th style={th} />
+                <td colSpan={5} style={td}>
+                  No tiers match this filter.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {packages.map((p) => (
-                <tr key={p.package_id}>
-                  <td style={td}>{p.package_id}</td>
-                  <td style={td}>{p.package_name}</td>
-                  <td style={td}>
-                    <button type="button" style={btnSm} onClick={() => startEdit(p)}>
-                      Edit
-                    </button>{" "}
-                    <button
-                      type="button"
-                      style={btnDangerSm}
-                      onClick={() => void remove(p)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {editingId ? (
-            <>
-              <h3 className="admin-editing-heading">
-                Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
-              </h3>
-              <div className="admin-form-stack" style={formGrid}>
-                <label style={lbl}>
-                  <AdminFieldCaption>
-                    Package id <span style={muted}>(locked)</span>
-                  </AdminFieldCaption>
-                  <input style={input} value={idField} disabled />
-                </label>
-                <label style={lbl}>
-                  <AdminFieldCaption>Name</AdminFieldCaption>
-                  <input
-                    style={input}
-                    value={nameField}
-                    onChange={(e) => setNameField(e.target.value)}
-                    placeholder="Display name"
-                  />
-                </label>
-              </div>
-              <div className="admin-actions-row">
-                <button
-                  type="button"
-                  className="admin-btn-primary"
-                  style={btnPrimary}
-                  onClick={() => void save()}
-                >
-                  Save changes
-                </button>
-                <button type="button" style={btn} onClick={startNew}>
-                  Cancel edit
-                </button>
-              </div>
-            </>
-          ) : null}
-        </>
-      )}
-    </div>
-    </section>
+            ) : (
+              tierRows.map((t) => {
+                const sol = solutionById.get(t.solution_id);
+                const checked = selectedTierIds.includes(t.solution_tier_id);
+                const pid = tierToPackageId.get(t.solution_tier_id);
+                const pkgLabel =
+                  pid == null
+                    ? "—"
+                    : `${packageNameById.get(pid) ?? "—"} (${pid})`;
+                return (
+                  <tr key={t.solution_tier_id}>
+                    <td style={td}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          toggleTier(t.solution_tier_id, e.target.checked)
+                        }
+                        aria-label={`Include tier ${t.solution_tier_name} in this package`}
+                      />
+                    </td>
+                    <td style={td}>{sol?.solution_name ?? t.solution_id}</td>
+                    <td style={td}>{t.solution_tier_name}</td>
+                    <td style={td}>
+                      <code style={{ fontSize: "0.85em" }}>{t.solution_tier_id}</code>
+                    </td>
+                    <td style={{ ...td, fontSize: "0.88em", color: "var(--muted, #666)" }}>
+                      {pkgLabel}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
-}
-
-function SolutionsPanel({
-  subTab,
-  packages,
-  solutions,
-  tiers,
-  onSaved,
-  setOpErr,
-  setOpOk,
-  logAudit,
-}: {
-  subTab: AdminSubTab;
-  packages: Package[];
-  solutions: Solution[];
-  tiers: SolutionTier[];
-  onSaved: () => Promise<void>;
-  setOpErr: (s: string | null) => void;
-  setOpOk: (s: string | null) => void;
-  logAudit: (
-    client: SupabaseClient,
-    p: Parameters<typeof insertAuditLog>[1]
-  ) => Promise<void>;
-}) {
-  const [idField, setIdField] = useState("");
-  const [pkgField, setPkgField] = useState("");
-  const [nameField, setNameField] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const startNew = () => {
-    setEditingId(null);
-    setIdField("");
-    setPkgField("");
-    setNameField("");
-  };
-
-  const startEdit = (s: Solution) => {
-    setEditingId(s.solution_id);
-    setIdField(s.solution_id);
-    setPkgField(s.package_id ?? "");
-    setNameField(s.solution_name);
-  };
-
-  useEffect(() => {
-    if (subTab === "create") startNew();
-  }, [subTab]);
-
-  const save = async () => {
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const today = todayISODate();
-    if (subTab === "create") {
-      const id = idField.trim();
-      const pidRaw = pkgField.trim();
-      const pid = pidRaw === "" ? null : pidRaw;
-      const name = nameField.trim();
-      if (!id || !name) {
-        setOpErr("Solution id and name are required.");
-        return;
-      }
-      const row: Solution = {
-        solution_id: id,
-        package_id: pid,
-        solution_name: name,
-        solution_created_date: today,
-        solution_modified_date: today,
-      };
-      const { error } = await client.from("solutions").insert(row);
-      if (error) {
-        setOpErr(friendlyMutationMessage(error.message));
-        return;
-      }
-      await logAudit(client, {
-        entityType: "solutions",
-        entityId: id,
-        action: "insert",
-        before: null,
-        after: rowJson(row),
-      });
-      setOpOk("Solution created.");
-      startNew();
-      await onSaved();
-      return;
-    }
-    if (!editingId) {
-      setOpErr("Click Edit on a row first, or switch to Create new to add a solution.");
-      return;
-    }
-    const prev = solutions.find((x) => x.solution_id === editingId);
-    if (!prev) return;
-    const pidRaw = pkgField.trim();
-    const pid = pidRaw === "" ? null : pidRaw;
-    const name = nameField.trim();
-    if (!name) {
-      setOpErr("Solution name is required.");
-      return;
-    }
-    const { error } = await client
-      .from("solutions")
-      .update({
-        package_id: pid,
-        solution_name: name,
-        solution_modified_date: today,
-      })
-      .eq("solution_id", editingId);
-    if (error) {
-      setOpErr(friendlyMutationMessage(error.message));
-      return;
-    }
-    const after = {
-      ...prev,
-      package_id: pid,
-      solution_name: name,
-      solution_modified_date: today,
-    };
-    await logAudit(client, {
-      entityType: "solutions",
-      entityId: editingId,
-      action: "update",
-      before: rowJson(prev),
-      after: rowJson(after),
-    });
-    setOpOk("Solution saved.");
-    startNew();
-    await onSaved();
-  };
-
-  const remove = async (s: Solution) => {
-    const client = getSupabase();
-    if (!client) return;
-    if (tiers.some((t) => t.solution_id === s.solution_id)) {
-      setOpErr("Delete tiers under this solution first.");
-      return;
-    }
-    setOpErr(null);
-    setOpOk(null);
-    const { error } = await client.from("solutions").delete().eq("solution_id", s.solution_id);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    await logAudit(client, {
-      entityType: "solutions",
-      entityId: s.solution_id,
-      action: "delete",
-      before: rowJson(s),
-      after: null,
-    });
-    setOpOk("Solution deleted.");
-    startNew();
-    await onSaved();
-  };
-
-  const solCreate = subTab === "create";
 
   return (
     <section className="admin-panel admin-panel--editor" style={panel}>
       <div className="admin-editor-layout">
-      <h2 style={h2}>Solutions</h2>
-      {solCreate ? (
-        <>
-          <p className="admin-intro" style={muted}>
-            Create a solution. Leave package empty for a standalone solution.
-          </p>
-          <div className="admin-form-stack" style={formGrid}>
-            <label style={lbl}>
-              <AdminFieldCaption>Solution id</AdminFieldCaption>
-              <input
-                style={input}
-                value={idField}
-                onChange={(e) => setIdField(e.target.value)}
-              />
-            </label>
-            <label style={lbl}>
-              <AdminFieldCaption>Package (optional)</AdminFieldCaption>
-              <select
-                style={input}
-                value={pkgField}
-                onChange={(e) => setPkgField(e.target.value)}
+        <h2 style={h2}>Package Builder</h2>
+        {isCreate ? (
+          <>
+            <p className="admin-intro" style={muted}>
+              Name the bundle and choose which solution tiers belong to it. The next package id in
+              the <code style={{ fontSize: "0.9em" }}>1-n</code> sequence is assigned automatically
+              (for example if the highest existing id is <code style={{ fontSize: "0.9em" }}>1-11</code>
+              , the new package becomes <code style={{ fontSize: "0.9em" }}>1-12</code>).
+            </p>
+            <div className="admin-form-stack" style={formGrid}>
+              <label style={lbl}>
+                <AdminFieldCaption>Next package id (preview)</AdminFieldCaption>
+                <input
+                  style={{ ...input, opacity: 0.92 }}
+                  readOnly
+                  value={packages.length ? nextAutoPackageId(packages) : "1-1"}
+                  aria-readonly="true"
+                />
+              </label>
+              <label style={lbl}>
+                <AdminFieldCaption>Name</AdminFieldCaption>
+                <input
+                  style={input}
+                  value={nameField}
+                  onChange={(e) => setNameField(e.target.value)}
+                  placeholder="Display name"
+                />
+              </label>
+            </div>
+            {tierPickerBlock}
+            <div className="admin-actions-row">
+              <button
+                type="button"
+                className="admin-btn-primary"
+                style={btnPrimary}
+                onClick={() => void save()}
               >
-                <option value="">— Standalone (no package)</option>
-                {packages.map((p) => (
-                  <option key={p.package_id} value={p.package_id}>
-                    {p.package_name} ({p.package_id})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-              <AdminFieldCaption>Name</AdminFieldCaption>
-              <input
-                style={input}
-                value={nameField}
-                onChange={(e) => setNameField(e.target.value)}
-              />
-            </label>
-          </div>
-          <div className="admin-actions-row">
-            <button
-              type="button"
-              className="admin-btn-primary"
-              style={btnPrimary}
-              onClick={() => void save()}
-            >
-              Create solution
-            </button>
-            <button type="button" style={btn} onClick={startNew}>
-              Clear form
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="admin-intro" style={muted}>
-            Edit or delete an existing solution. Package can be reassigned here.
-          </p>
-          <div className="admin-table-scroll">
-          <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
-            <thead>
-              <tr>
-                <th style={th}>Id</th>
-                <th style={th}>Package</th>
-                <th style={th}>Name</th>
-                <th style={th} />
-              </tr>
-            </thead>
-            <tbody>
-              {solutions.map((s) => (
-                <tr key={s.solution_id}>
-                  <td style={td}>{s.solution_id}</td>
-                  <td style={td}>{s.package_id ?? "—"}</td>
-                  <td style={td}>{s.solution_name}</td>
-                  <td style={td}>
-                    <button type="button" style={btnSm} onClick={() => startEdit(s)}>
-                      Edit
-                    </button>{" "}
-                    <button
-                      type="button"
-                      style={btnDangerSm}
-                      onClick={() => void remove(s)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {editingId ? (
-            <>
-              <h3 className="admin-editing-heading">
-                Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
-              </h3>
-              <div className="admin-form-stack" style={formGrid}>
-                <label style={lbl}>
-                  <AdminFieldCaption>
-                    Solution id <span style={muted}>(locked)</span>
-                  </AdminFieldCaption>
-                  <input style={input} value={idField} disabled />
-                </label>
-                <label style={lbl}>
-                  <AdminFieldCaption>Package (optional)</AdminFieldCaption>
-                  <select
-                    style={input}
-                    value={pkgField}
-                    onChange={(e) => setPkgField(e.target.value)}
-                  >
-                    <option value="">— Standalone (no package)</option>
-                    {packages.map((p) => (
+                Create package
+              </button>
+              <button type="button" style={btn} onClick={startNew}>
+                Clear form
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="admin-intro" style={muted}>
+              Select an existing package, rename it if needed, and add or remove individual
+              solution tiers using the list below.
+            </p>
+            <div className="admin-form-stack" style={formGrid}>
+              <label style={lbl}>
+                <AdminFieldCaption>Package</AdminFieldCaption>
+                <select
+                  style={input}
+                  value={editingId ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) {
+                      startNew();
+                      return;
+                    }
+                    const p = packages.find((x) => x.package_id === v);
+                    if (p) loadPackageForEdit(p);
+                  }}
+                >
+                  <option value="">Select a package…</option>
+                  {[...packages]
+                    .sort((a, b) => sortId(a.package_id, b.package_id))
+                    .map((p) => (
                       <option key={p.package_id} value={p.package_id}>
                         {p.package_name} ({p.package_id})
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                  <AdminFieldCaption>Name</AdminFieldCaption>
-                  <input
-                    style={input}
-                    value={nameField}
-                    onChange={(e) => setNameField(e.target.value)}
-                  />
-                </label>
-              </div>
-              <div className="admin-actions-row">
-                <button
-                  type="button"
-                  className="admin-btn-primary"
-                  style={btnPrimary}
-                  onClick={() => void save()}
-                >
-                  Save changes
-                </button>
-                <button type="button" style={btn} onClick={startNew}>
-                  Cancel edit
-                </button>
-              </div>
-            </>
-          ) : null}
-        </>
-      )}
-    </div>
+                </select>
+              </label>
+            </div>
+            {editingId ? (
+              <>
+                <h3 className="admin-editing-heading" style={{ marginTop: "1rem" }}>
+                  Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
+                </h3>
+                <div className="admin-form-stack" style={formGrid}>
+                  <label style={lbl}>
+                    <AdminFieldCaption>
+                      Package id <span style={muted}>(locked)</span>
+                    </AdminFieldCaption>
+                    <input style={input} value={editingId} disabled />
+                  </label>
+                  <label style={lbl}>
+                    <AdminFieldCaption>Name</AdminFieldCaption>
+                    <input
+                      style={input}
+                      value={nameField}
+                      onChange={(e) => setNameField(e.target.value)}
+                      placeholder="Display name"
+                    />
+                  </label>
+                </div>
+                {tierPickerBlock}
+                <div className="admin-actions-row">
+                  <button
+                    type="button"
+                    className="admin-btn-primary"
+                    style={btnPrimary}
+                    onClick={() => void save()}
+                  >
+                    Save changes
+                  </button>
+                  <button type="button" style={btn} onClick={startNew}>
+                    Clear selection
+                  </button>
+                  <button
+                    type="button"
+                    style={btnDangerSm}
+                    onClick={() => void removeCurrentPackage()}
+                  >
+                    Delete package
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </>
+        )}
+      </div>
     </section>
   );
 }
 
-function TiersPanel({
-  subTab,
-  solutions,
-  tiers,
-  tasks,
-  onSaved,
-  setOpErr,
-  setOpOk,
-  logAudit,
-}: {
-  subTab: AdminSubTab;
-  solutions: Solution[];
-  tiers: SolutionTier[];
-  tasks: TaskRow[];
-  onSaved: () => Promise<void>;
-  setOpErr: (s: string | null) => void;
-  setOpOk: (s: string | null) => void;
-  logAudit: (
-    client: SupabaseClient,
-    p: Parameters<typeof insertAuditLog>[1]
-  ) => Promise<void>;
-}) {
-  const [idField, setIdField] = useState("");
-  const [solField, setSolField] = useState("");
-  const [nameField, setNameField] = useState("");
-  const [ownerField, setOwnerField] = useState("");
-  const [overviewField, setOverviewField] = useState("");
-  const [linkField, setLinkField] = useState("");
-  const [directionField, setDirectionField] = useState("");
-  const [sopField, setSopField] = useState("");
-  const [resField, setResField] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const startNew = () => {
-    setEditingId(null);
-    setIdField("");
-    setSolField(solutions[0]?.solution_id ?? "");
-    setNameField("");
-    setOwnerField("");
-    setOverviewField("");
-    setLinkField("");
-    setDirectionField("");
-    setSopField("");
-    setResField("");
-  };
-
-  const startEdit = (t: SolutionTier) => {
-    setEditingId(t.solution_tier_id);
-    setIdField(t.solution_tier_id);
-    setSolField(t.solution_id);
-    setNameField(t.solution_tier_name);
-    setOwnerField(t.solution_tier_owner ?? "");
-    setOverviewField(t.solution_tier_overview ?? "");
-    setLinkField(t.solution_tier_overview_link ?? "");
-    setDirectionField(t.solution_tier_direction ?? "");
-    setSopField(t.solution_tier_sop ?? "");
-    setResField(t.solution_tier_resources ?? "");
-  };
-
-  useEffect(() => {
-    if (subTab === "create") startNew();
-  }, [subTab]);
-
-  const blankToNull = (s: string) => (s.trim() === "" ? null : s);
-
-  const save = async () => {
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const today = todayISODate();
-    const payload = {
-      solution_id: solField.trim(),
-      solution_tier_name: nameField.trim(),
-      solution_tier_owner: blankToNull(ownerField),
-      solution_tier_overview: blankToNull(overviewField),
-      solution_tier_overview_link: blankToNull(linkField),
-      solution_tier_direction: blankToNull(directionField),
-      solution_tier_sop: blankToNull(sopField),
-      solution_tier_resources: blankToNull(resField),
-      solution_tier_modified_date: today,
-    };
-    if (!payload.solution_id || !payload.solution_tier_name) {
-      setOpErr("Solution and tier name required.");
-      return;
-    }
-    if (subTab === "create") {
-      const id = idField.trim();
-      if (!id) {
-        setOpErr("Tier id required.");
-        return;
-      }
-      const row: SolutionTier = {
-        solution_tier_id: id,
-        solution_id: payload.solution_id,
-        solution_tier_name: payload.solution_tier_name,
-        solution_tier_owner: payload.solution_tier_owner,
-        solution_tier_overview: payload.solution_tier_overview,
-        solution_tier_overview_link: payload.solution_tier_overview_link,
-        solution_tier_direction: payload.solution_tier_direction,
-        solution_tier_sop: payload.solution_tier_sop,
-        solution_tier_resources: payload.solution_tier_resources,
-        solution_tier_created_date: today,
-        solution_tier_modified_date: today,
-      };
-      const { error } = await client.from("solution_tiers").insert(row);
-      if (error) {
-        setOpErr(error.message);
-        return;
-      }
-      await logAudit(client, {
-        entityType: "solution_tiers",
-        entityId: id,
-        action: "insert",
-        before: null,
-        after: rowJson(row),
-      });
-      setOpOk("Tier created.");
-      startNew();
-      await onSaved();
-      return;
-    }
-    if (!editingId) {
-      setOpErr("Click Edit on a row first, or switch to Create new to add a tier.");
-      return;
-    }
-    const prev = tiers.find((x) => x.solution_tier_id === editingId);
-    if (!prev) return;
-    const { error } = await client
-      .from("solution_tiers")
-      .update(payload)
-      .eq("solution_tier_id", editingId);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    const after: SolutionTier = {
-      ...prev,
-      ...payload,
-      solution_tier_id: editingId,
-      solution_tier_created_date: prev.solution_tier_created_date,
-    };
-    await logAudit(client, {
-      entityType: "solution_tiers",
-      entityId: editingId,
-      action: "update",
-      before: rowJson(prev),
-      after: rowJson(after),
-    });
-    setOpOk("Tier saved.");
-    startNew();
-    await onSaved();
-  };
-
-  const remove = async (t: SolutionTier) => {
-    const client = getSupabase();
-    if (!client) return;
-    if (tasks.some((k) => k.solution_tier_id === t.solution_tier_id)) {
-      setOpErr("Delete tasks under this tier first.");
-      return;
-    }
-    setOpErr(null);
-    setOpOk(null);
-    const { error } = await client
-      .from("solution_tiers")
-      .delete()
-      .eq("solution_tier_id", t.solution_tier_id);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    await logAudit(client, {
-      entityType: "solution_tiers",
-      entityId: t.solution_tier_id,
-      action: "delete",
-      before: rowJson(t),
-      after: null,
-    });
-    setOpOk("Tier deleted.");
-    startNew();
-    await onSaved();
-  };
-
-  const tierFields = (idLocked: boolean) => (
-    <div className="admin-form-stack" style={formGrid}>
-      <label style={lbl}>
-        <AdminFieldCaption>
-          Tier id {idLocked && <span style={muted}>(locked)</span>}
-        </AdminFieldCaption>
-        <input
-          style={input}
-          value={idField}
-          onChange={(e) => setIdField(e.target.value)}
-          disabled={idLocked}
-        />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Solution</AdminFieldCaption>
-        <select style={input} value={solField} onChange={(e) => setSolField(e.target.value)}>
-          {solutions.map((s) => (
-            <option key={s.solution_id} value={s.solution_id}>
-              {s.solution_name} ({s.solution_id})
-            </option>
-          ))}
-        </select>
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Tier name</AdminFieldCaption>
-        <input style={input} value={nameField} onChange={(e) => setNameField(e.target.value)} />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Owner</AdminFieldCaption>
-        <input style={input} value={ownerField} onChange={(e) => setOwnerField(e.target.value)} />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Overview</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          value={overviewField}
-          onChange={(e) => setOverviewField(e.target.value)}
-          rows={4}
-        />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Overview link</AdminFieldCaption>
-        <input style={input} value={linkField} onChange={(e) => setLinkField(e.target.value)} />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Direction</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          value={directionField}
-          onChange={(e) => setDirectionField(e.target.value)}
-          rows={4}
-        />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>SOP</AdminFieldCaption>
-        <textarea style={textarea} value={sopField} onChange={(e) => setSopField(e.target.value)} rows={2} />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Resources</AdminFieldCaption>
-        <textarea style={textarea} value={resField} onChange={(e) => setResField(e.target.value)} rows={4} />
-      </label>
-    </div>
-  );
-
-  const tierCreate = subTab === "create";
-
-  return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
-      <div className="admin-editor-layout">
-      <h2 style={h2}>Solution tiers</h2>
-      {tierCreate ? (
-        <>
-          <p className="admin-intro" style={muted}>
-            Create a tier under a solution. Tier id is permanent once saved.
-          </p>
-          {tierFields(false)}
-          <div className="admin-actions-row">
-            <button
-              type="button"
-              className="admin-btn-primary"
-              style={btnPrimary}
-              onClick={() => void save()}
-            >
-              Create tier
-            </button>
-            <button type="button" style={btn} onClick={startNew}>
-              Clear form
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="admin-intro" style={muted}>
-            Edit or delete tiers. Delete is blocked while tasks reference the tier.
-          </p>
-          <div className="admin-table-scroll">
-          <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
-            <thead>
-              <tr>
-                <th style={th}>Id</th>
-                <th style={th}>Solution</th>
-                <th style={th}>Name</th>
-                <th style={th} />
-              </tr>
-            </thead>
-            <tbody>
-              {tiers.map((t) => (
-                <tr key={t.solution_tier_id}>
-                  <td style={td}>{t.solution_tier_id}</td>
-                  <td style={td}>{t.solution_id}</td>
-                  <td style={td}>{t.solution_tier_name}</td>
-                  <td style={td}>
-                    <button type="button" style={btnSm} onClick={() => startEdit(t)}>
-                      Edit
-                    </button>{" "}
-                    <button type="button" style={btnDangerSm} onClick={() => void remove(t)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {editingId ? (
-            <>
-              <h3 className="admin-editing-heading">
-                Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
-              </h3>
-              {tierFields(true)}
-              <div className="admin-actions-row">
-                <button
-                  type="button"
-                  className="admin-btn-primary"
-                  style={btnPrimary}
-                  onClick={() => void save()}
-                >
-                  Save changes
-                </button>
-                <button type="button" style={btn} onClick={startNew}>
-                  Cancel edit
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="admin-hint" style={{ ...muted, marginTop: "1rem" }}>
-              Select <strong>Edit</strong> on a row to load it into the form.
-            </p>
-          )}
-        </>
-      )}
-    </div>
-    </section>
-  );
-}
-
-function TasksPanel({
-  subTab,
-  tiers,
-  tasks,
-  onSaved,
-  setOpErr,
-  setOpOk,
-  logAudit,
-}: {
-  subTab: AdminSubTab;
-  tiers: SolutionTier[];
-  tasks: TaskRow[];
-  onSaved: () => Promise<void>;
-  setOpErr: (s: string | null) => void;
-  setOpOk: (s: string | null) => void;
-  logAudit: (
-    client: SupabaseClient,
-    p: Parameters<typeof insertAuditLog>[1]
-  ) => Promise<void>;
-}) {
-  const [idField, setIdField] = useState("");
-  const [tierField, setTierField] = useState("");
-  const [nameField, setNameField] = useState("");
-  const [implField, setImplField] = useState("");
-  const [timeField, setTimeField] = useState("");
-  const [durField, setDurField] = useState("");
-  const [depField, setDepField] = useState("");
-  const [notesField, setNotesField] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const startNew = () => {
-    setEditingId(null);
-    setIdField("");
-    setTierField(tiers[0]?.solution_tier_id ?? "");
-    setNameField("");
-    setImplField("");
-    setTimeField("");
-    setDurField("");
-    setDepField("");
-    setNotesField("");
-  };
-
-  const startEdit = (t: TaskRow) => {
-    setEditingId(t.task_id);
-    setIdField(t.task_id);
-    setTierField(t.solution_tier_id);
-    setNameField(t.task_name);
-    setImplField(t.task_implementer ?? "");
-    setTimeField(t.task_time != null ? String(t.task_time) : "");
-    setDurField(t.task_duration != null ? String(t.task_duration) : "");
-    setDepField(t.task_dependencies ?? "");
-    setNotesField(t.task_notes ?? "");
-  };
-
-  useEffect(() => {
-    if (subTab === "create") startNew();
-  }, [subTab]);
-
-  const blankToNull = (s: string) => (s.trim() === "" ? null : s);
-
-  const save = async () => {
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const today = todayISODate();
-    const tierId = tierField.trim();
-    const name = nameField.trim();
-    if (!tierId || !name) {
-      setOpErr("Tier and task name required.");
-      return;
-    }
-    const payload = {
-      solution_tier_id: tierId,
-      task_name: name,
-      task_implementer: blankToNull(implField),
-      task_time: optNum(timeField),
-      task_duration: optNum(durField),
-      task_dependencies: blankToNull(depField),
-      task_notes: blankToNull(notesField),
-      task_modified_date: today,
-    };
-    if (subTab === "create") {
-      const id = idField.trim();
-      if (!id) {
-        setOpErr("Task id required.");
-        return;
-      }
-      const rowQ: TaskRow = {
-        task_id: id,
-        ...payload,
-        task_create_date: today,
-        task_modified_date: today,
-      };
-      const { error } = await client.from("tasks").insert(rowQ);
-      if (error) {
-        setOpErr(error.message);
-        return;
-      }
-      await logAudit(client, {
-        entityType: "tasks",
-        entityId: id,
-        action: "insert",
-        before: null,
-        after: rowJson(rowQ),
-      });
-      setOpOk("Task created.");
-      startNew();
-      await onSaved();
-      return;
-    }
-    if (!editingId) {
-      setOpErr("Click Edit on a row first, or switch to Create new to add a task.");
-      return;
-    }
-    const prev = tasks.find((x) => x.task_id === editingId);
-    if (!prev) return;
-    const { error } = await client.from("tasks").update(payload).eq("task_id", editingId);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    const after: TaskRow = {
-      ...prev,
-      ...payload,
-      task_id: editingId,
-      task_create_date: prev.task_create_date,
-    };
-    await logAudit(client, {
-      entityType: "tasks",
-      entityId: editingId,
-      action: "update",
-      before: rowJson(prev),
-      after: rowJson(after),
-    });
-    setOpOk("Task saved.");
-    startNew();
-    await onSaved();
-  };
-
-  const remove = async (t: TaskRow) => {
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const { error } = await client.from("tasks").delete().eq("task_id", t.task_id);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    await logAudit(client, {
-      entityType: "tasks",
-      entityId: t.task_id,
-      action: "delete",
-      before: rowJson(t),
-      after: null,
-    });
-    setOpOk("Task deleted.");
-    startNew();
-    await onSaved();
-  };
-
-  const taskFields = (idLocked: boolean) => (
-    <div className="admin-form-stack" style={formGrid}>
-      <label style={lbl}>
-        <AdminFieldCaption>
-          Task id {idLocked && <span style={muted}>(locked)</span>}
-        </AdminFieldCaption>
-        <input
-          style={input}
-          value={idField}
-          onChange={(e) => setIdField(e.target.value)}
-          disabled={idLocked}
-        />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Solution tier</AdminFieldCaption>
-        <select style={input} value={tierField} onChange={(e) => setTierField(e.target.value)}>
-          {tiers.map((t) => (
-            <option key={t.solution_tier_id} value={t.solution_tier_id}>
-              {t.solution_tier_name} ({t.solution_tier_id})
-            </option>
-          ))}
-        </select>
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Task name</AdminFieldCaption>
-        <input style={input} value={nameField} onChange={(e) => setNameField(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Implementer</AdminFieldCaption>
-        <input style={input} value={implField} onChange={(e) => setImplField(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Time</AdminFieldCaption>
-        <input style={input} value={timeField} onChange={(e) => setTimeField(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Duration</AdminFieldCaption>
-        <input style={input} value={durField} onChange={(e) => setDurField(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Dependencies</AdminFieldCaption>
-        <input style={input} value={depField} onChange={(e) => setDepField(e.target.value)} />
-      </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Notes</AdminFieldCaption>
-        <input style={input} value={notesField} onChange={(e) => setNotesField(e.target.value)} />
-      </label>
-    </div>
-  );
-
-  const taskCreate = subTab === "create";
-
-  return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
-      <div className="admin-editor-layout">
-      <h2 style={h2}>Tasks</h2>
-      {taskCreate ? (
-        <>
-          <p className="admin-intro" style={muted}>
-            Add a task to a solution tier. Task id is permanent once saved.
-          </p>
-          {taskFields(false)}
-          <div className="admin-actions-row">
-            <button
-              type="button"
-              className="admin-btn-primary"
-              style={btnPrimary}
-              onClick={() => void save()}
-            >
-              Create task
-            </button>
-            <button type="button" style={btn} onClick={startNew}>
-              Clear form
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="admin-intro" style={muted}>Edit or delete tasks for a tier.</p>
-          <div className="admin-table-scroll">
-          <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
-            <thead>
-              <tr>
-                <th style={th}>Id</th>
-                <th style={th}>Tier</th>
-                <th style={th}>Name</th>
-                <th style={th} />
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((t) => (
-                <tr key={t.task_id}>
-                  <td style={td}>{t.task_id}</td>
-                  <td style={td}>{t.solution_tier_id}</td>
-                  <td style={td}>{t.task_name}</td>
-                  <td style={td}>
-                    <button type="button" style={btnSm} onClick={() => startEdit(t)}>
-                      Edit
-                    </button>{" "}
-                    <button type="button" style={btnDangerSm} onClick={() => void remove(t)}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          {editingId ? (
-            <>
-              <h3 className="admin-editing-heading">
-                Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
-              </h3>
-              {taskFields(true)}
-              <div className="admin-actions-row">
-                <button
-                  type="button"
-                  className="admin-btn-primary"
-                  style={btnPrimary}
-                  onClick={() => void save()}
-                >
-                  Save changes
-                </button>
-                <button type="button" style={btn} onClick={startNew}>
-                  Cancel edit
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="admin-hint" style={{ ...muted, marginTop: "1rem" }}>
-              Select <strong>Edit</strong> on a row to load it into the form.
-            </p>
-          )}
-        </>
-      )}
-    </div>
-    </section>
-  );
-}
 
 const shell: CSSProperties = {
   minHeight: "100%",

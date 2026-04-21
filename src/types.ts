@@ -7,11 +7,16 @@ export type Package = {
 
 export type Solution = {
   solution_id: string;
-  /** Null when the solution is standalone (no parent package). */
-  package_id: string | null;
   solution_name: string;
   solution_created_date: string;
   solution_modified_date: string;
+};
+
+/** Links a tier to a package (tiers are assignable individually; each tier is in at most one package). */
+export type PackageSolutionTier = {
+  package_id: string;
+  solution_tier_id: string;
+  created_at?: string;
 };
 
 export type SolutionTier = {

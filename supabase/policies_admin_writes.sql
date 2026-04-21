@@ -9,6 +9,7 @@ alter table public.solution_tiers enable row level security;
 alter table public.tasks enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.solution_tier_pricing enable row level security;
+alter table public.package_solution_tiers enable row level security;
 
 -- Read policies (agency + admin)
 drop policy if exists "Allow read packages" on public.packages;
@@ -24,6 +25,10 @@ create policy "Allow read tasks" on public.tasks for select using (true);
 drop policy if exists "Allow read solution_tier_pricing" on public.solution_tier_pricing;
 create policy "Allow read solution_tier_pricing"
   on public.solution_tier_pricing for select using (true);
+
+drop policy if exists "Allow read package_solution_tiers" on public.package_solution_tiers;
+create policy "Allow read package_solution_tiers"
+  on public.package_solution_tiers for select using (true);
 
 -- Writes (treat as internal: tighten later)
 drop policy if exists "Allow insert packages" on public.packages;
@@ -63,6 +68,16 @@ create policy "Allow update solution_tier_pricing"
   on public.solution_tier_pricing for update using (true);
 create policy "Allow delete solution_tier_pricing"
   on public.solution_tier_pricing for delete using (true);
+
+drop policy if exists "Allow insert package_solution_tiers" on public.package_solution_tiers;
+drop policy if exists "Allow update package_solution_tiers" on public.package_solution_tiers;
+drop policy if exists "Allow delete package_solution_tiers" on public.package_solution_tiers;
+create policy "Allow insert package_solution_tiers"
+  on public.package_solution_tiers for insert with check (true);
+create policy "Allow update package_solution_tiers"
+  on public.package_solution_tiers for update using (true);
+create policy "Allow delete package_solution_tiers"
+  on public.package_solution_tiers for delete using (true);
 
 -- Audit log: insert + read only (no updates/deletes from app)
 drop policy if exists "Allow read changelog" on public.audit_log;

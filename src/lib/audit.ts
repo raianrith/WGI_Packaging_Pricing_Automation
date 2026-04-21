@@ -5,6 +5,7 @@ export type EntityType =
   | "solutions"
   | "solution_tiers"
   | "solution_tier_pricing"
+  | "package_solution_tiers"
   | "tasks";
 
 export type AuditAction = "insert" | "update" | "delete";

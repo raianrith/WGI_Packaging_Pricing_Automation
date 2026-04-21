@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { getSupabase } from "../lib/supabase";
@@ -194,6 +201,10 @@ type Props = {
     client: SupabaseClient,
     p: Parameters<typeof insertAuditLog>[1]
   ) => Promise<void>;
+  /** When set, tier dropdown and the update-mode table only include these tier ids. */
+  tierIdsInScope?: string[] | null;
+  /** In create mode, pre-fill and lock the tier selector to this id (must exist in `tiers`). */
+  createLockedTierId?: string | null;
 };
 
 export function PricingPanel({
@@ -217,6 +228,8 @@ export function PricingPanel({
   setOpErr,
   setOpOk,
   logAudit,
+  tierIdsInScope = null,
+  createLockedTierId = null,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [solutionLabel, setSolutionLabel] = useState("");
@@ -272,9 +285,29 @@ export function PricingPanel({
     [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore]
   );
 
-  const startNew = () => {
+  const tierScopeSet = useMemo(
+    () =>
+      tierIdsInScope && tierIdsInScope.length > 0 ? new Set(tierIdsInScope) : null,
+    [tierIdsInScope]
+  );
+
+  const tiersScoped = useMemo(
+    () =>
+      tierScopeSet ? tiers.filter((t) => tierScopeSet.has(t.solution_tier_id)) : tiers,
+    [tiers, tierScopeSet]
+  );
+
+  const pricingScoped = useMemo(
+    () =>
+      tierScopeSet
+        ? pricing.filter((p) => tierScopeSet.has(p.solution_tier_id))
+        : pricing,
+    [pricing, tierScopeSet]
+  );
+
+  const startNew = useCallback(() => {
     setEditingTierId(null);
-    setTierPick("");
+    setTierPick(createLockedTierId ?? "");
     setSolutionLabel("");
     setTierLabel("");
     setScope("");
@@ -298,7 +331,7 @@ export function PricingPanel({
     setTaxable(false);
     setNotes("");
     setTags("");
-  };
+  }, [createLockedTierId]);
 
   const loadRow = (r: SolutionTierPricing) => {
     setEditingTierId(r.solution_tier_id);
@@ -330,7 +363,7 @@ export function PricingPanel({
 
   useEffect(() => {
     if (subTab === "create") startNew();
-  }, [subTab]);
+  }, [subTab, startNew]);
 
   const buildPayload = (): Record<string, unknown> => {
     const d = derived;
@@ -382,7 +415,7 @@ export function PricingPanel({
       setOpErr("Choose a solution tier.");
       return;
     }
-    if (!tiers.some((t) => t.solution_tier_id === id)) {
+    if (!tiersScoped.some((t) => t.solution_tier_id === id)) {
       setOpErr("Tier id must match an existing solution tier.");
       return;
     }
@@ -433,12 +466,14 @@ export function PricingPanel({
     await onSaved();
   };
 
-  const sortedPricing = [...pricing].sort((a, b) =>
+  const sortedPricing = [...pricingScoped].sort((a, b) =>
     a.solution_tier_id.localeCompare(b.solution_tier_id, undefined, { numeric: true })
   );
 
   const showForm = subTab === "create" || (subTab === "update" && Boolean(editingTierId));
-  const tierSelectLocked = subTab === "update" && Boolean(editingTierId);
+  const tierSelectLocked =
+    (subTab === "update" && Boolean(editingTierId)) ||
+    (subTab === "create" && Boolean(createLockedTierId));
 
   const readonlyInput = { ...input, cursor: "default" as const };
 
@@ -520,7 +555,7 @@ export function PricingPanel({
               onChange={(e) => setTierPick(e.target.value)}
             >
               <option value="">Select tier…</option>
-              {tiers.map((t) => (
+              {tiersScoped.map((t) => (
                 <option key={t.solution_tier_id} value={t.solution_tier_id}>
                   {t.solution_tier_id} — {t.solution_tier_name}
                 </option>

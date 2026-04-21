@@ -86,37 +86,35 @@ export function GlobalKpiStrip() {
   ];
 
   return (
-    <section className="global-kpi-strip" style={strip} aria-label="Vault totals">
-      <div style={stripInner}>
-        <header style={stripHeader}>
-          <h2 className="global-kpi-strip__title">At a glance</h2>
-          <p className="global-kpi-strip__subtitle">Live counts from your workspace</p>
-        </header>
-        <ul className="global-kpi-strip__grid" role="list">
-          {items.map((item, i) => {
-            const value = counts?.[item.key];
-            const showDash = loading || value === undefined;
-            return (
-              <li key={item.key}>
-                <article
-                  className="global-kpi-card"
-                  style={
-                    {
-                      "--kpi-accent": accentLine[i % accentLine.length],
-                    } as CSSProperties
-                  }
-                >
-                  <p className="global-kpi-card__value" aria-live="polite">
-                    {showDash ? "—" : formatCount(value)}
-                  </p>
-                  <p className="global-kpi-card__label">{item.label}</p>
-                  <p className="global-kpi-card__hint">{item.hint}</p>
-                </article>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+    <section className="global-kpi-strip" aria-label="Vault totals">
+      <header className="global-kpi-strip__head">
+        <h2 className="global-kpi-strip__title">At a glance</h2>
+        <p className="global-kpi-strip__subtitle">Live counts from your workspace</p>
+      </header>
+      <ul className="global-kpi-strip__grid" role="list">
+        {items.map((item, i) => {
+          const value = counts?.[item.key];
+          const showDash = loading || value === undefined;
+          return (
+            <li key={item.key}>
+              <article
+                className="global-kpi-card"
+                style={
+                  {
+                    "--kpi-accent": accentLine[i % accentLine.length],
+                  } as CSSProperties
+                }
+              >
+                <p className="global-kpi-card__value" aria-live="polite">
+                  {showDash ? "—" : formatCount(value)}
+                </p>
+                <p className="global-kpi-card__label">{item.label}</p>
+                <p className="global-kpi-card__hint">{item.hint}</p>
+              </article>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -131,19 +129,3 @@ const accentLine = [
   "#b45309",
   "#1d4ed8",
 ] as const;
-
-const strip: CSSProperties = {
-  marginBottom: "1.5rem",
-  padding: "1.35rem clamp(1.5rem, 5vw, 4rem) 1.5rem",
-  background: "var(--bg)",
-  borderBottom: "1px solid var(--border)",
-};
-
-const stripInner: CSSProperties = {
-  width: "100%",
-};
-
-const stripHeader: CSSProperties = {
-  textAlign: "center" as const,
-  marginBottom: "1.15rem",
-};

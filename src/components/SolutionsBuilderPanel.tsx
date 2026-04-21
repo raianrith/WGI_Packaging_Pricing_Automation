@@ -667,6 +667,8 @@ export function SolutionsBuilderPanel({
   const [updKDur, setUpdKDur] = useState("");
   const [updKDep, setUpdKDep] = useState("");
   const [updKNotes, setUpdKNotes] = useState("");
+  /** Update tab: add several new tasks for the focused tier before saving. */
+  const [updNewTaskDrafts, setUpdNewTaskDrafts] = useState<DraftTaskRow[]>([newDraftTaskRow()]);
 
   const tiersOfUpdateSol = useMemo(() => {
     if (!updSolutionId) return [];
@@ -686,6 +688,8 @@ export function SolutionsBuilderPanel({
       .filter((k) => k.solution_tier_id === updTierFocus)
       .sort((a, b) => sortId(a.task_id, b.task_id));
   }, [tasks, updTierFocus]);
+
+  const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
 
   useEffect(() => {
     if (subTab !== "update") return;
@@ -730,6 +734,7 @@ export function SolutionsBuilderPanel({
     setUpdKDur("");
     setUpdKDep("");
     setUpdKNotes("");
+    setUpdNewTaskDrafts([newDraftTaskRow()]);
   };
 
   useEffect(() => {
@@ -913,9 +918,54 @@ export function SolutionsBuilderPanel({
     await onSaved();
   };
 
-  const saveUpdateTask = async () => {
+  const saveUpdateTasksBulk = async () => {
     const client = getSupabase();
     if (!client || !updTierFocus) return;
+    setOpErr(null);
+    setOpOk(null);
+    const rowsToSave = updNewTaskDrafts.filter((d) => d.name.trim());
+    if (rowsToSave.length === 0) {
+      setOpErr("Add at least one task row with a name, or click Edit on an existing task.");
+      return;
+    }
+    const today = todayISODate();
+    let localTasks = [...tasks];
+    for (const d of rowsToSave) {
+      const id = nextAutoTaskId(localTasks);
+      const row: TaskRow = {
+        task_id: id,
+        solution_tier_id: updTierFocus,
+        task_name: d.name.trim(),
+        task_implementer: blankToNull(d.impl),
+        task_time: optNum(d.time),
+        task_duration: optNum(d.dur),
+        task_dependencies: blankToNull(d.dep),
+        task_notes: blankToNull(d.notes),
+        task_create_date: today,
+        task_modified_date: today,
+      };
+      const { error } = await client.from("tasks").insert(row);
+      if (error) {
+        setOpErr(error.message);
+        return;
+      }
+      await logAudit(client, {
+        entityType: "tasks",
+        entityId: id,
+        action: "insert",
+        before: null,
+        after: rowJson(row),
+      });
+      localTasks.push(row);
+    }
+    setOpOk(`Created ${rowsToSave.length} task(s) for tier ${updTierFocus}.`);
+    setUpdNewTaskDrafts([newDraftTaskRow()]);
+    await onSaved();
+  };
+
+  const saveUpdateTask = async () => {
+    const client = getSupabase();
+    if (!client || !updTierFocus || !updTaskEditId) return;
     setOpErr(null);
     setOpOk(null);
     const today = todayISODate();
@@ -935,48 +985,22 @@ export function SolutionsBuilderPanel({
       task_modified_date: today,
     };
 
-    if (updTaskEditId) {
-      const prev = tasks.find((x) => x.task_id === updTaskEditId);
-      if (!prev) return;
-      const { error } = await client.from("tasks").update(payload).eq("task_id", updTaskEditId);
-      if (error) {
-        setOpErr(error.message);
-        return;
-      }
-      const after: TaskRow = { ...prev, ...payload, task_id: updTaskEditId };
-      await logAudit(client, {
-        entityType: "tasks",
-        entityId: updTaskEditId,
-        action: "update",
-        before: rowJson(prev),
-        after: rowJson(after),
-      });
-      setOpOk("Task saved.");
-      clearTaskUpdateForm();
-      await onSaved();
-      return;
-    }
-
-    const id = nextAutoTaskId(tasks);
-    const row: TaskRow = {
-      task_id: id,
-      ...payload,
-      task_create_date: today,
-      task_modified_date: today,
-    };
-    const { error } = await client.from("tasks").insert(row);
+    const prev = tasks.find((x) => x.task_id === updTaskEditId);
+    if (!prev) return;
+    const { error } = await client.from("tasks").update(payload).eq("task_id", updTaskEditId);
     if (error) {
       setOpErr(error.message);
       return;
     }
+    const after: TaskRow = { ...prev, ...payload, task_id: updTaskEditId };
     await logAudit(client, {
       entityType: "tasks",
-      entityId: id,
-      action: "insert",
-      before: null,
-      after: rowJson(row),
+      entityId: updTaskEditId,
+      action: "update",
+      before: rowJson(prev),
+      after: rowJson(after),
     });
-    setOpOk(`Task created as ${id}.`);
+    setOpOk("Task saved.");
     clearTaskUpdateForm();
     await onSaved();
   };
@@ -1004,6 +1028,7 @@ export function SolutionsBuilderPanel({
   };
 
   const startEditTask = (k: TaskRow) => {
+    setUpdNewTaskDrafts([newDraftTaskRow()]);
     setUpdTaskEditId(k.task_id);
     setUpdKName(k.task_name);
     setUpdKImpl(k.task_implementer ?? "");
@@ -1103,16 +1128,21 @@ export function SolutionsBuilderPanel({
     </div>
   );
 
-  const taskFormUpdateFields = (
+  const updateUpdNewDraft = (key: string, patch: Partial<DraftTaskRow>) => {
+    setUpdNewTaskDrafts((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  };
+  const addUpdNewDraftRow = () => {
+    setUpdNewTaskDrafts((list) => [...list, newDraftTaskRow()]);
+  };
+  const removeUpdNewDraftRow = (key: string) => {
+    setUpdNewTaskDrafts((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
+  };
+
+  const taskFormUpdateEditFields = (
     <div className="admin-form-stack" style={formGrid}>
       <label style={lbl}>
         <AdminFieldCaption>Task id</AdminFieldCaption>
-        <input
-          style={input}
-          readOnly
-          disabled={!updTaskEditId}
-          value={updTaskEditId ?? nextAutoTaskId(tasks)}
-        />
+        <input style={input} readOnly tabIndex={-1} value={updTaskEditId ?? ""} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Task name</AdminFieldCaption>
@@ -1766,20 +1796,113 @@ export function SolutionsBuilderPanel({
                       </tbody>
                     </table>
                   </div>
-                  <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>
-                    {updTaskEditId ? `Edit task ${updTaskEditId}` : "Add task"}
-                  </h4>
-                  {taskFormUpdateFields}
-                  <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                    <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveUpdateTask()}>
-                      {updTaskEditId ? "Save task" : "Create task"}
-                    </button>
-                    {updTaskEditId ? (
-                      <button type="button" style={btn} onClick={clearTaskUpdateForm}>
-                        Cancel
-                      </button>
-                    ) : null}
-                  </div>
+                  {updTaskEditId ? (
+                    <>
+                      <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>
+                        Edit task <code>{updTaskEditId}</code>
+                      </h4>
+                      {taskFormUpdateEditFields}
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveUpdateTask()}>
+                          Save changes
+                        </button>
+                        <button type="button" style={btn} onClick={clearTaskUpdateForm}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>Add tasks</h4>
+                      <p style={{ ...muted, marginTop: 0 }}>
+                        Add one or more rows, then save all at once. New task ids use <code>4-…</code> (next:{" "}
+                        <code>{previewNextTaskIdUpdate}</code>).
+                      </p>
+                      <div className="admin-actions-row" style={{ marginTop: 6 }}>
+                        <button type="button" style={btn} onClick={() => addUpdNewDraftRow()}>
+                          Add task row
+                        </button>
+                      </div>
+                      <div className="admin-table-scroll" style={{ marginTop: 8 }}>
+                        <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
+                          <thead>
+                            <tr>
+                              <th style={th}>Task name</th>
+                              <th style={th}>Implementer</th>
+                              <th style={th}>Time</th>
+                              <th style={th}>Duration</th>
+                              <th style={th}>Dependencies</th>
+                              <th style={th}>Notes</th>
+                              <th style={{ ...th, width: 90 }} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {updNewTaskDrafts.map((d) => (
+                              <tr key={d.key}>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.name}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { name: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.impl}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { impl: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.time}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { time: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.dur}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { dur: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.dep}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { dep: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.notes}
+                                    onChange={(e) => updateUpdNewDraft(d.key, { notes: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <button type="button" style={btnDangerSm} onClick={() => removeUpdNewDraftRow(d.key)}>
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="admin-btn-primary"
+                          style={btnPrimary}
+                          onClick={() => void saveUpdateTasksBulk()}
+                        >
+                          Save all new tasks
+                        </button>
+                      </div>
+                    </>
+                  )}
 
                   <PricingPanel
                     subTab="update"

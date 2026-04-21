@@ -87,12 +87,3 @@ export type AuditLogRow = {
   created_at: string;
 };
 
-/** Row in `public.profiles` (linked to `auth.users`). */
-export type ProfileRow = {
-  id: string;
-  full_name: string;
-  email: string | null;
-  is_admin: boolean;
-  created_at?: string;
-  updated_at?: string;
-};

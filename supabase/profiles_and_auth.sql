@@ -1,12 +1,5 @@
--- Profiles + auth hook for app login (no public sign-up — create users from Admin → Users
--- or Supabase Dashboard → Authentication, then promote an admin below).
---
--- After running:
--- 1) Authentication → Providers → Email: turn OFF "Allow new users to sign up" (optional but recommended).
--- 2) Create your first user (Dashboard → Authentication → Add user) OR use Admin → Users after one admin exists.
--- 3) Promote that user:
---    update public.profiles set is_admin = true where email = 'you@company.com';
--- 4) Deploy Edge Function `admin-users` and set secret SUPABASE_SERVICE_ROLE_KEY (Dashboard → Edge Functions → Secrets).
+-- Optional: profiles + trigger on auth.users (only if you use Supabase Auth elsewhere).
+-- The Vite app does not depend on this file; Admin access uses AdminGate (client-side password).
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,

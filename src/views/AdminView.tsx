@@ -17,6 +17,7 @@ import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { computeTierPricing } from "../lib/tierPricingMath";
 import { PricingPanel } from "../components/PricingPanel";
+import { UsersPanel } from "../components/UsersPanel";
 import type {
   AuditLogRow,
   Package,
@@ -34,6 +35,7 @@ type AdminTab =
   | "pricing"
   | "bulk"
   | "glossary"
+  | "users"
   | "audit";
 
 /** Create-only vs list + edit — shown under each entity tab (not Change history). */
@@ -274,6 +276,7 @@ export function AdminView() {
                 ["pricing", "Pricing"],
                 ["bulk", "Bulk Import"],
                 ["glossary", "Data Glossary"],
+                ["users", "Users"],
                 ["audit", "Change history"],
               ] as const
             ).map(([id, label]) => (
@@ -295,7 +298,7 @@ export function AdminView() {
             ))}
           </div>
 
-          {tab !== "audit" && tab !== "bulk" && tab !== "glossary" && (
+          {tab !== "audit" && tab !== "bulk" && tab !== "glossary" && tab !== "users" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
               <button
                 type="button"
@@ -417,6 +420,9 @@ export function AdminView() {
             />
           )}
           {tab === "glossary" && <DataGlossaryPanel />}
+          {tab === "users" && (
+            <UsersPanel setOpErr={setOpErr} setOpOk={setOpOk} />
+          )}
           {tab === "audit" && (
             <section className="admin-panel admin-panel--editor" style={panel}>
               <div className="admin-editor-layout admin-editor-layout--wide">

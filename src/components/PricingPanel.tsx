@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -9,13 +10,14 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { getSupabase } from "../lib/supabase";
+import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
   computeTierPricing,
   scoreToString,
   clampScore012,
   TIER_PRICING_HOURLY_RATE,
 } from "../lib/tierPricingMath";
-import type { SolutionTier, SolutionTierPricing } from "../types";
+import type { PricingHourGroupKey, SolutionTier, SolutionTierPricing } from "../types";
 
 function rowJson(row: object): Record<string, unknown> {
   return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
@@ -205,6 +207,15 @@ type Props = {
   tierIdsInScope?: string[] | null;
   /** In create mode, pre-fill and lock the tier selector to this id (must exist in `tiers`). */
   createLockedTierId?: string | null;
+  /**
+   * Update mode: when the parent has already selected a solution tier, pass its id to load
+   * that row into the form automatically (or open an empty form to add a first-time row).
+   */
+  updateAutoLoadTierId?: string | null;
+  /** When true, hour buckets follow `taskHourRollup` (from tasks + implementer map) and are read-only. */
+  taskDrivenHours?: boolean;
+  /** Per pricing group: summed task times for the tier; required when `taskDrivenHours`. */
+  taskHourRollup?: Record<PricingHourGroupKey, number> | null;
 };
 
 export function PricingPanel({
@@ -230,6 +241,9 @@ export function PricingPanel({
   logAudit,
   tierIdsInScope = null,
   createLockedTierId = null,
+  updateAutoLoadTierId = null,
+  taskDrivenHours = false,
+  taskHourRollup = null,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [solutionLabel, setSolutionLabel] = useState("");
@@ -249,9 +263,7 @@ export function PricingPanel({
   const [internalCoord, setInternalCoord] = useState("0");
   const [clientRev, setClientRev] = useState("0");
   const [stratScore, setStratScore] = useState("0");
-  const [standalone, setStandalone] = useState("");
   const [oldPrice, setOldPrice] = useState("");
-  const [pctChg, setPctChg] = useState("");
   const [reqCustom, setReqCustom] = useState(false);
   const [taxable, setTaxable] = useState(false);
   const [notes, setNotes] = useState("");
@@ -285,6 +297,11 @@ export function PricingPanel({
     [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore]
   );
 
+  const percentFromOld = useMemo(
+    () => percentChangeFromSellAndOld(derived.sellPrice, oldPrice),
+    [derived.sellPrice, oldPrice]
+  );
+
   const tierScopeSet = useMemo(
     () =>
       tierIdsInScope && tierIdsInScope.length > 0 ? new Set(tierIdsInScope) : null,
@@ -305,68 +322,148 @@ export function PricingPanel({
     [pricing, tierScopeSet]
   );
 
-  const startNew = useCallback(() => {
-    setEditingTierId(null);
-    setTierPick(createLockedTierId ?? "");
-    setSolutionLabel("");
-    setTierLabel("");
-    setScope("");
-    setHCs("");
-    setHCp("");
-    setHDs("");
-    setHWd("");
-    setHVi("");
-    setHDa("");
-    setHPm("");
-    setHHb("");
-    setHOt("");
-    setScopeRisk("0");
-    setInternalCoord("0");
-    setClientRev("0");
-    setStratScore("0");
-    setStandalone("");
-    setOldPrice("");
-    setPctChg("");
-    setReqCustom(false);
-    setTaxable(false);
-    setNotes("");
-    setTags("");
-  }, [createLockedTierId]);
+  const startNew = useCallback(
+    (opts?: { lockEditTier: string }) => {
+      if (opts?.lockEditTier) {
+        setEditingTierId(opts.lockEditTier);
+        setTierPick(opts.lockEditTier);
+      } else {
+        setEditingTierId(null);
+        if (subTab === "create") {
+          setTierPick(createLockedTierId ?? "");
+        } else {
+          setTierPick("");
+        }
+      }
+      setSolutionLabel("");
+      setTierLabel("");
+      setScope("");
+      setHCs("");
+      setHCp("");
+      setHDs("");
+      setHWd("");
+      setHVi("");
+      setHDa("");
+      setHPm("");
+      setHHb("");
+      setHOt("");
+      setScopeRisk("0");
+      setInternalCoord("0");
+      setClientRev("0");
+      setStratScore("0");
+      setOldPrice("");
+      setReqCustom(false);
+      setTaxable(false);
+      setNotes("");
+      setTags("");
+    },
+    [createLockedTierId, subTab]
+  );
 
-  const loadRow = (r: SolutionTierPricing) => {
+  const loadRow = useCallback(
+    (r: SolutionTierPricing) => {
     setEditingTierId(r.solution_tier_id);
     setTierPick(r.solution_tier_id);
     setSolutionLabel(r.solution_label ?? "");
     setTierLabel(r.tier ?? "");
     setScope(r.scope ?? "");
-    setHCs(nStr(r.hours_client_services));
-    setHCp(nStr(r.hours_copy));
-    setHDs(nStr(r.hours_design));
-    setHWd(nStr(r.hours_web_dev));
-    setHVi(nStr(r.hours_video));
-    setHDa(nStr(r.hours_data));
-    setHPm(nStr(r.hours_paid_media));
-    setHHb(nStr(r.hours_hubspot));
-    setHOt(nStr(r.hours_other));
+    if (!taskDrivenHours) {
+      setHCs(nStr(r.hours_client_services));
+      setHCp(nStr(r.hours_copy));
+      setHDs(nStr(r.hours_design));
+      setHWd(nStr(r.hours_web_dev));
+      setHVi(nStr(r.hours_video));
+      setHDa(nStr(r.hours_data));
+      setHPm(nStr(r.hours_paid_media));
+      setHHb(nStr(r.hours_hubspot));
+      setHOt(nStr(r.hours_other));
+    }
     setScopeRisk(scoreToString(clampScore012(r.scope_risk)));
     setInternalCoord(scoreToString(clampScore012(r.internal_coordination)));
     setClientRev(scoreToString(clampScore012(r.client_revision_risk)));
     setStratScore(scoreToString(clampScore012(r.strategic_value_score)));
-    setStandalone(nStr(r.standalone_sell_price));
     setOldPrice(nStr(r.old_price));
-    setPctChg(r.percent_change ?? "");
     setReqCustom(Boolean(r.requires_customization));
     setTaxable(Boolean(r.taxable));
     setNotes(r.notes ?? "");
     setTags(r.tags ?? "");
-  };
+  },
+    [taskDrivenHours]
+  );
+
+  const prevSyncTierRef = useRef<string | null>(null);
+  const startedEmptyForAutoTierRef = useRef(false);
 
   useEffect(() => {
-    if (subTab === "create") startNew();
+    if (subTab === "create") {
+      startNew();
+    }
   }, [subTab, startNew]);
+
+  useEffect(() => {
+    if (subTab !== "update" || !updateAutoLoadTierId?.trim()) {
+      if (subTab === "update") {
+        prevSyncTierRef.current = null;
+        startedEmptyForAutoTierRef.current = false;
+      }
+      return;
+    }
+    const tid = updateAutoLoadTierId.trim();
+    if (tierScopeSet && !tierScopeSet.has(tid)) {
+      return;
+    }
+
+    const focusChanged = prevSyncTierRef.current !== tid;
+    if (focusChanged) {
+      prevSyncTierRef.current = tid;
+      startedEmptyForAutoTierRef.current = false;
+    }
+
+    const row = pricing.find((p) => p.solution_tier_id === tid) ?? null;
+
+    if (row) {
+      const shouldLoad =
+        focusChanged ||
+        !editingTierId ||
+        (editingTierId === tid && startedEmptyForAutoTierRef.current);
+      if (shouldLoad) {
+        loadRow(row);
+        startedEmptyForAutoTierRef.current = false;
+      }
+    } else {
+      if (focusChanged || !editingTierId) {
+        startNew({ lockEditTier: tid });
+        startedEmptyForAutoTierRef.current = true;
+      }
+    }
+  }, [
+    subTab,
+    updateAutoLoadTierId,
+    pricing,
+    editingTierId,
+    loadRow,
+    startNew,
+    tierScopeSet,
+  ]);
+
+  useEffect(() => {
+    if (!taskDrivenHours || !taskHourRollup) {
+      return;
+    }
+    setHCs(nStr(taskHourRollup.client_services));
+    setHCp(nStr(taskHourRollup.copy));
+    setHDs(nStr(taskHourRollup.design));
+    setHWd(nStr(taskHourRollup.web_dev));
+    setHVi(nStr(taskHourRollup.video));
+    setHDa(nStr(taskHourRollup.data));
+    setHPm(nStr(taskHourRollup.paid_media));
+    setHHb(nStr(taskHourRollup.hubspot));
+    setHOt(nStr(taskHourRollup.other));
+  }, [taskDrivenHours, taskHourRollup]);
 
   const buildPayload = (): Record<string, unknown> => {
     const d = derived;
+    const pc = percentChangeFromSellAndOld(d.sellPrice, oldPrice);
     return {
       solution_tier_id: tierPick.trim(),
       solution_label: solutionLabel.trim() || null,
@@ -391,9 +488,9 @@ export function PricingPanel({
       strategic_value_score: d.strategicValueScore,
       strategic_value_multiplier: d.strategicMultiplier,
       sell_price: d.sellPrice,
-      standalone_sell_price: parseNum(standalone),
+      standalone_sell_price: null,
       old_price: parseNum(oldPrice),
-      percent_change: pctChg.trim() || null,
+      percent_change: pc.forDb,
       requires_customization: reqCustom,
       taxable,
       notes: notes.trim() || null,
@@ -482,11 +579,25 @@ export function PricingPanel({
       <div className="admin-editor-layout admin-editor-layout--wide admin-pricing-layout">
       <h2 style={h2}>Tier pricing</h2>
       <p className="admin-intro admin-intro--tight" style={muted}>
-        {subTab === "create"
-          ? "Add or replace a row — saves upsert on "
-          : "Load a row from the table to edit, or pick a tier below — upsert on "}
-        <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Dollar amounts in the last section update
-        automatically; open <em>How pricing is calculated</em> when you need the rules.
+        {subTab === "create" ? (
+          <>
+            Add or replace a row — saves upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>.
+            Dollar amounts in the last section update automatically; open <em>How pricing is calculated</em> when you
+            need the rules.
+          </>
+        ) : updateAutoLoadTierId ? (
+          <>
+            The tier selected in <strong>Tasks &amp; pricing (pick tier)</strong> above is loaded here automatically.
+            Still upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Open{" "}
+            <em>How pricing is calculated</em> for the sell formula.
+          </>
+        ) : (
+          <>
+            Load a row from the table to edit, or pick a tier below — upsert on{" "}
+            <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Dollar amounts in the last section update
+            automatically; open <em>How pricing is calculated</em> when you need the rules.
+          </>
+        )}
       </p>
 
       {subTab === "update" && (
@@ -527,7 +638,7 @@ export function PricingPanel({
               No pricing rows yet. Use Create new to add one, or add tiers first.
             </p>
           )}
-          {!editingTierId ? (
+          {!editingTierId && !updateAutoLoadTierId ? (
             <p className="admin-hint" style={{ ...muted, marginTop: "1rem" }}>
               Select <strong>Edit</strong> on a row to load it into the form below.
             </p>
@@ -594,6 +705,13 @@ export function PricingPanel({
 
       <div className="admin-pricing-section">
         <h3 className="admin-pricing-section__title">Hours</h3>
+        {taskDrivenHours ? (
+          <p className="admin-hint" style={{ ...muted, marginTop: 0, marginBottom: 10, maxWidth: "58ch" }}>
+            These fields update from <strong>task time</strong> and <strong>implementer</strong> in <strong>Tasks</strong>{" "}
+            above, using mappings in <strong>Admin → Implementer-Pricing Mapping</strong>. Edit tasks to change the split; use{" "}
+            <strong>Save pricing</strong> to persist the rolled-up hours to this tier.
+          </p>
+        ) : null}
         <div className="admin-form-stack" style={formGrid}>
           {(
             [
@@ -610,7 +728,14 @@ export function PricingPanel({
           ).map(([lab, val, set]) => (
             <label key={lab} style={lbl}>
               <AdminFieldCaption>{lab}</AdminFieldCaption>
-              <input style={input} value={val} onChange={(e) => set(e.target.value)} />
+              <input
+                style={taskDrivenHours ? { ...input, ...readonlyInput } : input}
+                className={taskDrivenHours ? "admin-pricing-readonly" : undefined}
+                value={val}
+                readOnly={Boolean(taskDrivenHours)}
+                tabIndex={taskDrivenHours ? -1 : 0}
+                onChange={taskDrivenHours ? undefined : (e) => set(e.target.value)}
+              />
             </label>
           ))}
           <label style={lbl}>
@@ -746,12 +871,7 @@ export function PricingPanel({
       </div>
 
       <div className="admin-pricing-section admin-pricing-section--extras">
-        <h3 className="admin-pricing-section__title">Optional</h3>
         <div className="admin-form-stack" style={formGrid}>
-          <label style={lbl}>
-            <AdminFieldCaption>Standalone sell</AdminFieldCaption>
-            <input style={input} value={standalone} onChange={(e) => setStandalone(e.target.value)} />
-          </label>
           <label style={lbl}>
             <AdminFieldCaption>Old price</AdminFieldCaption>
             <input style={input} value={oldPrice} onChange={(e) => setOldPrice(e.target.value)} />
@@ -759,10 +879,11 @@ export function PricingPanel({
           <label style={lbl}>
             <AdminFieldCaption>Percent change</AdminFieldCaption>
             <input
-              style={input}
-              value={pctChg}
-              onChange={(e) => setPctChg(e.target.value)}
-              placeholder="e.g. -2.05% or n/a"
+              className="admin-pricing-readonly"
+              style={readonlyInput}
+              readOnly
+              tabIndex={-1}
+              value={percentFromOld.display}
             />
           </label>
           <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -788,7 +909,7 @@ export function PricingPanel({
         <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void save()}>
           Save pricing
         </button>
-        <button type="button" style={btn} onClick={startNew}>
+        <button type="button" style={btn} onClick={() => startNew()}>
           {subTab === "update" && editingTierId ? "Cancel edit" : "Clear form"}
         </button>
       </div>

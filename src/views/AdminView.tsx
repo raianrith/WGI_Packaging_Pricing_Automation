@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -16,9 +16,11 @@ import { todayISODate } from "../lib/dates";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { computeTierPricing } from "../lib/tierPricingMath";
+import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import type {
   AuditLogRow,
+  ImplementerHourGroupRow,
   Package,
   PackageSolutionTier,
   Solution,
@@ -32,6 +34,7 @@ type AdminTab =
   | "solutions_builder"
   | "bulk"
   | "glossary"
+  | "implementer_mapping"
   | "audit";
 
 /** Create-only vs list + edit — shown under each entity tab (not Change history). */
@@ -80,10 +83,13 @@ export function AdminView() {
   const [pricingLoadNote, setPricingLoadNote] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AuditLogRow[]>([]);
   const [auditLoadNote, setAuditLoadNote] = useState<string | null>(null);
+  const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
+  const [implementerMappingLoadNote, setImplementerMappingLoadNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [opErr, setOpErr] = useState<string | null>(null);
   const [opOk, setOpOk] = useState<string | null>(null);
+  const opFeedbackRef = useRef<HTMLDivElement | null>(null);
 
   const [expAuditId, setExpAuditId] = useState<string | null>(null);
   const [auditEntityType, setAuditEntityType] = useState<string>("all");
@@ -94,6 +100,7 @@ export function AdminView() {
     setLoadErr(null);
     setAuditLoadNote(null);
     setPricingLoadNote(null);
+    setImplementerMappingLoadNote(null);
     const keyErr = browserKeyConfigurationError();
     if (keyErr) {
       setLoadErr(keyErr);
@@ -164,6 +171,23 @@ export function AdminView() {
       setAuditLog((aRes.data ?? []) as AuditLogRow[]);
     }
 
+    const implRes = await client
+      .from("implementer_pricing_hour_groups")
+      .select("*")
+      .order("implementer_name");
+    if (implRes.error) {
+      setImplementerHourGroups([]);
+      setImplementerMappingLoadNote(
+        implRes.error.message.includes("implementer_pricing_hour_groups") ||
+          implRes.error.code === "PGRST205"
+          ? "Run supabase/implementer_pricing_hour_groups.sql in the SQL Editor to create this table."
+          : implRes.error.message
+      );
+    } else {
+      setImplementerMappingLoadNote(null);
+      setImplementerHourGroups((implRes.data ?? []) as ImplementerHourGroupRow[]);
+    }
+
     setLoading(false);
     notifyPackagingDataChanged();
   }, []);
@@ -177,6 +201,11 @@ export function AdminView() {
   useEffect(() => {
     setAdminSubTab("create");
   }, [tab]);
+
+  useLayoutEffect(() => {
+    if (!opErr && !opOk) return;
+    opFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [opErr, opOk]);
 
   const logAudit = useCallback(
     async (
@@ -261,17 +290,6 @@ export function AdminView() {
         </div>
       )}
 
-      {opErr && (
-        <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
-          {opErr}
-        </div>
-      )}
-      {opOk && (
-        <div className="admin-banner admin-banner--ok" style={bannerOk} role="status">
-          {opOk}
-        </div>
-      )}
-
       {!loadErr && !loading && (
         <div className="admin-workspace">
           <div className="admin-tabs" role="tablist" aria-label="Admin sections">
@@ -279,8 +297,9 @@ export function AdminView() {
               [
                 ["packages", "Package Builder"],
                 ["solutions_builder", "Solutions Builder"],
-                ["bulk", "Bulk Import"],
+                ["implementer_mapping", "Implementer-Pricing Mapping"],
                 ["glossary", "Data Glossary"],
+                ["bulk", "Bulk Import"],
                 ["audit", "Change history"],
               ] as const
             ).map(([id, label]) => (
@@ -302,7 +321,10 @@ export function AdminView() {
             ))}
           </div>
 
-          {tab !== "audit" && tab !== "bulk" && tab !== "glossary" && (
+          {tab !== "audit" &&
+            tab !== "bulk" &&
+            tab !== "glossary" &&
+            tab !== "implementer_mapping" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
               <button
                 type="button"
@@ -341,6 +363,21 @@ export function AdminView() {
             </div>
           )}
 
+          {(opErr || opOk) && (
+            <div ref={opFeedbackRef} className="admin-workspace__op-messages" aria-live="polite" aria-atomic>
+              {opErr ? (
+                <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
+                  {opErr}
+                </div>
+              ) : null}
+              {opOk ? (
+                <div className="admin-banner admin-banner--ok" style={bannerOk} role="status">
+                  {opOk}
+                </div>
+              ) : null}
+            </div>
+          )}
+
           {tab === "packages" && (
             <PackagesPanel
               subTab={adminSubTab}
@@ -361,6 +398,7 @@ export function AdminView() {
               tiers={tiers}
               tasks={tasks}
               tierPricing={tierPricing}
+              implementerHourGroups={implementerHourGroups}
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
@@ -397,6 +435,27 @@ export function AdminView() {
             />
           )}
           {tab === "glossary" && <DataGlossaryPanel />}
+          {tab === "implementer_mapping" && (
+            <ImplementerMappingPanel
+              rows={implementerHourGroups}
+              loadNote={implementerMappingLoadNote}
+              onRefresh={refreshAfterSave}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              panel={panel}
+              h2={h2}
+              muted={muted}
+              formGrid={formGrid}
+              lbl={lbl}
+              input={input}
+              btn={btn}
+              btnPrimary={btnPrimary}
+              btnDangerSm={btnDangerSm}
+              tbl={tbl}
+              th={th}
+              td={td}
+            />
+          )}
           {tab === "audit" && (
             <section className="admin-panel admin-panel--editor" style={panel}>
               <div className="admin-editor-layout admin-editor-layout--wide">
@@ -1194,13 +1253,19 @@ async function downloadBulkTemplateWorkbook(data: {
   xlsx.writeFile(wb, "bulk-import-template.xlsx");
 }
 
-const BULK_GLOSSARY: Record<
+type GlossaryTableId =
   | "packages"
   | "solutions"
   | "tiers"
   | "tasks"
   | "pricing"
-  | "package_solution_tiers",
+  | "package_solution_tiers"
+  | "audit_log"
+  | "profiles"
+  | "implementer_pricing_hour_groups";
+
+const BULK_GLOSSARY: Record<
+  GlossaryTableId,
   { label: string; columns: Array<{ name: string; description: string }> }
 > = {
   packages: {
@@ -1288,7 +1353,11 @@ const BULK_GLOSSARY: Record<
       { name: "task_id", description: "Task ID (for example: 4-21). Keep this value unique." },
       { name: "solution_tier_id", description: "Tier ID this task belongs to." },
       { name: "task_name", description: "Task name (for example: Conduct interviews)." },
-      { name: "task_implementer", description: "Who does the task." },
+      {
+        name: "task_implementer",
+        description:
+          "Who performs the task (text label). Rolled up into solution_tier_pricing hour columns using Implementer–Pricing Mapping (implementer_pricing_hour_groups).",
+      },
       { name: "task_time", description: "Time number shown in KPI totals." },
       { name: "task_duration", description: "Optional duration number." },
       { name: "task_dependencies", description: "Dependencies or prerequisites." },
@@ -1298,32 +1367,94 @@ const BULK_GLOSSARY: Record<
     ],
   },
   pricing: {
-    label: "pricing",
+    label: "pricing → solution_tier_pricing",
     columns: [
-      { name: "solution_tier_id", description: "Tier ID for this pricing row (one row per tier)." },
-      { name: "solution_label", description: "Optional solution label." },
-      { name: "tier", description: "Optional tier label (example: Basic)." },
-      { name: "scope", description: "Scope notes for this tier." },
-      { name: "hours_client_services", description: "Hours for client services work." },
-      { name: "hours_copy", description: "Hours for copy work." },
-      { name: "hours_design", description: "Hours for design work." },
-      { name: "hours_web_dev", description: "Hours for web development work." },
-      { name: "hours_video", description: "Hours for video work." },
-      { name: "hours_data", description: "Hours for data/analytics work." },
-      { name: "hours_paid_media", description: "Hours for paid media work." },
-      { name: "hours_hubspot", description: "Hours for HubSpot/automation work." },
-      { name: "hours_other", description: "Hours for any other work." },
-      { name: "scope_risk", description: "Score 0, 1, or 2." },
-      { name: "internal_coordination", description: "Score 0, 1, or 2." },
-      { name: "client_revision_risk", description: "Score 0, 1, or 2." },
-      { name: "strategic_value_score", description: "Score 0, 1, or 2." },
-      { name: "standalone_sell_price", description: "Optional standalone price." },
-      { name: "old_price", description: "Optional old price." },
-      { name: "percent_change", description: "Optional percent text (example: +8%)." },
-      { name: "requires_customization", description: "TRUE or FALSE." },
-      { name: "taxable", description: "TRUE or FALSE." },
-      { name: "notes", description: "Optional notes." },
-      { name: "tags", description: "Optional tags (comma-separated)." },
+      {
+        name: "solution_tier_id",
+        description:
+          "Primary key, references solution_tiers (one row per tier). In Excel the sheet is usually named pricing or solution_tier_pricing.",
+      },
+      {
+        name: "solution_label",
+        description:
+          "Optional spreadsheet-style solution label. In some raw SQL files this column is named offering_label.",
+      },
+      {
+        name: "tier",
+        description:
+          "Optional tier display label (e.g. Basic). May differ from solution_tier_name. In some SQL files this is tier_label.",
+      },
+      { name: "scope", description: "Free-text scope for this tier (optional)." },
+      {
+        name: "hours_client_services",
+        description: "Hours in the client services bucket (numeric).",
+      },
+      { name: "hours_copy", description: "Hours in the copy bucket (numeric)." },
+      { name: "hours_design", description: "Hours in the design bucket (numeric)." },
+      { name: "hours_web_dev", description: "Hours in the web development bucket (numeric)." },
+      { name: "hours_video", description: "Hours in the video bucket (numeric)." },
+      { name: "hours_data", description: "Hours in the data / analytics bucket (numeric)." },
+      { name: "hours_paid_media", description: "Hours in the paid media bucket (numeric)." },
+      { name: "hours_hubspot", description: "Hours in the HubSpot / automation bucket (numeric)." },
+      { name: "hours_other", description: "Hours in the catch-all “other” bucket (numeric)." },
+      {
+        name: "total_hours",
+        description:
+          "Total hours; typically the sum of the hour columns. Omitted values are computed on bulk import and in the app from the discipline hours.",
+      },
+      {
+        name: "expected_effort_base_price",
+        description:
+          "Dollar base from hourly rate × total hours (before risk multipliers). Computed on import if omitted (same formula as Tier pricing in Admin).",
+      },
+      { name: "scope_risk", description: "Risk model score: 0, 1, or 2 (scope uncertainty)." },
+      { name: "internal_coordination", description: "Risk model score: 0, 1, or 2 (coordination load)." },
+      { name: "client_revision_risk", description: "Risk model score: 0, 1, or 2 (revision risk)." },
+      { name: "strategic_value_score", description: "Strategic value score: 0 (support), 1 (revenue), or 2 (growth)." },
+      {
+        name: "risk_multiplier",
+        description:
+          "Product of the partial risk multipliers from the three risk scores. Computed on import if omitted.",
+      },
+      {
+        name: "risk_mitigated_base_price",
+        description:
+          "Base price after applying the risk multiplier. Computed on import if omitted.",
+      },
+      {
+        name: "strategic_value_multiplier",
+        description:
+          "Multiplier from strategic_value_score. Computed on import if omitted.",
+      },
+      {
+        name: "sell_price",
+        description:
+          "Final calculated sell price (dollars). Computed on import if omitted. Shown as rounded dollars in the UI.",
+      },
+      {
+        name: "standalone_sell_price",
+        description:
+          "Optional legacy override price; may be null. Not edited in the current Admin tier pricing form.",
+      },
+      { name: "old_price", description: "Optional prior-period price (dollars) for comparison." },
+      {
+        name: "percent_change",
+        description:
+          "Display string (e.g. -12.00%). In Admin tier pricing, recalculated on save from rounded sell price vs old price; bulk import can still set or leave this column.",
+      },
+      { name: "requires_customization", description: "Boolean: tier requires client-specific customization." },
+      { name: "taxable", description: "Boolean: pricing is subject to tax in your reporting." },
+      { name: "notes", description: "Free-text notes (optional)." },
+      { name: "tags", description: "Optional tags, often comma-separated (e.g. for filtering)." },
+      {
+        name: "created_at",
+        description: "Row creation time (timestamptz). Set automatically by the database; optional on import.",
+      },
+      {
+        name: "updated_at",
+        description:
+          "Last update time (timestamptz). Maintained by a trigger; optional on import.",
+      },
     ],
   },
   package_solution_tiers: {
@@ -1339,7 +1470,80 @@ const BULK_GLOSSARY: Record<
       },
       {
         name: "created_at",
-        description: "Optional timestamp; may be left blank on import.",
+        description: "Optional row creation time (timestamptz); may be left blank on import (database default).",
+      },
+    ],
+  },
+  audit_log: {
+    label: "audit_log",
+    columns: [
+      { name: "id", description: "Primary key (UUID) for the audit event." },
+      {
+        name: "entity_type",
+        description:
+          "Which table changed: packages, solutions, solution_tiers, tasks, solution_tier_pricing, or package_solution_tiers (and any values allowed by your database check constraint).",
+      },
+      { name: "entity_id", description: "Primary key of the row that changed (text id from that table)." },
+      {
+        name: "action",
+        description: "One of insert, update, or delete.",
+      },
+      {
+        name: "before_data",
+        description: "JSON snapshot of the row before the change (null on insert).",
+      },
+      {
+        name: "after_data",
+        description: "JSON snapshot of the row after the change (null on delete).",
+      },
+      {
+        name: "created_at",
+        description: "When the event was recorded (timestamptz).",
+      },
+    ],
+  },
+  profiles: {
+    label: "profiles",
+    columns: [
+      { name: "id", description: "Primary key; matches auth.users.id (Supabase Auth)." },
+      { name: "full_name", description: "Display name for the user (text)." },
+      { name: "email", description: "Email copied from auth (may be null in edge cases)." },
+      {
+        name: "is_admin",
+        description:
+          "When true, the user is treated as an application admin (used with RLS and is_app_admin() in database policies).",
+      },
+      {
+        name: "created_at",
+        description: "Profile row created (timestamptz).",
+      },
+      {
+        name: "updated_at",
+        description: "Last profile update (timestamptz; trigger maintains this in migrations).",
+      },
+    ],
+  },
+  implementer_pricing_hour_groups: {
+    label: "implementer_pricing_hour_groups",
+    columns: [
+      { name: "id", description: "Primary key (UUID)." },
+      {
+        name: "implementer_name",
+        description:
+          "Text label that must match task.task_implementer (case-sensitive in lookups). At most one row per name.",
+      },
+      {
+        name: "hour_group",
+        description:
+          "Which solution_tier_pricing hours_* column this implementer rolls into: client_services, copy, design, web_dev, video, data, paid_media, hubspot, or other.",
+      },
+      {
+        name: "created_at",
+        description: "Row creation (timestamptz).",
+      },
+      {
+        name: "updated_at",
+        description: "Last change (timestamptz; trigger can maintain this).",
       },
     ],
   },
@@ -1877,30 +2081,33 @@ function BulkImportPanel({
 }
 
 function DataGlossaryPanel() {
-  const [glossaryTable, setGlossaryTable] = useState<keyof typeof BULK_GLOSSARY>("packages");
+  const [glossaryTable, setGlossaryTable] = useState<GlossaryTableId>("packages");
 
   return (
     <section className="admin-panel admin-panel--editor" style={panel}>
       <div className="admin-editor-layout admin-editor-layout--wide">
         <h2 style={h2}>Data Glossary</h2>
         <p className="admin-intro" style={muted}>
-          Select a table to see column names and plain-language descriptions for template uploads.
+          Select a table for column names and plain-language notes. Worksheets used in Bulk Import are listed with
+          their database table name where it differs. Audit, profiles, and implementer mapping are reference-only (not
+          import sheets).
         </p>
         <label style={{ ...lbl, maxWidth: 320 }}>
           <AdminFieldCaption>Table</AdminFieldCaption>
           <select
             style={input}
             value={glossaryTable}
-            onChange={(e) =>
-              setGlossaryTable(e.target.value as keyof typeof BULK_GLOSSARY)
-            }
+            onChange={(e) => setGlossaryTable(e.target.value as GlossaryTableId)}
           >
             <option value="packages">packages</option>
             <option value="solutions">solutions</option>
-            <option value="tiers">tiers</option>
+            <option value="tiers">tiers (solution_tiers)</option>
             <option value="tasks">tasks</option>
-            <option value="pricing">pricing</option>
+            <option value="pricing">pricing (solution_tier_pricing)</option>
             <option value="package_solution_tiers">package_solution_tiers</option>
+            <option value="audit_log">audit_log</option>
+            <option value="implementer_pricing_hour_groups">implementer_pricing_hour_groups</option>
+            <option value="profiles">profiles</option>
           </select>
         </label>
         <div className="admin-table-scroll" style={{ marginTop: 10 }}>

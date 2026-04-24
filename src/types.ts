@@ -102,3 +102,23 @@ export type AuditLogRow = {
   created_at: string;
 };
 
+/** Column group in `solution_tier_pricing` hours (maps from task implementer). */
+export type PricingHourGroupKey =
+  | "client_services"
+  | "copy"
+  | "design"
+  | "web_dev"
+  | "video"
+  | "data"
+  | "paid_media"
+  | "hubspot"
+  | "other";
+
+export type ImplementerHourGroupRow = {
+  id: string;
+  implementer_name: string;
+  hour_group: PricingHourGroupKey;
+  created_at?: string;
+  updated_at?: string;
+};
+

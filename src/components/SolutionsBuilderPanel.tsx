@@ -12,7 +12,9 @@ import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
 import { getSupabase } from "../lib/supabase";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
-import type { Solution, SolutionTier, SolutionTierPricing, TaskRow } from "../types";
+import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
+import type { ImplementerHourGroupRow, Solution, SolutionTier, SolutionTierPricing, TaskRow } from "../types";
+import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
   computeTierPricing,
   TIER_PRICING_HOURLY_RATE,
@@ -273,6 +275,7 @@ export function SolutionsBuilderPanel({
   tiers,
   tasks,
   tierPricing,
+  implementerHourGroups = [],
   onSaved,
   setOpErr,
   setOpOk,
@@ -284,6 +287,7 @@ export function SolutionsBuilderPanel({
   tiers: SolutionTier[];
   tasks: TaskRow[];
   tierPricing: SolutionTierPricing[];
+  implementerHourGroups?: ImplementerHourGroupRow[];
   onSaved: () => Promise<void>;
   setOpErr: (msg: string | null) => void;
   setOpOk: (msg: string | null) => void;
@@ -335,9 +339,7 @@ export function SolutionsBuilderPanel({
   const [prInternalCoord, setPrInternalCoord] = useState("0");
   const [prClientRev, setPrClientRev] = useState("0");
   const [prStratScore, setPrStratScore] = useState("0");
-  const [prStandalone, setPrStandalone] = useState("");
   const [prOldPrice, setPrOldPrice] = useState("");
-  const [prPctChg, setPrPctChg] = useState("");
   const [prReqCustom, setPrReqCustom] = useState(false);
   const [prTaxable, setPrTaxable] = useState(false);
   const [prNotes, setPrNotes] = useState("");
@@ -381,9 +383,7 @@ export function SolutionsBuilderPanel({
     setPrInternalCoord("0");
     setPrClientRev("0");
     setPrStratScore("0");
-    setPrStandalone("");
     setPrOldPrice("");
-    setPrPctChg("");
     setPrReqCustom(false);
     setPrTaxable(false);
     setPrNotes("");
@@ -480,6 +480,11 @@ export function SolutionsBuilderPanel({
         strategicValueScore: Number(prStratScore),
       }),
     [fullPricingHours, prScopeRisk, prInternalCoord, prClientRev, prStratScore]
+  );
+
+  const prPercentFromOld = useMemo(
+    () => percentChangeFromSellAndOld(fullPricingDerived.sellPrice, prOldPrice),
+    [fullPricingDerived.sellPrice, prOldPrice]
   );
 
   const createFullSolutionStack = async () => {
@@ -623,9 +628,9 @@ export function SolutionsBuilderPanel({
       strategic_value_score: d.strategicValueScore,
       strategic_value_multiplier: d.strategicMultiplier,
       sell_price: d.sellPrice,
-      standalone_sell_price: parseNumStr(prStandalone),
+      standalone_sell_price: null,
       old_price: parseNumStr(prOldPrice),
-      percent_change: prPctChg.trim() || null,
+      percent_change: percentChangeFromSellAndOld(d.sellPrice, prOldPrice).forDb,
       requires_customization: prReqCustom,
       taxable: prTaxable,
       notes: prNotes.trim() || null,
@@ -845,17 +850,62 @@ export function SolutionsBuilderPanel({
       .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
   }, [tiers, updSolutionId]);
 
-  const tierIdsInUpdateScope = useMemo(
-    () => tiersOfUpdateSol.map((t) => t.solution_tier_id),
-    [tiersOfUpdateSol]
-  );
-
   const tasksOfFocusTier = useMemo(() => {
     if (!updTierFocus) return [];
     return tasks
       .filter((k) => k.solution_tier_id === updTierFocus)
       .sort((a, b) => sortId(a.task_id, b.task_id));
   }, [tasks, updTierFocus]);
+
+  const implementerToGroup = useMemo(
+    () => buildImplementerToGroupMap(implementerHourGroups),
+    [implementerHourGroups]
+  );
+
+  const tasksForHourRollup = useMemo(() => {
+    if (subTab !== "update" || !updTierFocus) return [] as TaskRow[];
+    const base: TaskRow[] = tasksOfFocusTier.map((k) => {
+      if (updTaskEditId && k.task_id === updTaskEditId) {
+        return {
+          ...k,
+          task_time: optNum(updKTime),
+          task_implementer: updKImpl.trim() || k.task_implementer,
+        };
+      }
+      return k;
+    });
+    const today = todayISODate();
+    const fromDrafts: TaskRow[] = updNewTaskDrafts
+      .filter((d) => d.name.trim())
+      .map((d) => ({
+        task_id: `new-${d.key}`,
+        solution_tier_id: updTierFocus,
+        task_name: d.name,
+        task_implementer: d.impl.trim() || null,
+        task_time: optNum(d.time),
+        task_duration: null,
+        task_dependencies: null,
+        task_notes: null,
+        task_create_date: today,
+        task_modified_date: today,
+      }));
+    return [...base, ...fromDrafts];
+  }, [
+    subTab,
+    updTierFocus,
+    tasksOfFocusTier,
+    updTaskEditId,
+    updKTime,
+    updKImpl,
+    updNewTaskDrafts,
+  ]);
+
+  const taskHourRollupForPricing = useMemo(() => {
+    if (subTab !== "update" || implementerHourGroups.length === 0) {
+      return null;
+    }
+    return rollUpTaskTimesByPricingGroup(tasksForHourRollup, implementerToGroup);
+  }, [subTab, implementerHourGroups, tasksForHourRollup, implementerToGroup]);
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
 
@@ -949,6 +999,7 @@ export function SolutionsBuilderPanel({
   }, [updTierFocus, subTab]);
 
   const startEditTier = (t: SolutionTier) => {
+    setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
     setUpdTOwner(t.solution_tier_owner ?? "");
@@ -1979,18 +2030,18 @@ export function SolutionsBuilderPanel({
                       value={`$${Math.round(fullPricingDerived.sellPrice).toLocaleString()}`}
                     />
                   </label>
-                  <div style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Optional</div>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Standalone sell</AdminFieldCaption>
-                    <input style={input} value={prStandalone} onChange={(e) => setPrStandalone(e.target.value)} />
-                  </label>
                   <label style={lbl}>
                     <AdminFieldCaption>Old price</AdminFieldCaption>
                     <input style={input} value={prOldPrice} onChange={(e) => setPrOldPrice(e.target.value)} />
                   </label>
                   <label style={lbl}>
                     <AdminFieldCaption>Percent change</AdminFieldCaption>
-                    <input style={input} value={prPctChg} onChange={(e) => setPrPctChg(e.target.value)} />
+                    <input
+                      style={{ ...input, cursor: "default" }}
+                      readOnly
+                      tabIndex={-1}
+                      value={prPercentFromOld.display}
+                    />
                   </label>
                   <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <input type="checkbox" checked={prReqCustom} onChange={(e) => setPrReqCustom(e.target.checked)} />
@@ -2437,7 +2488,10 @@ export function SolutionsBuilderPanel({
                     setOpErr={setOpErr}
                     setOpOk={setOpOk}
                     logAudit={logAudit}
-                    tierIdsInScope={tierIdsInUpdateScope.length > 0 ? tierIdsInUpdateScope : null}
+                    tierIdsInScope={updTierFocus ? [updTierFocus] : null}
+                    updateAutoLoadTierId={updTierFocus || null}
+                    taskDrivenHours={implementerHourGroups.length > 0}
+                    taskHourRollup={taskHourRollupForPricing}
                   />
                 </>
               )}

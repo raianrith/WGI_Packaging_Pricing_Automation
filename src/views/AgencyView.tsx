@@ -113,6 +113,48 @@ function tierIdsForPackage(
   );
 }
 
+function AgencyTierProse({ text }: { text: string }) {
+  return <div className="agency-tier-prose">{text}</div>;
+}
+
+function AgencyTierSubsection({
+  title,
+  text,
+  blockTitle: bt,
+}: {
+  title: string;
+  text: string;
+  blockTitle: CSSProperties;
+}) {
+  return (
+    <div className="agency-tier-sub">
+      <h4 className="agency-block-title" style={bt}>
+        {title}
+      </h4>
+      <AgencyTierProse text={text} />
+    </div>
+  );
+}
+
+function firstTierCategory(
+  t: SolutionTier
+): "desc" | "scope" | "process" | "selling" | "res" | null {
+  if (t.solution_tier_what_is_it || t.solution_tier_why_is_it_valuable || t.solution_tier_when_should_it_be_used)
+    return "desc";
+  if (
+    t.solution_tier_assumption_prerequisites ||
+    t.solution_tier_in_scope ||
+    t.solution_tier_out_of_scope ||
+    t.solution_tier_final_deliverable
+  )
+    return "scope";
+  if (t.solution_tier_how_do_we_get_this_work_done || t.solution_tier_direction || t.solution_tier_sop)
+    return "process";
+  if (t.solution_tier_described_to_client) return "selling";
+  if (t.solution_tier_resources) return "res";
+  return null;
+}
+
 export type AgencyWorkspaceMode = "package" | "catalog";
 
 type AgencyViewProps = {
@@ -1321,124 +1363,167 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </section>
                   )}
 
-                  {selectedTier.solution_tier_overview && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Overview
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_overview}</div>
-                    </section>
-                  )}
+                  {(() => {
+                    const t = selectedTier;
+                    const first = firstTierCategory(t);
+                    const hasDesc = Boolean(
+                      t.solution_tier_what_is_it ||
+                        t.solution_tier_why_is_it_valuable ||
+                        t.solution_tier_when_should_it_be_used
+                    );
+                    const hasScope = Boolean(
+                      t.solution_tier_assumption_prerequisites ||
+                        t.solution_tier_in_scope ||
+                        t.solution_tier_out_of_scope ||
+                        t.solution_tier_final_deliverable
+                    );
+                    const hasProcess = Boolean(
+                      t.solution_tier_how_do_we_get_this_work_done ||
+                        t.solution_tier_direction ||
+                        t.solution_tier_sop
+                    );
+                    const hasSelling = Boolean(t.solution_tier_described_to_client);
+                    const hasRes = Boolean(t.solution_tier_resources);
+                    return (
+                      <>
+                        {hasDesc ? (
+                          <section
+                            className={
+                              first === "desc"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Description</h3>
+                            {t.solution_tier_what_is_it ? (
+                              <AgencyTierSubsection
+                                title="What is it"
+                                text={t.solution_tier_what_is_it}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_why_is_it_valuable ? (
+                              <AgencyTierSubsection
+                                title="Why is it valuable"
+                                text={t.solution_tier_why_is_it_valuable}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_when_should_it_be_used ? (
+                              <AgencyTierSubsection
+                                title="When should it be used"
+                                text={t.solution_tier_when_should_it_be_used}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
 
-                  {selectedTier.solution_tier_what_is_it && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        What is it
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_what_is_it}</div>
-                    </section>
-                  )}
+                        {hasScope ? (
+                          <section
+                            className={
+                              first === "scope"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Scope</h3>
+                            {t.solution_tier_assumption_prerequisites ? (
+                              <AgencyTierSubsection
+                                title="Assumptions and prerequisites"
+                                text={t.solution_tier_assumption_prerequisites}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_in_scope ? (
+                              <AgencyTierSubsection
+                                title="What is included in scope"
+                                text={t.solution_tier_in_scope}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_out_of_scope ? (
+                              <AgencyTierSubsection
+                                title="What is not included in scope"
+                                text={t.solution_tier_out_of_scope}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_final_deliverable ? (
+                              <AgencyTierSubsection
+                                title="What is the final deliverable"
+                                text={t.solution_tier_final_deliverable}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
 
-                  {selectedTier.solution_tier_why_is_it_valuable && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Why is it valuable
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_why_is_it_valuable}</div>
-                    </section>
-                  )}
+                        {hasProcess ? (
+                          <section
+                            className={
+                              first === "process"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Process</h3>
+                            {t.solution_tier_how_do_we_get_this_work_done ? (
+                              <AgencyTierSubsection
+                                title="How we get this work done"
+                                text={t.solution_tier_how_do_we_get_this_work_done}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_sop ? (
+                              <AgencyTierSubsection title="SOP" text={t.solution_tier_sop} blockTitle={blockTitle} />
+                            ) : null}
+                            {t.solution_tier_direction ? (
+                              <AgencyTierSubsection
+                                title="Direction"
+                                text={t.solution_tier_direction}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
 
-                  {selectedTier.solution_tier_when_should_it_be_used && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        When should it be used
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_when_should_it_be_used}</div>
-                    </section>
-                  )}
+                        {hasSelling ? (
+                          <section
+                            className={
+                              first === "selling"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Selling</h3>
+                            {t.solution_tier_described_to_client ? (
+                              <AgencyTierSubsection
+                                title="How this can be described to the client"
+                                text={t.solution_tier_described_to_client}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
 
-                  {selectedTier.solution_tier_assumption_prerequisites && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Assumptions and prerequisites
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_assumption_prerequisites}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_in_scope && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        In scope
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_in_scope}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_out_of_scope && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Out of scope
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_out_of_scope}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_final_deliverable && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Final deliverable
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_final_deliverable}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_how_do_we_get_this_work_done && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        How we get this work done
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_how_do_we_get_this_work_done}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_direction && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Direction
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_direction}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_sop && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        SOP
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_sop}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_described_to_client && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        How this can be described to the client
-                      </h3>
-                      <div className="pre-wrap">{selectedTier.solution_tier_described_to_client}</div>
-                    </section>
-                  )}
-
-                  {selectedTier.solution_tier_resources && (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Resources
-                      </h3>
-                      <div className="pre-wrap">
-                        {selectedTier.solution_tier_resources}
-                      </div>
-                    </section>
-                  )}
+                        {hasRes ? (
+                          <section
+                            className={
+                              first === "res"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Resources</h3>
+                            <div className="agency-tier-sub">
+                              <AgencyTierProse text={t.solution_tier_resources ?? ""} />
+                            </div>
+                          </section>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </article>
 
                 <section className="agency-tasks-panel" style={tasksSection}>

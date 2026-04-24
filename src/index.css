@@ -861,6 +861,66 @@ button {
   flex-shrink: 0;
 }
 
+/* Tier detail copy: comfortable reading (sans, measure, line height) */
+.agency-tier-category {
+  margin-top: 1.75rem;
+  padding: 1.35rem 1.4rem 1.45rem;
+  border: 1px solid rgba(13, 92, 77, 0.14);
+  border-radius: 8px;
+  background: rgba(13, 92, 77, 0.035);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+.agency-tier-category.agency-tier-category--first {
+  margin-top: 1.1rem;
+  padding: 1.3rem 1.4rem 1.4rem;
+}
+
+.agency-tier-category__title {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #135d4a;
+  margin: 0 0 1.1rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(13, 92, 77, 0.18);
+}
+
+.agency-tier-sub {
+  margin-top: 1.7rem;
+}
+
+.agency-tier-sub:first-of-type {
+  margin-top: 0.35rem;
+}
+
+.agency-tier-prose {
+  max-width: 65ch;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 1.02rem;
+  line-height: 1.7;
+  letter-spacing: 0.012em;
+  color: #2b2a28;
+  font-weight: 450;
+  white-space: pre-line;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+@media (max-width: 40rem) {
+  .agency-tier-prose {
+    max-width: none;
+  }
+
+  .agency-tier-category,
+  .agency-tier-category.agency-tier-category--first {
+    padding-left: 1.05rem;
+    padding-right: 1.05rem;
+  }
+}
+
 .agency-task-table tbody tr {
   transition: background 0.12s ease;
 }
@@ -1252,6 +1312,12 @@ button {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
+}
+
+/* Save / create result messages sit under tab navigation, above the form (not under the page hero). */
+.admin-workspace__op-messages {
+  margin: 0 0 0.6rem;
+  scroll-margin-top: 0.5rem;
 }
 
 .admin-tabs {

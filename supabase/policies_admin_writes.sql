@@ -84,3 +84,18 @@ drop policy if exists "Allow read changelog" on public.audit_log;
 drop policy if exists "Allow insert changelog" on public.audit_log;
 create policy "Allow read changelog" on public.audit_log for select using (true);
 create policy "Allow insert changelog" on public.audit_log for insert with check (true);
+
+-- After supabase/implementer_pricing_hour_groups.sql (table must exist)
+alter table public.implementer_pricing_hour_groups enable row level security;
+drop policy if exists "Allow read implementer_pricing_hour_groups" on public.implementer_pricing_hour_groups;
+drop policy if exists "Allow insert implementer_pricing_hour_groups" on public.implementer_pricing_hour_groups;
+drop policy if exists "Allow update implementer_pricing_hour_groups" on public.implementer_pricing_hour_groups;
+drop policy if exists "Allow delete implementer_pricing_hour_groups" on public.implementer_pricing_hour_groups;
+create policy "Allow read implementer_pricing_hour_groups"
+  on public.implementer_pricing_hour_groups for select using (true);
+create policy "Allow insert implementer_pricing_hour_groups"
+  on public.implementer_pricing_hour_groups for insert with check (true);
+create policy "Allow update implementer_pricing_hour_groups"
+  on public.implementer_pricing_hour_groups for update using (true);
+create policy "Allow delete implementer_pricing_hour_groups"
+  on public.implementer_pricing_hour_groups for delete using (true);

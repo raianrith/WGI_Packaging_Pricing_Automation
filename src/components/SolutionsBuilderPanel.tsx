@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
@@ -91,6 +99,54 @@ function optNum(s: string): number | null {
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+function firstTaskMatchingName(tasks: TaskRow[], name: string): TaskRow | null {
+  const t = name.trim();
+  if (!t) return null;
+  for (const k of tasks) {
+    if (k.task_name.trim() === t) return k;
+  }
+  return null;
+}
+
+function autofillFromTask(t: TaskRow) {
+  return {
+    impl: t.task_implementer ?? "",
+    time: t.task_time != null ? String(t.task_time) : "",
+    dur: t.task_duration != null ? String(t.task_duration) : "",
+    dep: t.task_dependencies ?? "",
+    notes: t.task_notes ?? "",
+  };
+}
+
+function TaskImplementerSelect({
+  value,
+  options,
+  inputStyle,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  inputStyle: CSSProperties;
+  onChange: (value: string) => void;
+}) {
+  const merged = useMemo(() => {
+    const s = new Set(options);
+    const out = [...options];
+    if (value.trim() && !s.has(value)) out.push(value);
+    return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [options, value]);
+  return (
+    <select style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">—</option>
+      {merged.map((x) => (
+        <option key={x} value={x}>
+          {x}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 type CreateBranch = null | "full" | "tier_only";
@@ -247,12 +303,20 @@ export function SolutionsBuilderPanel({
 
   const [tName, setTName] = useState("");
   const [tOwner, setTOwner] = useState("");
-  const [tOverview, setTOverview] = useState("");
-  const [tLink, setTLink] = useState("");
-  const [tDirection, setTDirection] = useState("");
   const [tSop, setTSop] = useState("");
+  const [tWhatIsIt, setTWhatIsIt] = useState("");
+  const [tWhyValuable, setTWhyValuable] = useState("");
+  const [tWhenUsed, setTWhenUsed] = useState("");
+  const [tAssumptionPrereq, setTAssumptionPrereq] = useState("");
+  const [tInScope, setTInScope] = useState("");
+  const [tOutScope, setTOutScope] = useState("");
+  const [tFinalDeliverable, setTFinalDeliverable] = useState("");
+  const [tHowWorkDone, setTHowWorkDone] = useState("");
+  const [tDescribedToClient, setTDescribedToClient] = useState("");
   const [tRes, setTRes] = useState("");
 
+  /** When set, new tier inserts also copy hidden legacy fields (overview, link, direction) from this row. */
+  const [createAutofillFrom, setCreateAutofillFrom] = useState<SolutionTier | null>(null);
   const [draftTasks, setDraftTasks] = useState<DraftTaskRow[]>([newDraftTaskRow()]);
 
   const [prSolLabel, setPrSolLabel] = useState("");
@@ -288,11 +352,18 @@ export function SolutionsBuilderPanel({
     setSolNameDraft("");
     setTName("");
     setTOwner("");
-    setTOverview("");
-    setTLink("");
-    setTDirection("");
     setTSop("");
+    setTWhatIsIt("");
+    setTWhyValuable("");
+    setTWhenUsed("");
+    setTAssumptionPrereq("");
+    setTInScope("");
+    setTOutScope("");
+    setTFinalDeliverable("");
+    setTHowWorkDone("");
+    setTDescribedToClient("");
     setTRes("");
+    setCreateAutofillFrom(null);
     setDraftTasks([newDraftTaskRow()]);
     setPrSolLabel("");
     setPrTierLabel("");
@@ -332,6 +403,57 @@ export function SolutionsBuilderPanel({
   const previewTierId = useMemo(() => nextAutoTierId(tiers), [tiers]);
   const previewSolutionId = useMemo(() => nextAutoSolutionId(solutions), [solutions]);
   const previewTaskId = useMemo(() => nextAutoTaskId(tasks), [tasks]);
+  const taskNameDatalistId = useId();
+  const sortedTaskNamesForDatalist = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const k of tasks) {
+      const n = k.task_name.trim();
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
+    return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [tasks]);
+  const distinctImplementerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const k of tasks) {
+      const v = (k.task_implementer ?? "").trim();
+      if (v) seen.add(v);
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [tasks]);
+
+  const sortedTiersForAutofill = useMemo(
+    () => [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id)),
+    [tiers]
+  );
+  const solutionNameForTier = (solutionId: string) =>
+    solutions.find((s) => s.solution_id === solutionId)?.solution_name ?? solutionId;
+
+  const onCreateAutofillSelect = (value: string) => {
+    if (!value) {
+      setCreateAutofillFrom(null);
+      return;
+    }
+    const t = tiers.find((x) => x.solution_tier_id === value);
+    if (!t) return;
+    setCreateAutofillFrom(t);
+    setTName(t.solution_tier_name);
+    setTOwner(t.solution_tier_owner ?? "");
+    setTSop(t.solution_tier_sop ?? "");
+    setTWhatIsIt(t.solution_tier_what_is_it ?? "");
+    setTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
+    setTWhenUsed(t.solution_tier_when_should_it_be_used ?? "");
+    setTAssumptionPrereq(t.solution_tier_assumption_prerequisites ?? "");
+    setTInScope(t.solution_tier_in_scope ?? "");
+    setTOutScope(t.solution_tier_out_of_scope ?? "");
+    setTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
+    setTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
+    setTDescribedToClient(t.solution_tier_described_to_client ?? "");
+    setTRes(t.solution_tier_resources ?? "");
+  };
 
   const fullPricingHours = useMemo(
     () => ({
@@ -405,16 +527,26 @@ export function SolutionsBuilderPanel({
       after: rowJson(solRow),
     });
 
+    const leg = createAutofillFrom;
     const tierRow: SolutionTier = {
       solution_tier_id: tierId,
       solution_id: solId,
       solution_tier_name: tierName,
       solution_tier_owner: blankToNull(tOwner),
-      solution_tier_overview: blankToNull(tOverview),
-      solution_tier_overview_link: blankToNull(tLink),
-      solution_tier_direction: blankToNull(tDirection),
+      solution_tier_overview: leg ? leg.solution_tier_overview : null,
+      solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
+      solution_tier_direction: leg ? leg.solution_tier_direction : null,
       solution_tier_sop: blankToNull(tSop),
       solution_tier_resources: blankToNull(tRes),
+      solution_tier_what_is_it: blankToNull(tWhatIsIt),
+      solution_tier_why_is_it_valuable: blankToNull(tWhyValuable),
+      solution_tier_when_should_it_be_used: blankToNull(tWhenUsed),
+      solution_tier_assumption_prerequisites: blankToNull(tAssumptionPrereq),
+      solution_tier_in_scope: blankToNull(tInScope),
+      solution_tier_out_of_scope: blankToNull(tOutScope),
+      solution_tier_final_deliverable: blankToNull(tFinalDeliverable),
+      solution_tier_how_do_we_get_this_work_done: blankToNull(tHowWorkDone),
+      solution_tier_described_to_client: blankToNull(tDescribedToClient),
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -544,16 +676,26 @@ export function SolutionsBuilderPanel({
     }
     const today = todayISODate();
     const id = nextAutoTierId(tiers);
+    const leg = createAutofillFrom;
     const row: SolutionTier = {
       solution_tier_id: id,
       solution_id: solId,
       solution_tier_name: name,
       solution_tier_owner: blankToNull(tOwner),
-      solution_tier_overview: blankToNull(tOverview),
-      solution_tier_overview_link: blankToNull(tLink),
-      solution_tier_direction: blankToNull(tDirection),
+      solution_tier_overview: leg ? leg.solution_tier_overview : null,
+      solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
+      solution_tier_direction: leg ? leg.solution_tier_direction : null,
       solution_tier_sop: blankToNull(tSop),
       solution_tier_resources: blankToNull(tRes),
+      solution_tier_what_is_it: blankToNull(tWhatIsIt),
+      solution_tier_why_is_it_valuable: blankToNull(tWhyValuable),
+      solution_tier_when_should_it_be_used: blankToNull(tWhenUsed),
+      solution_tier_assumption_prerequisites: blankToNull(tAssumptionPrereq),
+      solution_tier_in_scope: blankToNull(tInScope),
+      solution_tier_out_of_scope: blankToNull(tOutScope),
+      solution_tier_final_deliverable: blankToNull(tFinalDeliverable),
+      solution_tier_how_do_we_get_this_work_done: blankToNull(tHowWorkDone),
+      solution_tier_described_to_client: blankToNull(tDescribedToClient),
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -575,11 +717,18 @@ export function SolutionsBuilderPanel({
     setDraftTasks([newDraftTaskRow()]);
     setTName("");
     setTOwner("");
-    setTOverview("");
-    setTLink("");
-    setTDirection("");
     setTSop("");
+    setTWhatIsIt("");
+    setTWhyValuable("");
+    setTWhenUsed("");
+    setTAssumptionPrereq("");
+    setTInScope("");
+    setTOutScope("");
+    setTFinalDeliverable("");
+    setTHowWorkDone("");
+    setTDescribedToClient("");
     setTRes("");
+    setCreateAutofillFrom(null);
     setOpOk(`Tier created as ${id}. Add every task for this tier, then save and continue to pricing.`);
     await onSaved();
   };
@@ -638,6 +787,17 @@ export function SolutionsBuilderPanel({
     setDraftTasks((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
 
+  const onDraftTaskNameChange = (key: string, value: string) => {
+    setDraftTasks((list) =>
+      list.map((r) => {
+        if (r.key !== key) return r;
+        const m = firstTaskMatchingName(tasks, value);
+        if (m) return { ...r, name: value, ...autofillFromTask(m) };
+        return { ...r, name: value };
+      })
+    );
+  };
+
   const addDraftTaskRow = () => {
     setDraftTasks((list) => [...list, newDraftTaskRow()]);
   };
@@ -654,11 +814,19 @@ export function SolutionsBuilderPanel({
   const [updTierEditId, setUpdTierEditId] = useState<string | null>(null);
   const [updTName, setUpdTName] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
-  const [updTOverview, setUpdTOverview] = useState("");
-  const [updTLink, setUpdTLink] = useState("");
-  const [updTDirection, setUpdTDirection] = useState("");
   const [updTSop, setUpdTSop] = useState("");
+  const [updTWhatIsIt, setUpdTWhatIsIt] = useState("");
+  const [updTWhyValuable, setUpdTWhyValuable] = useState("");
+  const [updTWhenUsed, setUpdTWhenUsed] = useState("");
+  const [updTAssumptionPrereq, setUpdTAssumptionPrereq] = useState("");
+  const [updTInScope, setUpdTInScope] = useState("");
+  const [updTOutScope, setUpdTOutScope] = useState("");
+  const [updTFinalDeliverable, setUpdTFinalDeliverable] = useState("");
+  const [updTHowWorkDone, setUpdTHowWorkDone] = useState("");
+  const [updTDescribedToClient, setUpdTDescribedToClient] = useState("");
   const [updTRes, setUpdTRes] = useState("");
+  /** When set, tier save uses legacy fields (overview, link, direction) from this source. */
+  const [updAutofillFrom, setUpdAutofillFrom] = useState<SolutionTier | null>(null);
 
   const [updTaskEditId, setUpdTaskEditId] = useState<string | null>(null);
   const [updKName, setUpdKName] = useState("");
@@ -691,6 +859,38 @@ export function SolutionsBuilderPanel({
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
 
+  const updTiersForAutofill = useMemo(
+    () =>
+      updTierEditId
+        ? sortedTiersForAutofill.filter((t) => t.solution_tier_id !== updTierEditId)
+        : sortedTiersForAutofill,
+    [sortedTiersForAutofill, updTierEditId]
+  );
+
+  const onUpdAutofillSelect = (value: string) => {
+    if (!value) {
+      setUpdAutofillFrom(null);
+      return;
+    }
+    const t = tiers.find((x) => x.solution_tier_id === value);
+    if (!t) return;
+    if (updTierEditId && t.solution_tier_id === updTierEditId) return;
+    setUpdAutofillFrom(t);
+    setUpdTName(t.solution_tier_name);
+    setUpdTOwner(t.solution_tier_owner ?? "");
+    setUpdTSop(t.solution_tier_sop ?? "");
+    setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
+    setUpdTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
+    setUpdTWhenUsed(t.solution_tier_when_should_it_be_used ?? "");
+    setUpdTAssumptionPrereq(t.solution_tier_assumption_prerequisites ?? "");
+    setUpdTInScope(t.solution_tier_in_scope ?? "");
+    setUpdTOutScope(t.solution_tier_out_of_scope ?? "");
+    setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
+    setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
+    setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
+    setUpdTRes(t.solution_tier_resources ?? "");
+  };
+
   useEffect(() => {
     if (subTab !== "update") return;
     if (solutions.length === 0) {
@@ -719,11 +919,18 @@ export function SolutionsBuilderPanel({
     setUpdTierEditId(null);
     setUpdTName("");
     setUpdTOwner("");
-    setUpdTOverview("");
-    setUpdTLink("");
-    setUpdTDirection("");
     setUpdTSop("");
+    setUpdTWhatIsIt("");
+    setUpdTWhyValuable("");
+    setUpdTWhenUsed("");
+    setUpdTAssumptionPrereq("");
+    setUpdTInScope("");
+    setUpdTOutScope("");
+    setUpdTFinalDeliverable("");
+    setUpdTHowWorkDone("");
+    setUpdTDescribedToClient("");
     setUpdTRes("");
+    setUpdAutofillFrom(null);
   };
 
   const clearTaskUpdateForm = () => {
@@ -745,11 +952,18 @@ export function SolutionsBuilderPanel({
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
     setUpdTOwner(t.solution_tier_owner ?? "");
-    setUpdTOverview(t.solution_tier_overview ?? "");
-    setUpdTLink(t.solution_tier_overview_link ?? "");
-    setUpdTDirection(t.solution_tier_direction ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
+    setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
+    setUpdTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
+    setUpdTWhenUsed(t.solution_tier_when_should_it_be_used ?? "");
+    setUpdTAssumptionPrereq(t.solution_tier_assumption_prerequisites ?? "");
+    setUpdTInScope(t.solution_tier_in_scope ?? "");
+    setUpdTOutScope(t.solution_tier_out_of_scope ?? "");
+    setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
+    setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
+    setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
     setUpdTRes(t.solution_tier_resources ?? "");
+    setUpdAutofillFrom(null);
   };
 
   const saveUpdateSolution = async () => {
@@ -821,15 +1035,28 @@ export function SolutionsBuilderPanel({
     setOpErr(null);
     setOpOk(null);
     const today = todayISODate();
+    const prevTier = updTierEditId ? tiers.find((x) => x.solution_tier_id === updTierEditId) : null;
+    const legU = updAutofillFrom;
     const payload = {
       solution_id: updSolutionId,
       solution_tier_name: updTName.trim(),
       solution_tier_owner: blankToNull(updTOwner),
-      solution_tier_overview: blankToNull(updTOverview),
-      solution_tier_overview_link: blankToNull(updTLink),
-      solution_tier_direction: blankToNull(updTDirection),
+      solution_tier_overview: legU ? legU.solution_tier_overview : (prevTier?.solution_tier_overview ?? null),
+      solution_tier_overview_link: legU
+        ? legU.solution_tier_overview_link
+        : (prevTier?.solution_tier_overview_link ?? null),
+      solution_tier_direction: legU ? legU.solution_tier_direction : (prevTier?.solution_tier_direction ?? null),
       solution_tier_sop: blankToNull(updTSop),
       solution_tier_resources: blankToNull(updTRes),
+      solution_tier_what_is_it: blankToNull(updTWhatIsIt),
+      solution_tier_why_is_it_valuable: blankToNull(updTWhyValuable),
+      solution_tier_when_should_it_be_used: blankToNull(updTWhenUsed),
+      solution_tier_assumption_prerequisites: blankToNull(updTAssumptionPrereq),
+      solution_tier_in_scope: blankToNull(updTInScope),
+      solution_tier_out_of_scope: blankToNull(updTOutScope),
+      solution_tier_final_deliverable: blankToNull(updTFinalDeliverable),
+      solution_tier_how_do_we_get_this_work_done: blankToNull(updTHowWorkDone),
+      solution_tier_described_to_client: blankToNull(updTDescribedToClient),
       solution_tier_modified_date: today,
     };
     if (!payload.solution_tier_name) {
@@ -870,6 +1097,15 @@ export function SolutionsBuilderPanel({
       solution_tier_direction: payload.solution_tier_direction,
       solution_tier_sop: payload.solution_tier_sop,
       solution_tier_resources: payload.solution_tier_resources,
+      solution_tier_what_is_it: payload.solution_tier_what_is_it,
+      solution_tier_why_is_it_valuable: payload.solution_tier_why_is_it_valuable,
+      solution_tier_when_should_it_be_used: payload.solution_tier_when_should_it_be_used,
+      solution_tier_assumption_prerequisites: payload.solution_tier_assumption_prerequisites,
+      solution_tier_in_scope: payload.solution_tier_in_scope,
+      solution_tier_out_of_scope: payload.solution_tier_out_of_scope,
+      solution_tier_final_deliverable: payload.solution_tier_final_deliverable,
+      solution_tier_how_do_we_get_this_work_done: payload.solution_tier_how_do_we_get_this_work_done,
+      solution_tier_described_to_client: payload.solution_tier_described_to_client,
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -1038,6 +1274,57 @@ export function SolutionsBuilderPanel({
     setUpdKNotes(k.task_notes ?? "");
   };
 
+  const createTierAutofillBlock = (
+    <>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Autofill from existing tier</AdminFieldCaption>
+        <select
+          style={input}
+          value={createAutofillFrom?.solution_tier_id ?? ""}
+          onChange={(e) => onCreateAutofillSelect(e.target.value)}
+          disabled={tiers.length === 0}
+        >
+          <option value="">{tiers.length === 0 ? "No tiers in database" : "— Optional —"}</option>
+          {sortedTiersForAutofill.map((t) => (
+            <option key={t.solution_tier_id} value={t.solution_tier_id}>
+              {t.solution_tier_id} — {t.solution_tier_name} ({solutionNameForTier(t.solution_id)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
+        Fills every field below (and copies overview, link, and direction on save). Clear the list to use blank legacy
+        fields.
+      </p>
+    </>
+  );
+
+  const updateTierAutofillBlock = (
+    <>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Autofill from existing tier</AdminFieldCaption>
+        <select
+          style={input}
+          value={updAutofillFrom?.solution_tier_id ?? ""}
+          onChange={(e) => onUpdAutofillSelect(e.target.value)}
+          disabled={updTiersForAutofill.length === 0}
+        >
+          <option value="">
+            {updTiersForAutofill.length === 0 ? "No other tiers to copy" : "— Optional —"}
+          </option>
+          {updTiersForAutofill.map((t) => (
+            <option key={t.solution_tier_id} value={t.solution_tier_id}>
+              {t.solution_tier_id} — {t.solution_tier_name} ({solutionNameForTier(t.solution_id)})
+            </option>
+          ))}
+        </select>
+      </label>
+      <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
+        Fills the form; when editing, overview/link/direction are only overwritten if you pick a source tier.
+      </p>
+    </>
+  );
+
   const tierFormTierOnly = (
     <>
       <label style={lbl}>
@@ -1062,22 +1349,72 @@ export function SolutionsBuilderPanel({
         <AdminFieldCaption>Owner</AdminFieldCaption>
         <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
       </label>
+      {createTierAutofillBlock}
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Overview</AdminFieldCaption>
-        <textarea style={textarea} rows={3} value={tOverview} onChange={(e) => setTOverview(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Overview link</AdminFieldCaption>
-        <input style={input} value={tLink} onChange={(e) => setTLink(e.target.value)} />
+        <AdminFieldCaption>What is it</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tWhatIsIt} onChange={(e) => setTWhatIsIt(e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Direction</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tDirection} onChange={(e) => setTDirection(e.target.value)} />
+        <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tWhyValuable} onChange={(e) => setTWhyValuable(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>When should it be used</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tWhenUsed} onChange={(e) => setTWhenUsed(e.target.value)} />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={tAssumptionPrereq}
+          onChange={(e) => setTAssumptionPrereq(e.target.value)}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is included in scope</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tInScope} onChange={(e) => setTInScope(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tOutScope} onChange={(e) => setTOutScope(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={tFinalDeliverable}
+          onChange={(e) => setTFinalDeliverable(e.target.value)}
+        />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={tHowWorkDone} onChange={(e) => setTHowWorkDone(e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>SOP</AdminFieldCaption>
         <textarea style={textarea} rows={2} value={tSop} onChange={(e) => setTSop(e.target.value)} />
       </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={tDescribedToClient}
+          onChange={(e) => setTDescribedToClient(e.target.value)}
+        />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Resources</AdminFieldCaption>
         <textarea style={textarea} rows={2} value={tRes} onChange={(e) => setTRes(e.target.value)} />
@@ -1105,22 +1442,87 @@ export function SolutionsBuilderPanel({
         <AdminFieldCaption>Owner</AdminFieldCaption>
         <input style={input} value={updTOwner} onChange={(e) => setUpdTOwner(e.target.value)} />
       </label>
+      {updateTierAutofillBlock}
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Overview</AdminFieldCaption>
-        <textarea style={textarea} rows={3} value={updTOverview} onChange={(e) => setUpdTOverview(e.target.value)} />
-      </label>
-      <label style={lbl}>
-        <AdminFieldCaption>Overview link</AdminFieldCaption>
-        <input style={input} value={updTLink} onChange={(e) => setUpdTLink(e.target.value)} />
+        <AdminFieldCaption>What is it</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={updTWhatIsIt} onChange={(e) => setUpdTWhatIsIt(e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Direction</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTDirection} onChange={(e) => setUpdTDirection(e.target.value)} />
+        <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTWhyValuable}
+          onChange={(e) => setUpdTWhyValuable(e.target.value)}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>When should it be used</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTWhenUsed}
+          onChange={(e) => setUpdTWhenUsed(e.target.value)}
+        />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTAssumptionPrereq}
+          onChange={(e) => setUpdTAssumptionPrereq(e.target.value)}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is included in scope</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={updTInScope} onChange={(e) => setUpdTInScope(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
+        <textarea style={textarea} rows={2} value={updTOutScope} onChange={(e) => setUpdTOutScope(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTFinalDeliverable}
+          onChange={(e) => setUpdTFinalDeliverable(e.target.value)}
+        />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTHowWorkDone}
+          onChange={(e) => setUpdTHowWorkDone(e.target.value)}
+        />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>SOP</AdminFieldCaption>
         <textarea style={textarea} rows={2} value={updTSop} onChange={(e) => setUpdTSop(e.target.value)} />
       </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
+        <textarea
+          style={textarea}
+          rows={2}
+          value={updTDescribedToClient}
+          onChange={(e) => setUpdTDescribedToClient(e.target.value)}
+        />
+      </label>
+
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Resources</AdminFieldCaption>
         <textarea style={textarea} rows={2} value={updTRes} onChange={(e) => setUpdTRes(e.target.value)} />
@@ -1131,6 +1533,30 @@ export function SolutionsBuilderPanel({
   const updateUpdNewDraft = (key: string, patch: Partial<DraftTaskRow>) => {
     setUpdNewTaskDrafts((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
+
+  const onUpdNewTaskNameChange = (key: string, value: string) => {
+    setUpdNewTaskDrafts((list) =>
+      list.map((r) => {
+        if (r.key !== key) return r;
+        const m = firstTaskMatchingName(tasks, value);
+        if (m) return { ...r, name: value, ...autofillFromTask(m) };
+        return { ...r, name: value };
+      })
+    );
+  };
+
+  const onUpdateTabEditTaskNameChange = (value: string) => {
+    setUpdKName(value);
+    const m = firstTaskMatchingName(tasks, value);
+    if (m) {
+      setUpdKImpl(m.task_implementer ?? "");
+      setUpdKTime(m.task_time != null ? String(m.task_time) : "");
+      setUpdKDur(m.task_duration != null ? String(m.task_duration) : "");
+      setUpdKDep(m.task_dependencies ?? "");
+      setUpdKNotes(m.task_notes ?? "");
+    }
+  };
+
   const addUpdNewDraftRow = () => {
     setUpdNewTaskDrafts((list) => [...list, newDraftTaskRow()]);
   };
@@ -1146,11 +1572,21 @@ export function SolutionsBuilderPanel({
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Task name</AdminFieldCaption>
-        <input style={input} value={updKName} onChange={(e) => setUpdKName(e.target.value)} />
+        <input
+          style={input}
+          list={taskNameDatalistId}
+          value={updKName}
+          onChange={(e) => onUpdateTabEditTaskNameChange(e.target.value)}
+        />
       </label>
       <label style={lbl}>
         <AdminFieldCaption>Implementer</AdminFieldCaption>
-        <input style={input} value={updKImpl} onChange={(e) => setUpdKImpl(e.target.value)} />
+        <TaskImplementerSelect
+          value={updKImpl}
+          options={distinctImplementerOptions}
+          inputStyle={input}
+          onChange={setUpdKImpl}
+        />
       </label>
       <label style={lbl}>
         <AdminFieldCaption>Time</AdminFieldCaption>
@@ -1173,6 +1609,11 @@ export function SolutionsBuilderPanel({
 
   return (
     <section className="admin-panel admin-panel--editor" style={panel}>
+      <datalist id={taskNameDatalistId}>
+        {sortedTaskNamesForDatalist.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
       <div className="admin-editor-layout admin-editor-layout--wide">
         <h2 style={h2}>Solutions Builder</h2>
         <p className="admin-intro" style={muted}>
@@ -1262,22 +1703,87 @@ export function SolutionsBuilderPanel({
                     <AdminFieldCaption>Owner</AdminFieldCaption>
                     <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
                   </label>
+                  {createTierAutofillBlock}
+
+                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Overview</AdminFieldCaption>
-                    <textarea style={textarea} rows={3} value={tOverview} onChange={(e) => setTOverview(e.target.value)} />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Overview link</AdminFieldCaption>
-                    <input style={input} value={tLink} onChange={(e) => setTLink(e.target.value)} />
+                    <AdminFieldCaption>What is it</AdminFieldCaption>
+                    <textarea style={textarea} rows={2} value={tWhatIsIt} onChange={(e) => setTWhatIsIt(e.target.value)} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Direction</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tDirection} onChange={(e) => setTDirection(e.target.value)} />
+                    <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tWhyValuable}
+                      onChange={(e) => setTWhyValuable(e.target.value)}
+                    />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>When should it be used</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tWhenUsed}
+                      onChange={(e) => setTWhenUsed(e.target.value)}
+                    />
+                  </label>
+
+                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tAssumptionPrereq}
+                      onChange={(e) => setTAssumptionPrereq(e.target.value)}
+                    />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>What is included in scope</AdminFieldCaption>
+                    <textarea style={textarea} rows={2} value={tInScope} onChange={(e) => setTInScope(e.target.value)} />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
+                    <textarea style={textarea} rows={2} value={tOutScope} onChange={(e) => setTOutScope(e.target.value)} />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tFinalDeliverable}
+                      onChange={(e) => setTFinalDeliverable(e.target.value)}
+                    />
+                  </label>
+
+                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tHowWorkDone}
+                      onChange={(e) => setTHowWorkDone(e.target.value)}
+                    />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>SOP</AdminFieldCaption>
                     <textarea style={textarea} rows={2} value={tSop} onChange={(e) => setTSop(e.target.value)} />
                   </label>
+
+                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
+                    <textarea
+                      style={textarea}
+                      rows={2}
+                      value={tDescribedToClient}
+                      onChange={(e) => setTDescribedToClient(e.target.value)}
+                    />
+                  </label>
+
+                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Resources</AdminFieldCaption>
                     <textarea style={textarea} rows={2} value={tRes} onChange={(e) => setTRes(e.target.value)} />
@@ -1315,15 +1821,17 @@ export function SolutionsBuilderPanel({
                           <td style={td}>
                             <input
                               style={input}
+                              list={taskNameDatalistId}
                               value={d.name}
-                              onChange={(e) => updateDraftRow(d.key, { name: e.target.value })}
+                              onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                             />
                           </td>
                           <td style={td}>
-                            <input
-                              style={input}
+                            <TaskImplementerSelect
                               value={d.impl}
-                              onChange={(e) => updateDraftRow(d.key, { impl: e.target.value })}
+                              options={distinctImplementerOptions}
+                              inputStyle={input}
+                              onChange={(v) => updateDraftRow(d.key, { impl: v })}
                             />
                           </td>
                           <td style={td}>
@@ -1565,15 +2073,17 @@ export function SolutionsBuilderPanel({
                           <td style={td}>
                             <input
                               style={input}
+                              list={taskNameDatalistId}
                               value={d.name}
-                              onChange={(e) => updateDraftRow(d.key, { name: e.target.value })}
+                              onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                             />
                           </td>
                           <td style={td}>
-                            <input
-                              style={input}
+                            <TaskImplementerSelect
                               value={d.impl}
-                              onChange={(e) => updateDraftRow(d.key, { impl: e.target.value })}
+                              options={distinctImplementerOptions}
+                              inputStyle={input}
+                              onChange={(v) => updateDraftRow(d.key, { impl: v })}
                             />
                           </td>
                           <td style={td}>
@@ -1842,15 +2352,17 @@ export function SolutionsBuilderPanel({
                                 <td style={td}>
                                   <input
                                     style={input}
+                                    list={taskNameDatalistId}
                                     value={d.name}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { name: e.target.value })}
+                                    onChange={(e) => onUpdNewTaskNameChange(d.key, e.target.value)}
                                   />
                                 </td>
                                 <td style={td}>
-                                  <input
-                                    style={input}
+                                  <TaskImplementerSelect
                                     value={d.impl}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { impl: e.target.value })}
+                                    options={distinctImplementerOptions}
+                                    inputStyle={input}
+                                    onChange={(v) => updateUpdNewDraft(d.key, { impl: v })}
                                   />
                                 </td>
                                 <td style={td}>

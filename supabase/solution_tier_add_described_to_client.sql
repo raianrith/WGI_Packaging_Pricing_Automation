@@ -1,0 +1,5 @@
+-- (Superseded) This column is included in supabase/solution_tiers_add_context_columns.sql
+-- If you only need this one column, run:
+--
+--   alter table public.solution_tiers
+--     add column if not exists solution_tier_described_to_client text;

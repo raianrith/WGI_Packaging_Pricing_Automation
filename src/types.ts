@@ -29,6 +29,16 @@ export type SolutionTier = {
   solution_tier_direction: string | null;
   solution_tier_sop: string | null;
   solution_tier_resources: string | null;
+  solution_tier_what_is_it: string | null;
+  solution_tier_why_is_it_valuable: string | null;
+  solution_tier_when_should_it_be_used: string | null;
+  solution_tier_assumption_prerequisites: string | null;
+  solution_tier_in_scope: string | null;
+  solution_tier_out_of_scope: string | null;
+  solution_tier_final_deliverable: string | null;
+  solution_tier_how_do_we_get_this_work_done: string | null;
+  /** Selling: how the solution can be described to the client. */
+  solution_tier_described_to_client: string | null;
   solution_tier_created_date: string;
   solution_tier_modified_date: string;
 };

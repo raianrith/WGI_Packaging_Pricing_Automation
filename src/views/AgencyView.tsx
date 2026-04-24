@@ -1330,6 +1330,78 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </section>
                   )}
 
+                  {selectedTier.solution_tier_what_is_it && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        What is it
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_what_is_it}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_why_is_it_valuable && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        Why is it valuable
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_why_is_it_valuable}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_when_should_it_be_used && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        When should it be used
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_when_should_it_be_used}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_assumption_prerequisites && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        Assumptions and prerequisites
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_assumption_prerequisites}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_in_scope && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        In scope
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_in_scope}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_out_of_scope && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        Out of scope
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_out_of_scope}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_final_deliverable && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        Final deliverable
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_final_deliverable}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_how_do_we_get_this_work_done && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        How we get this work done
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_how_do_we_get_this_work_done}</div>
+                    </section>
+                  )}
+
                   {selectedTier.solution_tier_direction && (
                     <section style={block}>
                       <h3 className="agency-block-title" style={blockTitle}>
@@ -1345,6 +1417,15 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         SOP
                       </h3>
                       <div className="pre-wrap">{selectedTier.solution_tier_sop}</div>
+                    </section>
+                  )}
+
+                  {selectedTier.solution_tier_described_to_client && (
+                    <section style={block}>
+                      <h3 className="agency-block-title" style={blockTitle}>
+                        How this can be described to the client
+                      </h3>
+                      <div className="pre-wrap">{selectedTier.solution_tier_described_to_client}</div>
                     </section>
                   )}
 

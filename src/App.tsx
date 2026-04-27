@@ -2,11 +2,11 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { APP_TITLE } from "./branding";
 import { isAgencyRoute } from "./lib/agencyRoutes";
 import { AdminGate } from "./components/AdminGate";
-import { GlobalKpiStrip } from "./components/GlobalKpiStrip";
 import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
 import { AgencyTabsShell } from "./views/AgencyTabsShell";
 import { AgencyView } from "./views/AgencyView";
 import { AdminView } from "./views/AdminView";
+import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
 
 export default function App() {
   const location = useLocation();
@@ -33,6 +33,14 @@ export default function App() {
               Agency
             </NavLink>
             <NavLink
+              to="/roadmap"
+              className={({ isActive }) =>
+                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
+              }
+            >
+              Roadmap planning
+            </NavLink>
+            <NavLink
               to="/admin"
               className={({ isActive }) =>
                 `app-module-tab${isActive ? " app-module-tab--active" : ""}`
@@ -43,9 +51,9 @@ export default function App() {
           </nav>
         </div>
       </header>
-      <GlobalKpiStrip />
       <Routes>
         <Route path="/catalog" element={<Navigate to="/" replace />} />
+        <Route path="/roadmap" element={<RoadmapPlanningView />} />
         <Route path="/" element={<AgencyTabsShell />}>
           <Route index element={<AgencyView mode="catalog" />} />
           <Route path="packages" element={<AgencyPackagesRedirect />} />

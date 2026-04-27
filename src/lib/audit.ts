@@ -6,7 +6,10 @@ export type EntityType =
   | "solution_tiers"
   | "solution_tier_pricing"
   | "package_solution_tiers"
-  | "tasks";
+  | "tasks"
+  | "task_groups"
+  | "task_group_lines"
+  | "solution_tier_task_group_applied";
 
 export type AuditAction = "insert" | "update" | "delete";
 

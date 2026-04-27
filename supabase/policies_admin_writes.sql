@@ -10,6 +10,17 @@ alter table public.tasks enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.solution_tier_pricing enable row level security;
 alter table public.package_solution_tiers enable row level security;
+do $$
+begin
+  if to_regclass('public.task_group_templates') is not null then
+    alter table public.task_group_templates enable row level security;
+  end if;
+  if to_regclass('public.task_groups') is not null then
+    alter table public.task_groups enable row level security;
+    alter table public.task_group_lines enable row level security;
+    alter table public.solution_tier_task_group_applied enable row level security;
+  end if;
+end $$;
 
 -- Read policies (agency + admin)
 drop policy if exists "Allow read packages" on public.packages;
@@ -78,6 +89,48 @@ create policy "Allow update package_solution_tiers"
   on public.package_solution_tiers for update using (true);
 create policy "Allow delete package_solution_tiers"
   on public.package_solution_tiers for delete using (true);
+
+do $$
+begin
+  if to_regclass('public.task_group_templates') is not null then
+    execute 'drop policy if exists "Allow read task_group_templates" on public.task_group_templates';
+    execute 'drop policy if exists "Allow insert task_group_templates" on public.task_group_templates';
+    execute 'drop policy if exists "Allow update task_group_templates" on public.task_group_templates';
+    execute 'drop policy if exists "Allow delete task_group_templates" on public.task_group_templates';
+    execute 'create policy "Allow read task_group_templates" on public.task_group_templates for select using (true)';
+    execute 'create policy "Allow insert task_group_templates" on public.task_group_templates for insert with check (true)';
+    execute 'create policy "Allow update task_group_templates" on public.task_group_templates for update using (true)';
+    execute 'create policy "Allow delete task_group_templates" on public.task_group_templates for delete using (true)';
+  end if;
+  if to_regclass('public.task_groups') is not null then
+    execute 'drop policy if exists "Allow read task_groups" on public.task_groups';
+    execute 'drop policy if exists "Allow insert task_groups" on public.task_groups';
+    execute 'drop policy if exists "Allow update task_groups" on public.task_groups';
+    execute 'drop policy if exists "Allow delete task_groups" on public.task_groups';
+    execute 'create policy "Allow read task_groups" on public.task_groups for select using (true)';
+    execute 'create policy "Allow insert task_groups" on public.task_groups for insert with check (true)';
+    execute 'create policy "Allow update task_groups" on public.task_groups for update using (true)';
+    execute 'create policy "Allow delete task_groups" on public.task_groups for delete using (true)';
+  end if;
+  if to_regclass('public.task_group_lines') is not null then
+    execute 'drop policy if exists "Allow read task_group_lines" on public.task_group_lines';
+    execute 'drop policy if exists "Allow insert task_group_lines" on public.task_group_lines';
+    execute 'drop policy if exists "Allow update task_group_lines" on public.task_group_lines';
+    execute 'drop policy if exists "Allow delete task_group_lines" on public.task_group_lines';
+    execute 'create policy "Allow read task_group_lines" on public.task_group_lines for select using (true)';
+    execute 'create policy "Allow insert task_group_lines" on public.task_group_lines for insert with check (true)';
+    execute 'create policy "Allow update task_group_lines" on public.task_group_lines for update using (true)';
+    execute 'create policy "Allow delete task_group_lines" on public.task_group_lines for delete using (true)';
+  end if;
+  if to_regclass('public.solution_tier_task_group_applied') is not null then
+    execute 'drop policy if exists "Allow read solution_tier_task_group_applied" on public.solution_tier_task_group_applied';
+    execute 'drop policy if exists "Allow insert solution_tier_task_group_applied" on public.solution_tier_task_group_applied';
+    execute 'drop policy if exists "Allow delete solution_tier_task_group_applied" on public.solution_tier_task_group_applied';
+    execute 'create policy "Allow read solution_tier_task_group_applied" on public.solution_tier_task_group_applied for select using (true)';
+    execute 'create policy "Allow insert solution_tier_task_group_applied" on public.solution_tier_task_group_applied for insert with check (true)';
+    execute 'create policy "Allow delete solution_tier_task_group_applied" on public.solution_tier_task_group_applied for delete using (true)';
+  end if;
+end $$;
 
 -- Audit log: insert + read only (no updates/deletes from app)
 drop policy if exists "Allow read changelog" on public.audit_log;

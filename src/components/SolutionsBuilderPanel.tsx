@@ -13,13 +13,26 @@ import { todayISODate } from "../lib/dates";
 import { getSupabase } from "../lib/supabase";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
-import type { ImplementerHourGroupRow, Solution, SolutionTier, SolutionTierPricing, TaskRow } from "../types";
+import type {
+  ImplementerHourGroupRow,
+  Solution,
+  SolutionTier,
+  SolutionTierPricing,
+  TaskGroupLineRow,
+  TaskGroupRow,
+  TaskRow,
+} from "../types";
+import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
+import { nextAutoTaskId } from "../lib/taskIds";
 import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
   computeTierPricing,
   TIER_PRICING_HOURLY_RATE,
 } from "../lib/tierPricingMath";
 import { PricingPanel } from "./PricingPanel";
+import { TaskImplementerSelect } from "./TaskImplementerSelect";
+
+export { nextAutoTaskId };
 
 const SCORE012: { value: string; label: string }[] = [
   { value: "0", label: "0" },
@@ -77,17 +90,6 @@ export function nextAutoTierId(tiers: SolutionTier[]): string {
   return `3-${max + 1}`;
 }
 
-/** Next id in the `4-n` sequence for tasks (global across all tiers). */
-export function nextAutoTaskId(tasks: TaskRow[]): string {
-  let max = 0;
-  const re = /^4-(\d+)$/i;
-  for (const k of tasks) {
-    const m = k.task_id.trim().match(re);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `4-${max + 1}`;
-}
-
 function rowJson(row: object): Record<string, unknown> {
   return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
 }
@@ -101,6 +103,12 @@ function optNum(s: string): number | null {
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+function formatRollupBucketForInput(n: number): string {
+  if (n == null || !Number.isFinite(n) || n === 0) return "";
+  if (Number.isInteger(n)) return String(n);
+  return String(Math.round(n * 100) / 100);
 }
 
 function firstTaskMatchingName(tasks: TaskRow[], name: string): TaskRow | null {
@@ -120,35 +128,6 @@ function autofillFromTask(t: TaskRow) {
     dep: t.task_dependencies ?? "",
     notes: t.task_notes ?? "",
   };
-}
-
-function TaskImplementerSelect({
-  value,
-  options,
-  inputStyle,
-  onChange,
-}: {
-  value: string;
-  options: string[];
-  inputStyle: CSSProperties;
-  onChange: (value: string) => void;
-}) {
-  const merged = useMemo(() => {
-    const s = new Set(options);
-    const out = [...options];
-    if (value.trim() && !s.has(value)) out.push(value);
-    return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [options, value]);
-  return (
-    <select style={inputStyle} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">—</option>
-      {merged.map((x) => (
-        <option key={x} value={x}>
-          {x}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 type CreateBranch = null | "full" | "tier_only";
@@ -174,6 +153,104 @@ function newDraftTaskRow(): DraftTaskRow {
     dep: "",
     notes: "",
   };
+}
+
+/** Build draft task rows from a task-group template (one-page "new solution" — no tier id until final save). */
+function draftRowsFromTaskGroupLines(lines: TaskGroupLineRow[], allTasks: TaskRow[]): DraftTaskRow[] {
+  const sorted = [...lines].sort((a, b) => a.sort_order - b.sort_order);
+  const out: DraftTaskRow[] = [];
+  for (const line of sorted) {
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    if (line.line_type === "copy_from_task" && line.source_task_id) {
+      const src = allTasks.find((t) => t.task_id === line.source_task_id);
+      if (src) {
+        const af = autofillFromTask(src);
+        out.push({
+          key,
+          name: src.task_name,
+          impl: af.impl,
+          time: af.time,
+          dur: af.dur,
+          dep: af.dep,
+          notes: af.notes,
+        });
+        continue;
+      }
+    }
+    out.push({
+      key,
+      name: (line.task_name ?? "").trim(),
+      impl: (line.task_implementer ?? "").trim(),
+      time: line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : "",
+      dur: "",
+      dep: "",
+      notes: "",
+    });
+  }
+  return out;
+}
+
+type StepperProps = { branch: CreateBranch; phase: CreatePhase };
+
+function SolutionsBuilderCreateStepper({ branch, phase }: StepperProps) {
+  if (phase === "choose") {
+    return (
+      <div className="admin-sb-path-banner" role="status">
+        <p className="admin-sb-path-banner__title">How do you want to build?</p>
+        <p className="admin-sb-path-banner__text">
+          Choose a <strong>full new solution</strong> (one save at the end) or a <strong>new tier</strong> on a solution
+          that already exists. Use <strong>Back</strong> or reset when the control is available to return here.
+        </p>
+      </div>
+    );
+  }
+  if (branch === "full" && phase === "foundation") {
+    return (
+      <div className="admin-sb-stepper admin-sb-stepper--inline" role="status" aria-label="Create mode">
+        <span className="admin-sb-pill">Single-page flow</span>
+        <span className="admin-sb-stepper__note">
+          Nothing is written to the database until you press <strong>Create entire solution</strong> at the bottom.
+        </span>
+      </div>
+    );
+  }
+  if (branch === "tier_only" && (phase === "tier" || phase === "tasks" || phase === "pricing")) {
+    const order: CreatePhase[] = ["tier", "tasks", "pricing"];
+    const labels: Record<string, string> = { tier: "Tier", tasks: "Tasks", pricing: "Pricing" };
+    const cur = order.indexOf(phase);
+    return (
+      <ol className="admin-sb-stepper" aria-label="New tier steps">
+        {order.map((p, i) => {
+          const st = i < cur ? "done" : i === cur ? "active" : "pending";
+          return (
+            <li key={p} className={`admin-sb-step admin-sb-step--${st}`} aria-current={i === cur ? "step" : undefined}>
+              <span className="admin-sb-step__n">{i + 1}</span>
+              <span className="admin-sb-step__label">{labels[p]}</span>
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+  return null;
+}
+
+type UpdateSectionHeadProps = { badge: string; title: string; hint?: string; muted: CSSProperties };
+
+function UpdateSectionHead({ badge, title, hint, muted: m }: UpdateSectionHeadProps) {
+  return (
+    <header className="admin-sb-block-header">
+      <div className="admin-sb-section-head">
+        <span className="admin-sb-badge">{badge}</span>
+        <h3 className="admin-sb-block-title">{title}</h3>
+      </div>
+      {hint ? (
+        <p className="admin-sb-hint" style={{ ...m, marginTop: "0.35rem" }}>
+          {hint}
+        </p>
+      ) : null}
+    </header>
+  );
 }
 
 export type SolutionsBuilderSubTab = "create" | "update";
@@ -205,12 +282,6 @@ const sectionTitle: CSSProperties = {
   fontSize: "0.98rem",
   fontWeight: 650,
   letterSpacing: "-0.02em",
-};
-
-const sectionWrap: CSSProperties = {
-  marginTop: "1.35rem",
-  paddingTop: "1.1rem",
-  borderTop: "1px solid var(--border)",
 };
 
 /** Grouped blocks inside the new-solution form for readability. */
@@ -276,6 +347,8 @@ export function SolutionsBuilderPanel({
   tasks,
   tierPricing,
   implementerHourGroups = [],
+  taskGroups = [],
+  taskGroupLines = [],
   onSaved,
   setOpErr,
   setOpOk,
@@ -288,6 +361,8 @@ export function SolutionsBuilderPanel({
   tasks: TaskRow[];
   tierPricing: SolutionTierPricing[];
   implementerHourGroups?: ImplementerHourGroupRow[];
+  taskGroups?: TaskGroupRow[];
+  taskGroupLines?: TaskGroupLineRow[];
   onSaved: () => Promise<void>;
   setOpErr: (msg: string | null) => void;
   setOpOk: (msg: string | null) => void;
@@ -388,6 +463,8 @@ export function SolutionsBuilderPanel({
     setPrTaxable(false);
     setPrNotes("");
     setPrTags("");
+    setCreateApplyTemplateGroupId("");
+    setFullStackApplyGroupId("");
   }, []);
 
   useEffect(() => {
@@ -418,12 +495,16 @@ export function SolutionsBuilderPanel({
   }, [tasks]);
   const distinctImplementerOptions = useMemo(() => {
     const seen = new Set<string>();
+    for (const r of implementerHourGroups) {
+      const n = (r.implementer_name ?? "").trim();
+      if (n) seen.add(n);
+    }
     for (const k of tasks) {
       const v = (k.task_implementer ?? "").trim();
       if (v) seen.add(v);
     }
     return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [tasks]);
+  }, [implementerHourGroups, tasks]);
 
   const sortedTiersForAutofill = useMemo(
     () => [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id)),
@@ -749,8 +830,9 @@ export function SolutionsBuilderPanel({
       return;
     }
     const rowsToSave = draftTasks.filter((d) => d.name.trim());
-    if (rowsToSave.length === 0) {
-      setOpErr("Add at least one task with a name before continuing.");
+    const tasksAlreadyOnTier = tasks.filter((k) => k.solution_tier_id === tierId);
+    if (rowsToSave.length === 0 && tasksAlreadyOnTier.length === 0) {
+      setOpErr("Add at least one task (or apply a task group template above) before continuing.");
       return;
     }
     const today = todayISODate();
@@ -783,7 +865,11 @@ export function SolutionsBuilderPanel({
       });
       localTasks.push(row);
     }
-    setOpOk(`Saved ${rowsToSave.length} task(s). Fill in pricing next.`);
+    setOpOk(
+      rowsToSave.length > 0
+        ? `Saved ${rowsToSave.length} task(s). Fill in pricing next.`
+        : "Continuing to pricing for tasks already on this tier."
+    );
     setCreatePhase("pricing");
     await onSaved();
   };
@@ -816,6 +902,12 @@ export function SolutionsBuilderPanel({
   const [updSolName, setUpdSolName] = useState("");
 
   const [updTierFocus, setUpdTierFocus] = useState("");
+  /** Task group template to apply in bulk to `updTierFocus` (update tab). */
+  const [applyTemplateGroupId, setApplyTemplateGroupId] = useState("");
+  /** Task group template in create-wizard (tier-only) tasks step. */
+  const [createApplyTemplateGroupId, setCreateApplyTemplateGroupId] = useState("");
+  /** Task group template for one-page "new solution" — appends rows to draft tasks. */
+  const [fullStackApplyGroupId, setFullStackApplyGroupId] = useState("");
   const [updTierEditId, setUpdTierEditId] = useState<string | null>(null);
   const [updTName, setUpdTName] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
@@ -906,6 +998,43 @@ export function SolutionsBuilderPanel({
     }
     return rollUpTaskTimesByPricingGroup(tasksForHourRollup, implementerToGroup);
   }, [subTab, implementerHourGroups, tasksForHourRollup, implementerToGroup]);
+
+  const fullCreateDraftTasksForRollup = useMemo((): TaskRow[] => {
+    const today = todayISODate();
+    return draftTasks
+      .filter((d) => d.name.trim())
+      .map((d) => ({
+        task_id: `draft-${d.key}`,
+        solution_tier_id: "",
+        task_name: d.name.trim(),
+        task_implementer: d.impl.trim() || null,
+        task_time: optNum(d.time),
+        task_duration: null,
+        task_dependencies: null,
+        task_notes: null,
+        task_create_date: today,
+        task_modified_date: today,
+      }));
+  }, [draftTasks]);
+
+  const fullCreateHourRollup = useMemo(
+    () => rollUpTaskTimesByPricingGroup(fullCreateDraftTasksForRollup, implementerToGroup),
+    [fullCreateDraftTasksForRollup, implementerToGroup]
+  );
+
+  useEffect(() => {
+    if (subTab !== "create" || createBranch !== "full" || createPhase !== "foundation") return;
+    const r = fullCreateHourRollup;
+    setPrHCs(formatRollupBucketForInput(r.client_services));
+    setPrHCp(formatRollupBucketForInput(r.copy));
+    setPrHDs(formatRollupBucketForInput(r.design));
+    setPrHWd(formatRollupBucketForInput(r.web_dev));
+    setPrHVi(formatRollupBucketForInput(r.video));
+    setPrHDa(formatRollupBucketForInput(r.data));
+    setPrHPm(formatRollupBucketForInput(r.paid_media));
+    setPrHHb(formatRollupBucketForInput(r.hubspot));
+    setPrHOt(formatRollupBucketForInput(r.other));
+  }, [subTab, createBranch, createPhase, fullCreateHourRollup]);
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
 
@@ -1314,6 +1443,79 @@ export function SolutionsBuilderPanel({
     await onSaved();
   };
 
+  const applyTaskGroupTemplateToTier = useCallback(async () => {
+    if (!updTierFocus || !applyTemplateGroupId) {
+      setOpErr("Select a tier and a task group template.");
+      return;
+    }
+    const lines = (taskGroupLines ?? [])
+      .filter((l) => l.task_group_id === applyTemplateGroupId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const res = await applyTaskGroupToTier({
+      solution_tier_id: updTierFocus,
+      task_group_id: applyTemplateGroupId,
+      lines,
+      allTasks: tasks,
+      logAudit,
+    });
+    if (!res.ok) {
+      setOpErr(res.message);
+      return;
+    }
+    setOpOk(`Added ${res.created} task(s) from the template.`);
+    setApplyTemplateGroupId("");
+    await onSaved();
+  }, [applyTemplateGroupId, logAudit, onSaved, setOpErr, setOpOk, taskGroupLines, tasks, updTierFocus]);
+
+  const applyTaskGroupTemplateToCreateTier = useCallback(async () => {
+    if (!ctxTierId.trim() || !createApplyTemplateGroupId) {
+      setOpErr("Select a task group template to apply (tier is already set from the previous step).");
+      return;
+    }
+    const lines = (taskGroupLines ?? [])
+      .filter((l) => l.task_group_id === createApplyTemplateGroupId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const res = await applyTaskGroupToTier({
+      solution_tier_id: ctxTierId.trim(),
+      task_group_id: createApplyTemplateGroupId,
+      lines,
+      allTasks: tasks,
+      logAudit,
+    });
+    if (!res.ok) {
+      setOpErr(res.message);
+      return;
+    }
+    setOpOk(`Added ${res.created} task(s) from the template. You can add more rows below, then continue to pricing.`);
+    setCreateApplyTemplateGroupId("");
+    await onSaved();
+  }, [createApplyTemplateGroupId, ctxTierId, logAudit, onSaved, setOpErr, setOpOk, taskGroupLines, tasks]);
+
+  const appendTaskGroupToFullSolutionDraft = useCallback(() => {
+    if (!fullStackApplyGroupId) {
+      setOpErr("Select a task group template.");
+      return;
+    }
+    const lines = (taskGroupLines ?? [])
+      .filter((l) => l.task_group_id === fullStackApplyGroupId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    if (lines.length === 0) {
+      setOpErr("This task group has no lines.");
+      return;
+    }
+    const newRows = draftRowsFromTaskGroupLines(lines, tasks);
+    if (newRows.length === 0) {
+      setOpErr("No rows could be built from that template.");
+      return;
+    }
+    setDraftTasks((prev) => [...prev, ...newRows]);
+    setOpOk(
+      `Added ${newRows.length} row(s) from the template. They save with the new tier when you click Create entire solution. You can still edit the table.`
+    );
+    setOpErr(null);
+    setFullStackApplyGroupId("");
+  }, [fullStackApplyGroupId, setOpErr, setOpOk, taskGroupLines, tasks]);
+
   const startEditTask = (k: TaskRow) => {
     setUpdNewTaskDrafts([newDraftTaskRow()]);
     setUpdTaskEditId(k.task_id);
@@ -1659,27 +1861,46 @@ export function SolutionsBuilderPanel({
   );
 
   return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
+    <section className="admin-panel admin-panel--editor admin-solutions-builder" style={panel}>
       <datalist id={taskNameDatalistId}>
         {sortedTaskNamesForDatalist.map((n) => (
           <option key={n} value={n} />
         ))}
       </datalist>
       <div className="admin-editor-layout admin-editor-layout--wide">
-        <h2 style={h2}>Solutions Builder</h2>
-        <p className="admin-intro" style={muted}>
-          Create or update solutions, tiers, tasks, and pricing. Auto-ids follow: packages <code>1-</code>, solutions{" "}
-          <code>2-</code>, solution tiers <code>3-</code>, tasks <code>4-</code>.
-        </p>
+        <header className="admin-sb-hero">
+          <h2 className="admin-sb-hero__title" style={h2}>
+            Solutions Builder
+          </h2>
+          <p className="admin-sb-hero__lead" style={muted}>
+            {subTab === "create" ? (
+              <>
+                Create solutions, tiers, tasks, and pricing. Use the <strong>Create new / Update</strong> control above
+                to switch modes. Id pattern: <code>1-</code> package → <code>2-</code> solution → <code>3-</code> tier →{" "}
+                <code>4-</code> task.
+              </>
+            ) : (
+              <>
+                Select a solution, then work through <strong>Solution</strong>, <strong>Tiers</strong>, and{" "}
+                <strong>Tasks &amp; pricing</strong>. For brand-new records, use <strong>Create new</strong> in the
+                sub-tab.
+              </>
+            )}
+          </p>
+        </header>
 
         {subTab === "create" && (
           <>
+            <SolutionsBuilderCreateStepper branch={createBranch} phase={createPhase} />
             {createPhase === "choose" && (
               <>
-                <h3 style={sectionTitle}>What do you want to create?</h3>
-                <div style={choiceRow}>
+                <h3 className="admin-sb-subhead" style={sectionTitle}>
+                  What do you want to create?
+                </h3>
+                <div className="admin-sb-choice-row" style={choiceRow}>
                   <button
                     type="button"
+                    className="admin-sb-choice-card"
                     style={choiceCard}
                     onClick={() => {
                       setCreateBranch("full");
@@ -1696,6 +1917,7 @@ export function SolutionsBuilderPanel({
                   </button>
                   <button
                     type="button"
+                    className="admin-sb-choice-card"
                     style={{
                       ...choiceCard,
                       opacity: solutions.length === 0 ? 0.55 : 1,
@@ -1722,11 +1944,12 @@ export function SolutionsBuilderPanel({
             )}
 
             {createPhase === "foundation" && createBranch === "full" && (
-              <div style={{ marginTop: "0.75rem" }}>
-                <h3 style={sectionTitle}>New solution — one page, one save</h3>
-                <p style={{ ...muted, marginTop: 0 }}>
-                  Fill each section below, then click <strong>Create entire solution</strong>. Nothing is written to the
-                  database until then.
+              <div className="admin-sb-block" style={{ marginTop: "0.6rem" }}>
+                <h3 className="admin-sb-subhead" style={sectionTitle}>
+                  New solution — one page, one save
+                </h3>
+                <p style={{ ...muted, marginTop: 0, maxWidth: "62ch" }}>
+                  Use the sections below; when you are ready, click <strong>Create entire solution</strong> at the end.
                 </p>
                 <div style={idLegendBar}>
                   <strong style={{ color: "var(--text)" }}>Id prefixes:</strong> package <code>1-</code> · solution{" "}
@@ -1845,9 +2068,45 @@ export function SolutionsBuilderPanel({
                 <div style={formSectionBox}>
                   <h4 style={formSectionHeading}>Section 2 — Tasks</h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.75rem" }}>
-                    Each saved row becomes a task with id <code>4-…</code>, linked to the new tier. At least one row
-                    needs a task name.
+                    Add rows by hand, or <strong>load a task-group template</strong> to fill the table (same templates as{" "}
+                    <strong>Admin → Task-Group templates</strong>). On save, each row with a name becomes a task (id{" "}
+                    <code>4-…</code>) for the new tier. At least one task name is required.
                   </p>
+                {taskGroups.length > 0 ? (
+                  <div style={{ ...formSectionBox, marginTop: 0, marginBottom: 12, background: "rgba(13, 92, 77, 0.04)" }}>
+                    <p style={formSectionHeading}>Add from task group</p>
+                    <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "56ch" }}>
+                      Appends template lines to the table below. Copy-from-task lines use live task data when the source
+                      exists; otherwise template snapshot fields are used. You can add more than once.
+                    </p>
+                    <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
+                      <AdminFieldCaption>Task group</AdminFieldCaption>
+                      <select
+                        style={input}
+                        value={fullStackApplyGroupId}
+                        onChange={(e) => setFullStackApplyGroupId(e.target.value)}
+                      >
+                        <option value="">— Select a template —</option>
+                        {taskGroups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="admin-btn-primary"
+                        style={btnPrimary}
+                        onClick={() => void appendTaskGroupToFullSolutionDraft()}
+                        disabled={!fullStackApplyGroupId}
+                      >
+                        Add to task list
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="admin-actions-row" style={{ marginTop: 0 }}>
                   <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
                     Add task row
@@ -1946,6 +2205,13 @@ export function SolutionsBuilderPanel({
                     <textarea style={textarea} rows={2} value={prScope} onChange={(e) => setPrScope(e.target.value)} />
                   </label>
                   <div style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Hours</div>
+                  <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.84rem" }}>
+                    These fields stay in sync with <strong>Section 2</strong> task rows: each row&apos;s <strong>Time</strong> and{" "}
+                    <strong>Implementer</strong> roll into a bucket (Client services, Design, &hellip;) using the same{" "}
+                    <strong>Implementer&ndash;Pricing mapping</strong> as elsewhere. Unmapped or blank implementer goes to
+                    &quot;Other&quot;. You can still edit a bucket if you need a manual adjustment; another change in the
+                    task table will refresh the split.
+                  </p>
                   {(
                     [
                       ["Client services", prHCs, setPrHCs],
@@ -2079,8 +2345,10 @@ export function SolutionsBuilderPanel({
             )}
 
             {createPhase === "tier" && createBranch === "tier_only" && (
-              <div style={sectionWrap}>
-                <h3 style={sectionTitle}>Step 1 — Solution tier</h3>
+              <div className="admin-sb-block">
+                <h3 className="admin-sb-subhead" style={sectionTitle}>
+                  Step 1 — Solution tier
+                </h3>
                 <div className="admin-form-stack" style={formGrid}>{tierFormTierOnly}</div>
                 <div className="admin-actions-row" style={{ marginTop: 10 }}>
                   <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void insertTier()}>
@@ -2094,12 +2362,52 @@ export function SolutionsBuilderPanel({
             )}
 
             {createPhase === "tasks" && createBranch === "tier_only" && (
-              <div style={sectionWrap}>
-                <h3 style={sectionTitle}>Step 2 — Tasks</h3>
+              <div className="admin-sb-block">
+                <h3 className="admin-sb-subhead" style={sectionTitle}>
+                  Step 2 — Tasks
+                </h3>
                 <p style={{ ...muted, marginTop: 0 }}>
-                  Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Add every task row (at least one
-                  with a name). Task ids are assigned on save. Then continue to pricing.
+                  Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Add tasks with the table below, or
+                  apply a task group from <strong>Admin → Task-Group templates</strong>. You need at least one task for
+                  this tier (manually, from a template, or both) before pricing. Ids for manual rows are assigned on
+                  &quot;Save all…&quot;.
                 </p>
+                {taskGroups.length > 0 ? (
+                  <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
+                    <p style={formSectionHeading}>Apply task group to this new tier</p>
+                    <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
+                      Inserts new <code>4-…</code> tasks for tier <code>{ctxTierId}</code>. Safe to use more than once
+                      (new ids each time). Configure templates in{" "}
+                      <strong>Admin → Task-Group templates</strong>.
+                    </p>
+                    <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
+                      <AdminFieldCaption>Task group</AdminFieldCaption>
+                      <select
+                        style={input}
+                        value={createApplyTemplateGroupId}
+                        onChange={(e) => setCreateApplyTemplateGroupId(e.target.value)}
+                      >
+                        <option value="">— Select a template —</option>
+                        {taskGroups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="admin-btn-primary"
+                        style={btnPrimary}
+                        onClick={() => void applyTaskGroupTemplateToCreateTier()}
+                        disabled={!ctxTierId.trim() || !createApplyTemplateGroupId}
+                      >
+                        Apply to tier
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="admin-actions-row" style={{ marginTop: 8 }}>
                   <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
                     Add task row
@@ -2192,8 +2500,10 @@ export function SolutionsBuilderPanel({
             )}
 
             {createPhase === "pricing" && createBranch === "tier_only" && ctxTierId && (
-              <div style={sectionWrap}>
-                <h3 style={sectionTitle}>Step 3 — Pricing</h3>
+              <div className="admin-sb-block">
+                <h3 className="admin-sb-subhead" style={sectionTitle}>
+                  Step 3 — Pricing
+                </h3>
                 <p style={{ ...muted, marginTop: 0 }}>
                   Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Save pricing below, then finish.
                 </p>
@@ -2234,21 +2544,34 @@ export function SolutionsBuilderPanel({
 
         {subTab === "update" && (
           <>
-            <label style={{ ...lbl, maxWidth: 420, marginTop: 8 }}>
-              <AdminFieldCaption>Solution</AdminFieldCaption>
-              <select style={input} value={updSolutionId} onChange={(e) => setUpdSolutionId(e.target.value)}>
-                {[...solutions]
-                  .sort((a, b) => sortId(a.solution_id, b.solution_id))
-                  .map((sol) => (
-                    <option key={sol.solution_id} value={sol.solution_id}>
-                      {sol.solution_name} ({sol.solution_id})
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <div className="admin-sb-block admin-sb-block--context">
+              <UpdateSectionHead
+                badge="Start"
+                title="Which solution are you working on?"
+                hint="Tiers, tasks, and pricing below all use the solution you pick here. Switch any time; unsaved work in open forms is not auto-restored, so save first when needed."
+                muted={muted}
+              />
+              <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
+                <AdminFieldCaption>Solution</AdminFieldCaption>
+                <select style={input} value={updSolutionId} onChange={(e) => setUpdSolutionId(e.target.value)}>
+                  {[...solutions]
+                    .sort((a, b) => sortId(a.solution_id, b.solution_id))
+                    .map((sol) => (
+                      <option key={sol.solution_id} value={sol.solution_id}>
+                        {sol.solution_name} ({sol.solution_id})
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
 
-            <div style={sectionWrap}>
-              <h3 style={sectionTitle}>Solution</h3>
+            <div className="admin-sb-block">
+              <UpdateSectionHead
+                badge="1"
+                title="Solution details"
+                hint="Update the name shown for this solution across the app."
+                muted={muted}
+              />
               <div className="admin-form-stack" style={formGrid}>
                 <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                   <AdminFieldCaption>Name</AdminFieldCaption>
@@ -2265,8 +2588,13 @@ export function SolutionsBuilderPanel({
               </div>
             </div>
 
-            <div style={sectionWrap}>
-              <h3 style={sectionTitle}>Tiers</h3>
+            <div className="admin-sb-block">
+              <UpdateSectionHead
+                badge="2"
+                title="Tiers"
+                hint="List every tier, add a new one, or edit. To bulk-add tasks from a template, use the Tasks & pricing section (step 3) after a tier exists."
+                muted={muted}
+              />
               <div className="admin-table-scroll">
                 <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
                   <thead>
@@ -2313,11 +2641,23 @@ export function SolutionsBuilderPanel({
               </div>
             </div>
 
-            <div style={sectionWrap}>
-              <h3 style={sectionTitle}>Tasks &amp; pricing (pick tier)</h3>
+            <div className="admin-sb-block">
+              <UpdateSectionHead
+                badge="3"
+                title="Tasks & pricing for a tier"
+                hint="Select a tier, then add tasks (manually, from a task-group template, or both) and set pricing. Templates are configured in Admin → Task-Group templates."
+                muted={muted}
+              />
               <label style={{ ...lbl, maxWidth: 420 }}>
                 <AdminFieldCaption>Tier for tasks &amp; pricing</AdminFieldCaption>
-                <select style={input} value={updTierFocus} onChange={(e) => setUpdTierFocus(e.target.value)}>
+                <select
+                  style={input}
+                  value={updTierFocus}
+                  onChange={(e) => {
+                    setUpdTierFocus(e.target.value);
+                    setApplyTemplateGroupId("");
+                  }}
+                >
                   {tiersOfUpdateSol.map((t) => (
                     <option key={t.solution_tier_id} value={t.solution_tier_id}>
                       {t.solution_tier_name} ({t.solution_tier_id})
@@ -2329,6 +2669,42 @@ export function SolutionsBuilderPanel({
                 <p style={{ ...muted, marginTop: 8 }}>Add a tier above to manage tasks and pricing.</p>
               ) : (
                 <>
+                  {taskGroups.length > 0 ? (
+                    <div style={{ ...formSectionBox, marginTop: 12 }}>
+                      <p style={formSectionHeading}>Add tasks from a task group</p>
+                      <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
+                        Applies to the <strong>same tier</strong> you selected above. Inserts new <code>4-…</code> tasks. Use
+                        after the tier exists; safe to run more than once. Templates:{" "}
+                        <strong>Admin → Task-Group templates</strong>.
+                      </p>
+                      <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
+                        <AdminFieldCaption>Task group</AdminFieldCaption>
+                        <select
+                          style={input}
+                          value={applyTemplateGroupId}
+                          onChange={(e) => setApplyTemplateGroupId(e.target.value)}
+                        >
+                          <option value="">— Select a template —</option>
+                          {taskGroups.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className="admin-btn-primary"
+                          style={btnPrimary}
+                          onClick={() => void applyTaskGroupTemplateToTier()}
+                          disabled={!updTierFocus || !applyTemplateGroupId}
+                        >
+                          Apply to tier
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>Tasks</h4>
                   <div className="admin-table-scroll">
                     <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>

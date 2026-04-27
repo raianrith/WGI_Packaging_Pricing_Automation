@@ -56,6 +56,38 @@ export type TaskRow = {
   task_modified_date: string;
 };
 
+/** Reusable task group template (library). Lines are in `task_group_lines`. */
+export type TaskGroupRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type TaskGroupLineType = "archetype" | "copy_from_task";
+
+export type TaskGroupLineRow = {
+  id: string;
+  task_group_id: string;
+  sort_order: number;
+  line_type: TaskGroupLineType;
+  source_task_id: string | null;
+  task_name: string;
+  task_implementer: string | null;
+  hours: number | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+/** Optional audit row: a template was applied to a tier (creates `tasks` + this record). */
+export type SolutionTierTaskGroupApplied = {
+  id: string;
+  solution_tier_id: string;
+  task_group_id: string;
+  applied_at: string;
+};
+
 /** One pricing row per `solution_tier_id` (table `solution_tier_pricing`). */
 export type SolutionTierPricing = {
   solution_tier_id: string;

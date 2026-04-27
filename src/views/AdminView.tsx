@@ -16,8 +16,10 @@ import { todayISODate } from "../lib/dates";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { computeTierPricing } from "../lib/tierPricingMath";
+import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
+import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
@@ -26,12 +28,15 @@ import type {
   Solution,
   SolutionTier,
   SolutionTierPricing,
+  TaskGroupLineRow,
+  TaskGroupRow,
   TaskRow,
 } from "../types";
 
 type AdminTab =
   | "packages"
   | "solutions_builder"
+  | "task_group_builder"
   | "bulk"
   | "glossary"
   | "implementer_mapping"
@@ -85,6 +90,9 @@ export function AdminView() {
   const [auditLoadNote, setAuditLoadNote] = useState<string | null>(null);
   const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
   const [implementerMappingLoadNote, setImplementerMappingLoadNote] = useState<string | null>(null);
+  const [taskGroups, setTaskGroups] = useState<TaskGroupRow[]>([]);
+  const [taskGroupLines, setTaskGroupLines] = useState<TaskGroupLineRow[]>([]);
+  const [taskGroupDataLoadNote, setTaskGroupDataLoadNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [opErr, setOpErr] = useState<string | null>(null);
@@ -101,6 +109,7 @@ export function AdminView() {
     setAuditLoadNote(null);
     setPricingLoadNote(null);
     setImplementerMappingLoadNote(null);
+    setTaskGroupDataLoadNote(null);
     const keyErr = browserKeyConfigurationError();
     if (keyErr) {
       setLoadErr(keyErr);
@@ -188,6 +197,23 @@ export function AdminView() {
       setImplementerHourGroups((implRes.data ?? []) as ImplementerHourGroupRow[]);
     }
 
+    const tgr = await client.from("task_groups").select("*").order("name");
+    const tglr = await client.from("task_group_lines").select("*");
+    if (tgr.error || tglr.error) {
+      const err = tgr.error ?? tglr.error!;
+      setTaskGroups([]);
+      setTaskGroupLines([]);
+      setTaskGroupDataLoadNote(
+        err.message.includes("task_groups") || err.message.includes("task_group_lines") || err.code === "PGRST205"
+          ? "Run supabase/task_groups_v2.sql (and audit_log_task_groups_v2.sql) in the SQL Editor."
+          : err.message
+      );
+    } else {
+      setTaskGroupDataLoadNote(null);
+      setTaskGroups((tgr.data ?? []) as TaskGroupRow[]);
+      setTaskGroupLines((tglr.data ?? []) as TaskGroupLineRow[]);
+    }
+
     setLoading(false);
     notifyPackagingDataChanged();
   }, []);
@@ -203,9 +229,9 @@ export function AdminView() {
   }, [tab]);
 
   useLayoutEffect(() => {
-    if (!opErr && !opOk) return;
+    if (!opErr) return;
     opFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [opErr, opOk]);
+  }, [opErr]);
 
   const logAudit = useCallback(
     async (
@@ -265,6 +291,8 @@ export function AdminView() {
         </p>
       </header>
 
+      <GlobalKpiStrip />
+
       {loadErr && (
         <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
           {loadErr}
@@ -297,6 +325,7 @@ export function AdminView() {
               [
                 ["packages", "Package Builder"],
                 ["solutions_builder", "Solutions Builder"],
+                ["task_group_builder", "Task-Group Builder"],
                 ["implementer_mapping", "Implementer-Pricing Mapping"],
                 ["glossary", "Data Glossary"],
                 ["bulk", "Bulk Import"],
@@ -324,7 +353,8 @@ export function AdminView() {
           {tab !== "audit" &&
             tab !== "bulk" &&
             tab !== "glossary" &&
-            tab !== "implementer_mapping" && (
+            tab !== "implementer_mapping" &&
+            tab !== "task_group_builder" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
               <button
                 type="button"
@@ -399,6 +429,8 @@ export function AdminView() {
               tasks={tasks}
               tierPricing={tierPricing}
               implementerHourGroups={implementerHourGroups}
+              taskGroups={taskGroups}
+              taskGroupLines={taskGroupLines}
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
@@ -419,6 +451,32 @@ export function AdminView() {
                 h2,
                 muted,
               }}
+            />
+          )}
+          {tab === "task_group_builder" && (
+            <TaskGroupBuilderPanel
+              tasks={tasks}
+              tiers={tiers}
+              solutions={solutions}
+              implementerHourGroups={implementerHourGroups}
+              taskGroups={taskGroups}
+              taskGroupLines={taskGroupLines}
+              loadNote={taskGroupDataLoadNote}
+              onRefresh={refreshAfterSave}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              logAudit={logAudit}
+              panel={panel}
+              h2={h2}
+              muted={muted}
+              lbl={lbl}
+              input={input}
+              btn={btn}
+              btnPrimary={btnPrimary}
+              btnDangerSm={btnDangerSm}
+              tbl={tbl}
+              th={th}
+              td={td}
             />
           )}
           {tab === "bulk" && (
@@ -475,7 +533,11 @@ export function AdminView() {
                   <option value="solutions">solutions</option>
                   <option value="solution_tiers">solution_tiers</option>
                   <option value="solution_tier_pricing">solution_tier_pricing</option>
+                  <option value="package_solution_tiers">package_solution_tiers</option>
                   <option value="tasks">tasks</option>
+                  <option value="task_groups">task_groups</option>
+                  <option value="task_group_lines">task_group_lines</option>
+                  <option value="solution_tier_task_group_applied">solution_tier_task_group_applied</option>
                 </select>
                 <input
                   className="admin-field kb-filter-input"

@@ -1,10 +1,12 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
   useMemo,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -113,8 +115,30 @@ function tierIdsForPackage(
   );
 }
 
+/** Split plain text on http(s) URLs and render those segments as real links (fields are stored as text, not HTML). */
+function linkifyHttpUrls(text: string): ReactNode {
+  const re = /(https?:\/\/[^\s<>]+)/gi;
+  const parts = text.split(re);
+  return parts.map((part, i) => {
+    if (/^https?:\/\//i.test(part)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          className="agency-hub__link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {part}
+        </a>
+      );
+    }
+    return <Fragment key={i}>{part}</Fragment>;
+  });
+}
+
 function AgencyTierProse({ text }: { text: string }) {
-  return <div className="agency-tier-prose">{text}</div>;
+  return <div className="agency-tier-prose">{linkifyHttpUrls(text)}</div>;
 }
 
 function AgencyTierSubsection({
@@ -1253,90 +1277,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           </p>
                         </div>
                       ) : null}
-                      <div className="agency-pricing__panel">
-                        <div className="agency-pricing__band agency-pricing__band--money">
-                          <span className="agency-pricing__band-label">
-                            Revenue & cost basis
-                          </span>
-                          <div className="agency-pricing__grid agency-pricing__grid--money">
-                            <div className="agency-pricing__stat agency-pricing__stat--money">
-                              <span className="agency-pricing__stat-label">Sell price</span>
-                              <span className="agency-pricing__stat-value">
-                                {formatUsd(selectedPricing.sell_price)}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--money">
-                              <span className="agency-pricing__stat-label">
-                                Standalone sell
-                              </span>
-                              <span className="agency-pricing__stat-value">
-                                {formatUsd(selectedPricing.standalone_sell_price)}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--money">
-                              <span className="agency-pricing__stat-label">Effort base</span>
-                              <span className="agency-pricing__stat-value">
-                                {formatUsd(
-                                  selectedPricing.expected_effort_base_price
-                                )}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--money">
-                              <span className="agency-pricing__stat-label">
-                                Risk-mitigated base
-                              </span>
-                              <span className="agency-pricing__stat-value">
-                                {formatUsd(
-                                  selectedPricing.risk_mitigated_base_price
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="agency-pricing__band agency-pricing__band--meta">
-                          <span className="agency-pricing__band-label">
-                            Hours & commercial terms
-                          </span>
-                          <div className="agency-pricing__grid agency-pricing__grid--meta">
-                            <div className="agency-pricing__stat agency-pricing__stat--meta">
-                              <span className="agency-pricing__stat-label">
-                                Total hours
-                              </span>
-                              <span className="agency-pricing__stat-value agency-pricing__stat-value--meta">
-                                {formatKpiNumber(
-                                  Number(selectedPricing.total_hours ?? 0)
-                                )}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--meta">
-                              <span className="agency-pricing__stat-label">
-                                Customization
-                              </span>
-                              <span className="agency-pricing__stat-value agency-pricing__stat-value--meta">
-                                {selectedPricing.requires_customization
-                                  ? "Yes"
-                                  : "No"}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--meta">
-                              <span className="agency-pricing__stat-label">Taxable</span>
-                              <span className="agency-pricing__stat-value agency-pricing__stat-value--meta">
-                                {selectedPricing.taxable ? "Yes" : "No"}
-                              </span>
-                            </div>
-                            <div className="agency-pricing__stat agency-pricing__stat--meta">
-                              <span className="agency-pricing__stat-label">
-                                % change vs old
-                              </span>
-                              <span className="agency-pricing__stat-value agency-pricing__stat-value--meta">
-                                {(selectedPricing.percent_change ?? "").trim()
-                                  ? selectedPricing.percent_change
-                                  : "—"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
                       {selectedPricing.tags ? (
                         <p className="agency-pricing__tags">
                           <span className="agency-pricing__tags-label">Tags</span>

@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import type {
@@ -1622,11 +1621,61 @@ export function RoadmapPlanningView() {
         <section className="roadmap-panel roadmap-panel--export">
           <h2 className="roadmap-export__title">Export preview</h2>
           <p className="roadmap-export__explain">
-            Preview below is formatted for reading. The clipboard from Copy summary is still Markdown (with{" "}
-            <code>#</code>, <code>**</code>, list dashes, etc.) for pasting into Notion, Slack, or Docs — not HTML.
+            A proposal-style table view for each what-if scenario. Use <strong>Copy summary</strong> if you still want
+            Markdown text.
           </p>
-          <div className="roadmap-export-md" aria-label="Formatted export preview">
-            <ReactMarkdown>{summaryMarkdown}</ReactMarkdown>
+          <div className="roadmap-export-table-wrap" aria-label="Roadmap export tables">
+            {scenarios.map((scenarioTitle, scenarioIdx) => {
+              const rows = cards.filter((c) => c.scenarioIdx === scenarioIdx);
+              let subtotal = 0;
+              for (const c of rows) {
+                const p = tryParseUsdRough(c.price);
+                if (p != null) subtotal += p;
+              }
+              return (
+                <section key={scenarioIdx} className="roadmap-export-table">
+                  <header className="roadmap-export-table__head">
+                    <h3 className="roadmap-export-table__title">{scenarioTitle}</h3>
+                    <span className="roadmap-export-table__sum">{formatUsd(subtotal)}</span>
+                  </header>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Deliverable</th>
+                        <th>Type</th>
+                        <th>Hours</th>
+                        <th>Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="roadmap-export-table__empty">
+                            Nothing added yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        rows.map((c) => (
+                          <tr key={c.key}>
+                            <td>
+                              <div className="roadmap-export-table__deliverable">
+                                <strong>{c.headline || "(untitled)"}</strong>
+                                {c.description.trim() ? (
+                                  <span>{descPreview(c.description, 180)}</span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td>{kindLabel(c.kind)}</td>
+                            <td>{c.hours || "—"}</td>
+                            <td>{c.price || "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </section>
+              );
+            })}
           </div>
         </section>
       </div>

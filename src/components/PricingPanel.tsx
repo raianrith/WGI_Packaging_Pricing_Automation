@@ -246,8 +246,6 @@ export function PricingPanel({
   taskHourRollup = null,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
-  const [solutionLabel, setSolutionLabel] = useState("");
-  const [tierLabel, setTierLabel] = useState("");
   const [scope, setScope] = useState("");
   const [hCs, setHCs] = useState("");
   const [hCp, setHCp] = useState("");
@@ -335,8 +333,6 @@ export function PricingPanel({
           setTierPick("");
         }
       }
-      setSolutionLabel("");
-      setTierLabel("");
       setScope("");
       setHCs("");
       setHCp("");
@@ -364,8 +360,6 @@ export function PricingPanel({
     (r: SolutionTierPricing) => {
     setEditingTierId(r.solution_tier_id);
     setTierPick(r.solution_tier_id);
-    setSolutionLabel(r.solution_label ?? "");
-    setTierLabel(r.tier ?? "");
     setScope(r.scope ?? "");
     if (!taskDrivenHours) {
       setHCs(nStr(r.hours_client_services));
@@ -464,10 +458,12 @@ export function PricingPanel({
   const buildPayload = (): Record<string, unknown> => {
     const d = derived;
     const pc = percentChangeFromSellAndOld(d.sellPrice, oldPrice);
+    const tierRow = tiersScoped.find((t) => t.solution_tier_id === tierPick.trim()) ?? null;
     return {
       solution_tier_id: tierPick.trim(),
-      solution_label: solutionLabel.trim() || null,
-      tier: tierLabel.trim() || null,
+      // Keep legacy columns populated from the selected tier, not manual duplicate inputs.
+      solution_label: tierRow?.solution_tier_name ?? null,
+      tier: tierRow?.solution_tier_name ?? null,
       scope: scope.trim() || null,
       hours_client_services: parseNum(hCs) ?? 0,
       hours_copy: parseNum(hCp) ?? 0,
@@ -607,7 +603,7 @@ export function PricingPanel({
             <thead>
               <tr>
                 <th style={th}>Tier id</th>
-                <th style={th}>Label</th>
+                <th style={th}>Tier name</th>
                 <th style={th}>Sell</th>
                 <th style={th} />
               </tr>
@@ -616,7 +612,9 @@ export function PricingPanel({
               {sortedPricing.map((r) => (
                 <tr key={r.solution_tier_id}>
                   <td style={td}>{r.solution_tier_id}</td>
-                  <td style={td}>{r.solution_label ?? "—"}</td>
+                  <td style={td}>
+                    {tiersScoped.find((t) => t.solution_tier_id === r.solution_tier_id)?.solution_tier_name ?? "—"}
+                  </td>
                   <td style={td}>
                     {r.sell_price != null ? `$${Number(r.sell_price).toLocaleString()}` : "—"}
                   </td>
@@ -654,54 +652,38 @@ export function PricingPanel({
             </h3>
           ) : null}
 
-      <div className="admin-pricing-section">
-        <h3 className="admin-pricing-section__title">Tier &amp; scope</h3>
-        <div className="admin-form-stack" style={formGrid}>
-          <label style={lbl}>
-            <AdminFieldCaption>Solution tier</AdminFieldCaption>
-            <select
-              style={input}
-              value={tierPick}
-              disabled={tierSelectLocked}
-              onChange={(e) => setTierPick(e.target.value)}
-            >
-              <option value="">Select tier…</option>
-              {tiersScoped.map((t) => (
-                <option key={t.solution_tier_id} value={t.solution_tier_id}>
-                  {t.solution_tier_id} — {t.solution_tier_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={lbl}>
-            <AdminFieldCaption>Solution label</AdminFieldCaption>
-            <input
-              style={input}
-              value={solutionLabel}
-              onChange={(e) => setSolutionLabel(e.target.value)}
-              placeholder="e.g. Customer Interviews (Up to 5)"
-            />
-          </label>
-          <label style={lbl}>
-            <AdminFieldCaption>Tier label</AdminFieldCaption>
-            <input
-              style={input}
-              value={tierLabel}
-              onChange={(e) => setTierLabel(e.target.value)}
-              placeholder="Basic, Standard…"
-            />
-          </label>
-          <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-            <AdminFieldCaption>Scope</AdminFieldCaption>
-            <textarea
-              style={textarea}
-              rows={3}
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-            />
-          </label>
+      {(subTab === "create" || !editingTierId) && (
+        <div className="admin-pricing-section">
+          <h3 className="admin-pricing-section__title">Tier &amp; scope</h3>
+          <div className="admin-form-stack" style={formGrid}>
+            <label style={lbl}>
+              <AdminFieldCaption>Solution tier</AdminFieldCaption>
+              <select
+                style={input}
+                value={tierPick}
+                disabled={tierSelectLocked}
+                onChange={(e) => setTierPick(e.target.value)}
+              >
+                <option value="">Select tier…</option>
+                {tiersScoped.map((t) => (
+                  <option key={t.solution_tier_id} value={t.solution_tier_id}>
+                    {t.solution_tier_id} — {t.solution_tier_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+              <AdminFieldCaption>Scope</AdminFieldCaption>
+              <textarea
+                style={textarea}
+                rows={3}
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+              />
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="admin-pricing-section">
         <h3 className="admin-pricing-section__title">Hours</h3>

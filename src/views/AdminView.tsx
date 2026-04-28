@@ -225,7 +225,7 @@ export function AdminView() {
   }, [refresh]);
 
   useEffect(() => {
-    setAdminSubTab("create");
+    setAdminSubTab(tab === "solutions_builder" ? "update" : "create");
   }, [tab]);
 
   useLayoutEffect(() => {
@@ -319,7 +319,7 @@ export function AdminView() {
       )}
 
       {!loadErr && !loading && (
-        <div className="admin-workspace">
+        <div className={`admin-workspace${tab === "solutions_builder" ? " admin-workspace--solutions-builder" : ""}`}>
           <div className="admin-tabs" role="tablist" aria-label="Admin sections">
             {(
               [
@@ -340,7 +340,7 @@ export function AdminView() {
                 className={tab === id ? "admin-tab admin-tab--active" : "admin-tab"}
                 onClick={() => {
                   setTab(id);
-                  setAdminSubTab("create");
+                  setAdminSubTab(id === "solutions_builder" ? "update" : "create");
                   setOpErr(null);
                   setOpOk(null);
                 }}
@@ -354,7 +354,8 @@ export function AdminView() {
             tab !== "bulk" &&
             tab !== "glossary" &&
             tab !== "implementer_mapping" &&
-            tab !== "task_group_builder" && (
+            tab !== "task_group_builder" &&
+            tab !== "solutions_builder" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
               <button
                 type="button"
@@ -434,6 +435,7 @@ export function AdminView() {
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
+              onRequestSubTabChange={setAdminSubTab}
               logAudit={logAudit}
               styles={{
                 panel,

@@ -1,14 +1,13 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useId,
   useMemo,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import {
   AGENCY_HERO_TITLE,
   AGENCY_VIEW_DESCRIPTION,
@@ -115,30 +114,22 @@ function tierIdsForPackage(
   );
 }
 
-/** Split plain text on http(s) URLs and render those segments as real links (fields are stored as text, not HTML). */
-function linkifyHttpUrls(text: string): ReactNode {
-  const re = /(https?:\/\/[^\s<>]+)/gi;
-  const parts = text.split(re);
-  return parts.map((part, i) => {
-    if (/^https?:\/\//i.test(part)) {
-      return (
-        <a
-          key={i}
-          href={part}
-          className="agency-hub__link"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {part}
-        </a>
-      );
-    }
-    return <Fragment key={i}>{part}</Fragment>;
-  });
-}
-
 function AgencyTierProse({ text }: { text: string }) {
-  return <div className="agency-tier-prose">{linkifyHttpUrls(text)}</div>;
+  return (
+    <div className="agency-tier-prose">
+      <ReactMarkdown
+        components={{
+          a: ({ href, children }) => (
+            <a href={href} className="agency-hub__link" target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function AgencyTierSubsection({

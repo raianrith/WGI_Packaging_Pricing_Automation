@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -55,6 +56,92 @@ function parseNumStr(s: string): number | null {
 
 function AdminFieldCaption({ children }: { children: ReactNode }) {
   return <span className="admin-field-caption">{children}</span>;
+}
+
+type MarkdownTextareaProps = {
+  value: string;
+  onChange: (next: string) => void;
+  textareaStyle: CSSProperties;
+  rows?: number;
+};
+
+function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2 }: MarkdownTextareaProps) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+
+  const setNext = useCallback(
+    (next: string, nextStart?: number, nextEnd?: number) => {
+      onChange(next);
+      window.setTimeout(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.focus();
+        if (typeof nextStart === "number" && typeof nextEnd === "number") {
+          el.setSelectionRange(nextStart, nextEnd);
+        }
+      }, 0);
+    },
+    [onChange]
+  );
+
+  const wrapSelection = useCallback(
+    (before: string, after: string, fallback = "text") => {
+      const el = ref.current;
+      if (!el) return;
+      const start = el.selectionStart ?? 0;
+      const end = el.selectionEnd ?? start;
+      const selected = value.slice(start, end);
+      const content = selected || fallback;
+      const next = `${value.slice(0, start)}${before}${content}${after}${value.slice(end)}`;
+      const caretStart = start + before.length;
+      const caretEnd = caretStart + content.length;
+      setNext(next, caretStart, caretEnd);
+    },
+    [setNext, value]
+  );
+
+  const prefixSelectedLines = useCallback(
+    (prefix: string) => {
+      const el = ref.current;
+      if (!el) return;
+      const start = el.selectionStart ?? 0;
+      const end = el.selectionEnd ?? start;
+      const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+      const lineEndRaw = value.indexOf("\n", end);
+      const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw;
+      const selectedBlock = value.slice(lineStart, lineEnd);
+      const nextBlock = selectedBlock
+        .split("\n")
+        .map((line) => (line.trim().length === 0 ? line : `${prefix}${line}`))
+        .join("\n");
+      const next = `${value.slice(0, lineStart)}${nextBlock}${value.slice(lineEnd)}`;
+      setNext(next, lineStart, lineStart + nextBlock.length);
+    },
+    [setNext, value]
+  );
+
+  return (
+    <div className="admin-md-field">
+      <div className="admin-md-toolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" className="admin-md-toolbar__btn" onClick={() => wrapSelection("**", "**", "bold text")}>
+          Bold
+        </button>
+        <button type="button" className="admin-md-toolbar__btn" onClick={() => wrapSelection("*", "*", "italic text")}>
+          Italic
+        </button>
+        <button type="button" className="admin-md-toolbar__btn" onClick={() => prefixSelectedLines("- ")}>
+          Bullet list
+        </button>
+        <button
+          type="button"
+          className="admin-md-toolbar__btn"
+          onClick={() => wrapSelection("[", "](https://example.com)", "link text")}
+        >
+          Link
+        </button>
+      </div>
+      <textarea ref={ref} style={textareaStyle} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
 }
 
 function sortId(a: string, b: string): number {
@@ -215,21 +302,13 @@ function SolutionsBuilderCreateStepper({ branch, phase }: StepperProps) {
     );
   }
   if (branch === "tier_only" && (phase === "tier" || phase === "tasks" || phase === "pricing")) {
-    const order: CreatePhase[] = ["tier", "tasks", "pricing"];
-    const labels: Record<string, string> = { tier: "Tier", tasks: "Tasks", pricing: "Pricing" };
-    const cur = order.indexOf(phase);
     return (
-      <ol className="admin-sb-stepper" aria-label="New tier steps">
-        {order.map((p, i) => {
-          const st = i < cur ? "done" : i === cur ? "active" : "pending";
-          return (
-            <li key={p} className={`admin-sb-step admin-sb-step--${st}`} aria-current={i === cur ? "step" : undefined}>
-              <span className="admin-sb-step__n">{i + 1}</span>
-              <span className="admin-sb-step__label">{labels[p]}</span>
-            </li>
-          );
-        })}
-      </ol>
+      <div className="admin-sb-stepper admin-sb-stepper--inline" role="status" aria-label="Create mode">
+        <span className="admin-sb-pill">Single-page flow</span>
+        <span className="admin-sb-stepper__note">
+          Keep everything in one place: create tier, add tasks, and set pricing without leaving this page.
+        </span>
+      </div>
     );
   }
   return null;
@@ -352,6 +431,7 @@ export function SolutionsBuilderPanel({
   onSaved,
   setOpErr,
   setOpOk,
+  onRequestSubTabChange,
   logAudit,
   styles: s,
 }: {
@@ -366,6 +446,7 @@ export function SolutionsBuilderPanel({
   onSaved: () => Promise<void>;
   setOpErr: (msg: string | null) => void;
   setOpOk: (msg: string | null) => void;
+  onRequestSubTabChange?: (tab: SolutionsBuilderSubTab) => void;
   logAudit: LogAudit;
   styles: BuilderStyles;
 }) {
@@ -899,7 +980,8 @@ export function SolutionsBuilderPanel({
 
   // —— Update workspace ——
   const [updSolutionId, setUpdSolutionId] = useState("");
-  const [updSolName, setUpdSolName] = useState("");
+  /** Keep update page concise until user chooses to edit a solution. */
+  const [showUpdateDetails, setShowUpdateDetails] = useState(false);
 
   const [updTierFocus, setUpdTierFocus] = useState("");
   /** Task group template to apply in bulk to `updTierFocus` (update tab). */
@@ -948,6 +1030,7 @@ export function SolutionsBuilderPanel({
       .filter((k) => k.solution_tier_id === updTierFocus)
       .sort((a, b) => sortId(a.task_id, b.task_id));
   }, [tasks, updTierFocus]);
+
 
   const implementerToGroup = useMemo(
     () => buildImplementerToGroupMap(implementerHourGroups),
@@ -1083,12 +1166,6 @@ export function SolutionsBuilderPanel({
   }, [subTab, solutions, updSolutionId]);
 
   useEffect(() => {
-    if (subTab !== "update") return;
-    const sol = solutions.find((x) => x.solution_id === updSolutionId);
-    if (sol) setUpdSolName(sol.solution_name);
-  }, [subTab, solutions, updSolutionId]);
-
-  useEffect(() => {
     if (!updTierFocus || !tiersOfUpdateSol.some((t) => t.solution_tier_id === updTierFocus)) {
       setUpdTierFocus(tiersOfUpdateSol[0]?.solution_tier_id ?? "");
     }
@@ -1127,6 +1204,16 @@ export function SolutionsBuilderPanel({
     if (subTab === "update") clearTaskUpdateForm();
   }, [updTierFocus, subTab]);
 
+  useEffect(() => {
+    if (subTab !== "update") return;
+    setShowUpdateDetails(false);
+  }, [subTab]);
+
+  const jumpTo = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   const startEditTier = (t: SolutionTier) => {
     setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
@@ -1146,64 +1233,66 @@ export function SolutionsBuilderPanel({
     setUpdAutofillFrom(null);
   };
 
-  const saveUpdateSolution = async () => {
+  const deleteSolutionById = async (solutionId: string) => {
     const client = getSupabase();
-    if (!client || !updSolutionId) return;
+    if (!client || !solutionId) return;
     setOpErr(null);
     setOpOk(null);
-    const prev = solutions.find((x) => x.solution_id === updSolutionId);
+    const prev = solutions.find((x) => x.solution_id === solutionId);
     if (!prev) return;
-    const name = updSolName.trim();
-    if (!name) {
-      setOpErr("Solution name is required.");
+    const tiersInSolution = tiers.filter((t) => t.solution_id === solutionId);
+    const tierIds = tiersInSolution.map((t) => t.solution_tier_id);
+    const tasksInSolution = tasks.filter((k) => tierIds.includes(k.solution_tier_id));
+    const taskIds = tasksInSolution.map((k) => k.task_id);
+    if (
+      !window.confirm(
+        `Delete solution "${prev.solution_name}" (${solutionId}) and all related data?` +
+          `\n\nThis will also delete ${tiersInSolution.length} tier(s) and ${tasksInSolution.length} task(s).`
+      )
+    ) {
       return;
     }
-    const today = todayISODate();
-    const { error } = await client
-      .from("solutions")
-      .update({ solution_name: name, solution_modified_date: today })
-      .eq("solution_id", updSolutionId);
+    if (taskIds.length > 0) {
+      // Avoid task_group_lines_shape_check before deleting referenced tasks.
+      const { error: relinkErr } = await client
+        .from("task_group_lines")
+        .update({ line_type: "archetype", source_task_id: null })
+        .in("source_task_id", taskIds);
+      if (relinkErr) {
+        setOpErr(`Could not detach task-group template references: ${relinkErr.message}`);
+        return;
+      }
+      const { error: taskErr } = await client.from("tasks").delete().in("task_id", taskIds);
+      if (taskErr) {
+        setOpErr(friendlyMutationMessage(taskErr.message));
+        return;
+      }
+    }
+    if (tierIds.length > 0) {
+      const { error: pricingErr } = await client.from("solution_tier_pricing").delete().in("solution_tier_id", tierIds);
+      if (pricingErr) {
+        setOpErr(friendlyMutationMessage(pricingErr.message));
+        return;
+      }
+      const { error: tierErr } = await client.from("solution_tiers").delete().in("solution_tier_id", tierIds);
+      if (tierErr) {
+        setOpErr(friendlyMutationMessage(tierErr.message));
+        return;
+      }
+    }
+    const { error } = await client.from("solutions").delete().eq("solution_id", solutionId);
     if (error) {
       setOpErr(friendlyMutationMessage(error.message));
       return;
     }
-    const after = { ...prev, solution_name: name, solution_modified_date: today };
     await logAudit(client, {
       entityType: "solutions",
-      entityId: updSolutionId,
-      action: "update",
-      before: rowJson(prev),
-      after: rowJson(after),
-    });
-    setOpOk("Solution saved.");
-    await onSaved();
-  };
-
-  const deleteUpdateSolution = async () => {
-    const client = getSupabase();
-    if (!client || !updSolutionId) return;
-    if (tiers.some((t) => t.solution_id === updSolutionId)) {
-      setOpErr("Delete tiers under this solution first.");
-      return;
-    }
-    setOpErr(null);
-    setOpOk(null);
-    const prev = solutions.find((x) => x.solution_id === updSolutionId);
-    if (!prev) return;
-    if (!window.confirm(`Delete solution "${prev.solution_name}" (${updSolutionId})?`)) return;
-    const { error } = await client.from("solutions").delete().eq("solution_id", updSolutionId);
-    if (error) {
-      setOpErr(error.message);
-      return;
-    }
-    await logAudit(client, {
-      entityType: "solutions",
-      entityId: updSolutionId,
+      entityId: solutionId,
       action: "delete",
       before: rowJson(prev),
       after: null,
     });
-    setOpOk("Solution deleted.");
+    setOpOk(`Solution deleted (${tiersInSolution.length} tier(s), ${tasksInSolution.length} task(s) removed).`);
     clearTierUpdateForm();
     clearTaskUpdateForm();
     await onSaved();
@@ -1426,6 +1515,17 @@ export function SolutionsBuilderPanel({
     if (!client) return;
     setOpErr(null);
     setOpOk(null);
+    // A task can be referenced by task-group template lines in copy_from_task mode.
+    // If we delete the task first, source_task_id becomes null and can violate
+    // task_group_lines_shape_check. Convert those lines to archetype before delete.
+    const { error: relinkErr } = await client
+      .from("task_group_lines")
+      .update({ line_type: "archetype", source_task_id: null })
+      .eq("source_task_id", k.task_id);
+    if (relinkErr) {
+      setOpErr(`Could not detach task-group template references: ${relinkErr.message}`);
+      return;
+    }
     const { error } = await client.from("tasks").delete().eq("task_id", k.task_id);
     if (error) {
       setOpErr(error.message);
@@ -1607,70 +1707,55 @@ export function SolutionsBuilderPanel({
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is it</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tWhatIsIt} onChange={(e) => setTWhatIsIt(e.target.value)} />
+        <MarkdownTextarea value={tWhatIsIt} onChange={setTWhatIsIt} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tWhyValuable} onChange={(e) => setTWhyValuable(e.target.value)} />
+        <MarkdownTextarea value={tWhyValuable} onChange={setTWhyValuable} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>When should it be used</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tWhenUsed} onChange={(e) => setTWhenUsed(e.target.value)} />
+        <MarkdownTextarea value={tWhenUsed} onChange={setTWhenUsed} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={tAssumptionPrereq}
-          onChange={(e) => setTAssumptionPrereq(e.target.value)}
-        />
+        <MarkdownTextarea value={tAssumptionPrereq} onChange={setTAssumptionPrereq} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is included in scope</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tInScope} onChange={(e) => setTInScope(e.target.value)} />
+        <MarkdownTextarea value={tInScope} onChange={setTInScope} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tOutScope} onChange={(e) => setTOutScope(e.target.value)} />
+        <MarkdownTextarea value={tOutScope} onChange={setTOutScope} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={tFinalDeliverable}
-          onChange={(e) => setTFinalDeliverable(e.target.value)}
-        />
+        <MarkdownTextarea value={tFinalDeliverable} onChange={setTFinalDeliverable} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tHowWorkDone} onChange={(e) => setTHowWorkDone(e.target.value)} />
+        <MarkdownTextarea value={tHowWorkDone} onChange={setTHowWorkDone} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>SOP</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tSop} onChange={(e) => setTSop(e.target.value)} />
+        <MarkdownTextarea value={tSop} onChange={setTSop} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={tDescribedToClient}
-          onChange={(e) => setTDescribedToClient(e.target.value)}
-        />
+        <MarkdownTextarea value={tDescribedToClient} onChange={setTDescribedToClient} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Resources</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={tRes} onChange={(e) => setTRes(e.target.value)} />
+        <MarkdownTextarea value={tRes} onChange={setTRes} textareaStyle={textarea} />
       </label>
     </>
   );
@@ -1700,85 +1785,55 @@ export function SolutionsBuilderPanel({
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is it</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTWhatIsIt} onChange={(e) => setUpdTWhatIsIt(e.target.value)} />
+        <MarkdownTextarea value={updTWhatIsIt} onChange={setUpdTWhatIsIt} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTWhyValuable}
-          onChange={(e) => setUpdTWhyValuable(e.target.value)}
-        />
+        <MarkdownTextarea value={updTWhyValuable} onChange={setUpdTWhyValuable} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>When should it be used</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTWhenUsed}
-          onChange={(e) => setUpdTWhenUsed(e.target.value)}
-        />
+        <MarkdownTextarea value={updTWhenUsed} onChange={setUpdTWhenUsed} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTAssumptionPrereq}
-          onChange={(e) => setUpdTAssumptionPrereq(e.target.value)}
-        />
+        <MarkdownTextarea value={updTAssumptionPrereq} onChange={setUpdTAssumptionPrereq} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is included in scope</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTInScope} onChange={(e) => setUpdTInScope(e.target.value)} />
+        <MarkdownTextarea value={updTInScope} onChange={setUpdTInScope} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTOutScope} onChange={(e) => setUpdTOutScope(e.target.value)} />
+        <MarkdownTextarea value={updTOutScope} onChange={setUpdTOutScope} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTFinalDeliverable}
-          onChange={(e) => setUpdTFinalDeliverable(e.target.value)}
-        />
+        <MarkdownTextarea value={updTFinalDeliverable} onChange={setUpdTFinalDeliverable} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTHowWorkDone}
-          onChange={(e) => setUpdTHowWorkDone(e.target.value)}
-        />
+        <MarkdownTextarea value={updTHowWorkDone} onChange={setUpdTHowWorkDone} textareaStyle={textarea} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>SOP</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTSop} onChange={(e) => setUpdTSop(e.target.value)} />
+        <MarkdownTextarea value={updTSop} onChange={setUpdTSop} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-        <textarea
-          style={textarea}
-          rows={2}
-          value={updTDescribedToClient}
-          onChange={(e) => setUpdTDescribedToClient(e.target.value)}
-        />
+        <MarkdownTextarea value={updTDescribedToClient} onChange={setUpdTDescribedToClient} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Resources</AdminFieldCaption>
-        <textarea style={textarea} rows={2} value={updTRes} onChange={(e) => setUpdTRes(e.target.value)} />
+        <MarkdownTextarea value={updTRes} onChange={setUpdTRes} textareaStyle={textarea} />
       </label>
     </div>
   );
@@ -1875,15 +1930,15 @@ export function SolutionsBuilderPanel({
           <p className="admin-sb-hero__lead" style={muted}>
             {subTab === "create" ? (
               <>
-                Create solutions, tiers, tasks, and pricing. Use the <strong>Create new / Update</strong> control above
-                to switch modes. Id pattern: <code>1-</code> package → <code>2-</code> solution → <code>3-</code> tier →{" "}
-                <code>4-</code> task.
+                One place to fill everything: solution, tier, tasks, and pricing. Use <strong>Create new / Update</strong>{" "}
+                above to switch modes. Id pattern: <code>1-</code> package → <code>2-</code> solution → <code>3-</code>{" "}
+                tier → <code>4-</code> task.
               </>
             ) : (
               <>
                 Select a solution, then work through <strong>Solution</strong>, <strong>Tiers</strong>, and{" "}
-                <strong>Tasks &amp; pricing</strong>. For brand-new records, use <strong>Create new</strong> in the
-                sub-tab.
+                <strong>Tasks &amp; pricing</strong>. For brand-new records, use the <strong>Create new</strong> button in
+                this panel.
               </>
             )}
           </p>
@@ -1892,6 +1947,11 @@ export function SolutionsBuilderPanel({
         {subTab === "create" && (
           <>
             <SolutionsBuilderCreateStepper branch={createBranch} phase={createPhase} />
+            <div className="admin-actions-row" style={{ marginTop: 0, marginBottom: 6 }}>
+              <button type="button" style={btn} onClick={() => onRequestSubTabChange?.("update")}>
+                Back to solution list
+              </button>
+            </div>
             {createPhase === "choose" && (
               <>
                 <h3 className="admin-sb-subhead" style={sectionTitle}>
@@ -1957,9 +2017,25 @@ export function SolutionsBuilderPanel({
                   <code>{previewSolutionId}</code>, tier <code>{previewTierId}</code>, tasks from{" "}
                   <code>{previewTaskId}</code> upward.
                 </div>
+                <nav className="admin-sb-quicknav" aria-label="Jump to section">
+                  <a href="#sb-full-section-solution" className="admin-sb-quicknav__link">
+                    1. Solution &amp; tier
+                  </a>
+                  <a href="#sb-full-section-tasks" className="admin-sb-quicknav__link">
+                    2. Tasks
+                  </a>
+                  <a href="#sb-full-section-pricing" className="admin-sb-quicknav__link">
+                    3. Pricing
+                  </a>
+                  <a href="#sb-full-save" className="admin-sb-quicknav__link">
+                    Final save
+                  </a>
+                </nav>
 
                 <div style={formSectionBox}>
-                  <h4 style={formSectionHeading}>Section 1 — Solution &amp; tier</h4>
+                  <h4 id="sb-full-section-solution" style={formSectionHeading}>
+                    Section 1 — Solution &amp; tier
+                  </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.75rem" }}>
                     Names and metadata for the new solution row (<code>2-…</code>) and its first tier (<code>3-…</code>
                     ).
@@ -1982,91 +2058,63 @@ export function SolutionsBuilderPanel({
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>What is it</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tWhatIsIt} onChange={(e) => setTWhatIsIt(e.target.value)} />
+                    <MarkdownTextarea value={tWhatIsIt} onChange={setTWhatIsIt} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Why is it valuable</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tWhyValuable}
-                      onChange={(e) => setTWhyValuable(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tWhyValuable} onChange={setTWhyValuable} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>When should it be used</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tWhenUsed}
-                      onChange={(e) => setTWhenUsed(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tWhenUsed} onChange={setTWhenUsed} textareaStyle={textarea} />
                   </label>
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Scope</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>What assumptions or prerequisites must be in place</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tAssumptionPrereq}
-                      onChange={(e) => setTAssumptionPrereq(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tAssumptionPrereq} onChange={setTAssumptionPrereq} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>What is included in scope</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tInScope} onChange={(e) => setTInScope(e.target.value)} />
+                    <MarkdownTextarea value={tInScope} onChange={setTInScope} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>What is not included in scope</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tOutScope} onChange={(e) => setTOutScope(e.target.value)} />
+                    <MarkdownTextarea value={tOutScope} onChange={setTOutScope} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>What is the final deliverable</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tFinalDeliverable}
-                      onChange={(e) => setTFinalDeliverable(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tFinalDeliverable} onChange={setTFinalDeliverable} textareaStyle={textarea} />
                   </label>
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Process</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>How do we get this work done</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tHowWorkDone}
-                      onChange={(e) => setTHowWorkDone(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tHowWorkDone} onChange={setTHowWorkDone} textareaStyle={textarea} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>SOP</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tSop} onChange={(e) => setTSop(e.target.value)} />
+                    <MarkdownTextarea value={tSop} onChange={setTSop} textareaStyle={textarea} />
                   </label>
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-                    <textarea
-                      style={textarea}
-                      rows={2}
-                      value={tDescribedToClient}
-                      onChange={(e) => setTDescribedToClient(e.target.value)}
-                    />
+                    <MarkdownTextarea value={tDescribedToClient} onChange={setTDescribedToClient} textareaStyle={textarea} />
                   </label>
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Resources</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={tRes} onChange={(e) => setTRes(e.target.value)} />
+                    <MarkdownTextarea value={tRes} onChange={setTRes} textareaStyle={textarea} />
                   </label>
                   </div>
                 </div>
 
                 <div style={formSectionBox}>
-                  <h4 style={formSectionHeading}>Section 2 — Tasks</h4>
+                  <h4 id="sb-full-section-tasks" style={formSectionHeading}>
+                    Section 2 — Tasks
+                  </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.75rem" }}>
                     Add rows by hand, or <strong>load a task-group template</strong> to fill the table (same templates as{" "}
                     <strong>Admin → Task-Group templates</strong>). On save, each row with a name becomes a task (id{" "}
@@ -2185,7 +2233,9 @@ export function SolutionsBuilderPanel({
                 </div>
 
                 <div style={formSectionBox}>
-                  <h4 style={formSectionHeading}>Section 3 — Tier pricing</h4>
+                  <h4 id="sb-full-section-pricing" style={formSectionHeading}>
+                    Section 3 — Tier pricing
+                  </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.65rem" }}>
                     Same rules as the Pricing tab. Base rate {TIER_PRICING_HOURLY_RATE}
                     /hr; sell updates from hours and scores.
@@ -2328,7 +2378,7 @@ export function SolutionsBuilderPanel({
                   </div>
                 </div>
 
-                <div className="admin-actions-row" style={{ marginTop: 16 }}>
+                <div id="sb-full-save" className="admin-actions-row" style={{ marginTop: 16 }}>
                   <button
                     type="button"
                     className="admin-btn-primary"
@@ -2344,195 +2394,237 @@ export function SolutionsBuilderPanel({
               </div>
             )}
 
-            {createPhase === "tier" && createBranch === "tier_only" && (
-              <div className="admin-sb-block">
+            {createBranch === "tier_only" && createPhase !== "choose" && (
+              <div className="admin-sb-block" style={{ marginTop: "0.6rem" }}>
                 <h3 className="admin-sb-subhead" style={sectionTitle}>
-                  Step 1 — Solution tier
+                  New tier on existing solution — one page
                 </h3>
-                <div className="admin-form-stack" style={formGrid}>{tierFormTierOnly}</div>
-                <div className="admin-actions-row" style={{ marginTop: 10 }}>
-                  <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void insertTier()}>
-                    Create tier &amp; continue
-                  </button>
-                  <button type="button" style={btn} onClick={resetCreateWizard}>
-                    Back
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {createPhase === "tasks" && createBranch === "tier_only" && (
-              <div className="admin-sb-block">
-                <h3 className="admin-sb-subhead" style={sectionTitle}>
-                  Step 2 — Tasks
-                </h3>
-                <p style={{ ...muted, marginTop: 0 }}>
-                  Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Add tasks with the table below, or
-                  apply a task group from <strong>Admin → Task-Group templates</strong>. You need at least one task for
-                  this tier (manually, from a template, or both) before pricing. Ids for manual rows are assigned on
-                  &quot;Save all…&quot;.
+                <p style={{ ...muted, marginTop: 0, maxWidth: "62ch" }}>
+                  Use all three sections below in order. You stay on this page the whole time.
                 </p>
-                {taskGroups.length > 0 ? (
-                  <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
-                    <p style={formSectionHeading}>Apply task group to this new tier</p>
-                    <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
-                      Inserts new <code>4-…</code> tasks for tier <code>{ctxTierId}</code>. Safe to use more than once
-                      (new ids each time). Configure templates in{" "}
-                      <strong>Admin → Task-Group templates</strong>.
-                    </p>
-                    <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
-                      <AdminFieldCaption>Task group</AdminFieldCaption>
-                      <select
-                        style={input}
-                        value={createApplyTemplateGroupId}
-                        onChange={(e) => setCreateApplyTemplateGroupId(e.target.value)}
-                      >
-                        <option value="">— Select a template —</option>
-                        {taskGroups.map((g) => (
-                          <option key={g.id} value={g.id}>
-                            {g.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                      <button
-                        type="button"
-                        className="admin-btn-primary"
-                        style={btnPrimary}
-                        onClick={() => void applyTaskGroupTemplateToCreateTier()}
-                        disabled={!ctxTierId.trim() || !createApplyTemplateGroupId}
-                      >
-                        Apply to tier
-                      </button>
-                    </div>
+                <nav className="admin-sb-quicknav" aria-label="Jump to section">
+                  <a href="#sb-tieronly-section-tier" className="admin-sb-quicknav__link">
+                    1. Tier
+                  </a>
+                  <a href="#sb-tieronly-section-tasks" className="admin-sb-quicknav__link">
+                    2. Tasks
+                  </a>
+                  <a href="#sb-tieronly-section-pricing" className="admin-sb-quicknav__link">
+                    3. Pricing
+                  </a>
+                  <a href="#sb-tieronly-finish" className="admin-sb-quicknav__link">
+                    Finish
+                  </a>
+                </nav>
+
+                <div style={formSectionBox}>
+                  <h4 id="sb-tieronly-section-tier" style={formSectionHeading}>
+                    Section 1 — Solution tier
+                  </h4>
+                  <div className="admin-form-stack" style={formGrid}>
+                    {tierFormTierOnly}
                   </div>
-                ) : null}
-                <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                  <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
-                    Add task row
-                  </button>
+                  <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="admin-btn-primary"
+                      style={btnPrimary}
+                      onClick={() => void insertTier()}
+                      disabled={Boolean(ctxTierId)}
+                    >
+                      {ctxTierId ? "Tier created" : "Create tier"}
+                    </button>
+                    {ctxTierId ? (
+                      <span style={{ ...muted, alignSelf: "center" }}>
+                        Working on solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>.
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="admin-table-scroll" style={{ marginTop: 8 }}>
-                  <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
-                    <thead>
-                      <tr>
-                        <th style={th}>Task name</th>
-                        <th style={th}>Implementer</th>
-                        <th style={th}>Time</th>
-                        <th style={th}>Duration</th>
-                        <th style={th}>Dependencies</th>
-                        <th style={th}>Notes</th>
-                        <th style={{ ...th, width: 90 }} />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {draftTasks.map((d) => (
-                        <tr key={d.key}>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              list={taskNameDatalistId}
-                              value={d.name}
-                              onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
-                            />
-                          </td>
-                          <td style={td}>
-                            <TaskImplementerSelect
-                              value={d.impl}
-                              options={distinctImplementerOptions}
-                              inputStyle={input}
-                              onChange={(v) => updateDraftRow(d.key, { impl: v })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.time}
-                              onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.dur}
-                              onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.dep}
-                              onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.notes}
-                              onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="admin-actions-row" style={{ marginTop: 10 }}>
-                  <button
-                    type="button"
-                    className="admin-btn-primary"
-                    style={btnPrimary}
-                    onClick={() => void saveAllDraftTasksAndContinue()}
-                  >
-                    Save all tasks &amp; continue to pricing
-                  </button>
-                  <button type="button" style={btn} onClick={() => setCreatePhase("tier")}>
-                    Back
-                  </button>
-                </div>
-              </div>
-            )}
 
-            {createPhase === "pricing" && createBranch === "tier_only" && ctxTierId && (
-              <div className="admin-sb-block">
-                <h3 className="admin-sb-subhead" style={sectionTitle}>
-                  Step 3 — Pricing
-                </h3>
-                <p style={{ ...muted, marginTop: 0 }}>
-                  Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Save pricing below, then finish.
-                </p>
-                <PricingPanel
-                  key={ctxTierId}
-                  subTab="create"
-                  tiers={tiers}
-                  pricing={tierPricing}
-                  panelStyle={{ ...panel, marginBottom: 0 }}
-                  formGrid={formGrid}
-                  lbl={lbl}
-                  input={input}
-                  textarea={textarea}
-                  btn={btn}
-                  btnPrimary={btnPrimary}
-                  btnSm={btnSm}
-                  tbl={tbl}
-                  th={th}
-                  td={td}
-                  h2={{ ...h2, fontSize: "0.95rem" }}
-                  muted={muted}
-                  onSaved={onSaved}
-                  setOpErr={setOpErr}
-                  setOpOk={setOpOk}
-                  logAudit={logAudit}
-                  tierIdsInScope={[ctxTierId]}
-                  createLockedTierId={ctxTierId}
-                />
-                <div className="admin-actions-row" style={{ marginTop: 12 }}>
+                <div style={formSectionBox}>
+                  <h4 id="sb-tieronly-section-tasks" style={formSectionHeading}>
+                    Section 2 — Tasks
+                  </h4>
+                  {!ctxTierId ? (
+                    <p style={{ ...muted, marginTop: 0 }}>
+                      Create the tier in Section 1 first, then add tasks here.
+                    </p>
+                  ) : (
+                    <>
+                      <p style={{ ...muted, marginTop: 0 }}>
+                        Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Add tasks with the table
+                        below, or apply a task group from <strong>Admin → Task-Group templates</strong>. Ids for manual
+                        rows are assigned on save.
+                      </p>
+                      {taskGroups.length > 0 ? (
+                        <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
+                          <p style={formSectionHeading}>Apply task group to this new tier</p>
+                          <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
+                            Inserts new <code>4-…</code> tasks for tier <code>{ctxTierId}</code>. Safe to use more than
+                            once (new ids each time). Configure templates in{" "}
+                            <strong>Admin → Task-Group templates</strong>.
+                          </p>
+                          <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
+                            <AdminFieldCaption>Task group</AdminFieldCaption>
+                            <select
+                              style={input}
+                              value={createApplyTemplateGroupId}
+                              onChange={(e) => setCreateApplyTemplateGroupId(e.target.value)}
+                            >
+                              <option value="">— Select a template —</option>
+                              {taskGroups.map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              className="admin-btn-primary"
+                              style={btnPrimary}
+                              onClick={() => void applyTaskGroupTemplateToCreateTier()}
+                              disabled={!ctxTierId.trim() || !createApplyTemplateGroupId}
+                            >
+                              Apply to tier
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
+                          Add task row
+                        </button>
+                      </div>
+                      <div className="admin-table-scroll" style={{ marginTop: 8 }}>
+                        <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
+                          <thead>
+                            <tr>
+                              <th style={th}>Task name</th>
+                              <th style={th}>Implementer</th>
+                              <th style={th}>Time</th>
+                              <th style={th}>Duration</th>
+                              <th style={th}>Dependencies</th>
+                              <th style={th}>Notes</th>
+                              <th style={{ ...th, width: 90 }} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {draftTasks.map((d) => (
+                              <tr key={d.key}>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    list={taskNameDatalistId}
+                                    value={d.name}
+                                    onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <TaskImplementerSelect
+                                    value={d.impl}
+                                    options={distinctImplementerOptions}
+                                    inputStyle={input}
+                                    onChange={(v) => updateDraftRow(d.key, { impl: v })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.time}
+                                    onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.dur}
+                                    onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.dep}
+                                    onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <input
+                                    style={input}
+                                    value={d.notes}
+                                    onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
+                                  />
+                                </td>
+                                <td style={td}>
+                                  <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          className="admin-btn-primary"
+                          style={btnPrimary}
+                          onClick={() => void saveAllDraftTasksAndContinue()}
+                        >
+                          Save all tasks
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div style={formSectionBox}>
+                  <h4 id="sb-tieronly-section-pricing" style={formSectionHeading}>
+                    Section 3 — Pricing
+                  </h4>
+                  {!ctxTierId ? (
+                    <p style={{ ...muted, marginTop: 0 }}>
+                      Create the tier in Section 1 first to configure pricing.
+                    </p>
+                  ) : (
+                    <>
+                      <p style={{ ...muted, marginTop: 0 }}>
+                        Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Save pricing below.
+                      </p>
+                      <PricingPanel
+                        key={ctxTierId}
+                        subTab="create"
+                        tiers={tiers}
+                        pricing={tierPricing}
+                        panelStyle={{ ...panel, marginBottom: 0 }}
+                        formGrid={formGrid}
+                        lbl={lbl}
+                        input={input}
+                        textarea={textarea}
+                        btn={btn}
+                        btnPrimary={btnPrimary}
+                        btnSm={btnSm}
+                        tbl={tbl}
+                        th={th}
+                        td={td}
+                        h2={{ ...h2, fontSize: "0.95rem" }}
+                        muted={muted}
+                        onSaved={onSaved}
+                        setOpErr={setOpErr}
+                        setOpOk={setOpOk}
+                        logAudit={logAudit}
+                        tierIdsInScope={[ctxTierId]}
+                        createLockedTierId={ctxTierId}
+                      />
+                    </>
+                  )}
+                </div>
+
+                <div id="sb-tieronly-finish" className="admin-actions-row" style={{ marginTop: 12 }}>
                   <button type="button" style={btn} onClick={resetCreateWizard}>
                     Done — start another
                   </button>
@@ -2544,53 +2636,140 @@ export function SolutionsBuilderPanel({
 
         {subTab === "update" && (
           <>
-            <div className="admin-sb-block admin-sb-block--context">
-              <UpdateSectionHead
-                badge="Start"
-                title="Which solution are you working on?"
-                hint="Tiers, tasks, and pricing below all use the solution you pick here. Switch any time; unsaved work in open forms is not auto-restored, so save first when needed."
-                muted={muted}
-              />
-              <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
-                <AdminFieldCaption>Solution</AdminFieldCaption>
-                <select style={input} value={updSolutionId} onChange={(e) => setUpdSolutionId(e.target.value)}>
-                  {[...solutions]
-                    .sort((a, b) => sortId(a.solution_id, b.solution_id))
-                    .map((sol) => (
-                      <option key={sol.solution_id} value={sol.solution_id}>
-                        {sol.solution_name} ({sol.solution_id})
-                      </option>
-                    ))}
-                </select>
-              </label>
+            <div className="admin-sb-block" style={{ marginTop: "0.6rem" }}>
+              <h3 className="admin-sb-subhead" style={sectionTitle}>
+                Update solution + tiers — one page
+              </h3>
+              <p style={{ ...muted, marginTop: 0, maxWidth: "62ch" }}>
+                Stay in one form: choose a solution, then update solution details, tiers, tasks, and pricing below.
+              </p>
+              <div className="admin-actions-row" style={{ marginTop: 6 }}>
+                <button
+                  type="button"
+                  className="admin-btn-primary admin-sb-create-cta"
+                  style={btnPrimary}
+                  onClick={() => onRequestSubTabChange?.("create")}
+                >
+                  Create New Solution
+                </button>
+              </div>
+              {showUpdateDetails ? (
+                <nav className="admin-sb-quicknav" aria-label="Jump to update section">
+                  <a href="#sb-update-section-tiers" className="admin-sb-quicknav__link">
+                    1. Tiers
+                  </a>
+                  <a href="#sb-update-section-tasks-pricing" className="admin-sb-quicknav__link">
+                    2. Tasks &amp; pricing
+                  </a>
+                </nav>
+              ) : null}
+
+              <div style={{ ...formSectionBox, marginTop: "0.55rem" }}>
+                <h4 style={formSectionHeading}>All solutions</h4>
+                <div className="admin-table-scroll">
+                  <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Solution</th>
+                        <th style={th}>Id</th>
+                        <th style={th}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...solutions]
+                        .sort((a, b) => sortId(a.solution_id, b.solution_id))
+                        .map((sol) => (
+                          <tr
+                            key={sol.solution_id}
+                            className={updSolutionId === sol.solution_id ? "admin-sb-solution-row--active" : undefined}
+                          >
+                            <td style={td}>{sol.solution_name}</td>
+                            <td style={td}>
+                              <code>{sol.solution_id}</code>
+                            </td>
+                            <td style={td}>
+                              <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                                <button
+                                  type="button"
+                                  style={btnSm}
+                                  onClick={() => {
+                                    setUpdSolutionId(sol.solution_id);
+                                    setShowUpdateDetails(false);
+                                  }}
+                                >
+                                  View all tiers
+                                </button>
+                                <button
+                                  type="button"
+                                  style={btnDangerSm}
+                                  onClick={() => void deleteSolutionById(sol.solution_id)}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                {updSolutionId ? (
+                  <div style={{ ...formSectionBox, marginTop: 12 }}>
+                    <p style={formSectionHeading}>
+                      Solution tiers for {solutions.find((s) => s.solution_id === updSolutionId)?.solution_name ?? updSolutionId}
+                    </p>
+                    <div className="admin-table-scroll">
+                      <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
+                        <thead>
+                          <tr>
+                            <th style={th}>Tier</th>
+                            <th style={th}>Id</th>
+                            <th style={th}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tiersOfUpdateSol.map((t) => (
+                            <tr key={t.solution_tier_id}>
+                              <td style={td}>{t.solution_tier_name}</td>
+                              <td style={td}>
+                                <code>{t.solution_tier_id}</code>
+                              </td>
+                              <td style={td}>
+                                <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                                  <button
+                                    type="button"
+                                    style={btnSm}
+                                    onClick={() => {
+                                      startEditTier(t);
+                                      setShowUpdateDetails(true);
+                                      window.setTimeout(() => jumpTo("sb-update-section-tiers"), 0);
+                                    }}
+                                  >
+                                    Update
+                                  </button>
+                                  <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {tiersOfUpdateSol.length === 0 ? (
+                      <p style={{ ...muted, marginTop: 8 }}>No tiers yet for this solution.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            <div className="admin-sb-block">
+            {showUpdateDetails ? (
+              <>
+                <div id="sb-update-section-tiers" className="admin-sb-block">
               <UpdateSectionHead
                 badge="1"
-                title="Solution details"
-                hint="Update the name shown for this solution across the app."
-                muted={muted}
-              />
-              <div className="admin-form-stack" style={formGrid}>
-                <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                  <AdminFieldCaption>Name</AdminFieldCaption>
-                  <input style={input} value={updSolName} onChange={(e) => setUpdSolName(e.target.value)} />
-                </label>
-              </div>
-              <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveUpdateSolution()}>
-                  Save solution
-                </button>
-                <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateSolution()}>
-                  Delete solution
-                </button>
-              </div>
-            </div>
-
-            <div className="admin-sb-block">
-              <UpdateSectionHead
-                badge="2"
                 title="Tiers"
                 hint="List every tier, add a new one, or edit. To bulk-add tasks from a template, use the Tasks & pricing section (step 3) after a tier exists."
                 muted={muted}
@@ -2625,25 +2804,25 @@ export function SolutionsBuilderPanel({
               {tiersOfUpdateSol.length === 0 ? (
                 <p style={{ ...muted, marginTop: 8 }}>No tiers yet. Add one with the form below.</p>
               ) : null}
-              <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>
-                {updTierEditId ? `Edit tier ${updTierEditId}` : "Add tier"}
-              </h4>
-              {tierFormUpdateFields}
-              <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveUpdateTier()}>
-                  {updTierEditId ? "Save tier" : "Create tier"}
-                </button>
-                {updTierEditId ? (
-                  <button type="button" style={btn} onClick={clearTierUpdateForm}>
-                    Cancel
+              <div style={{ ...formSectionBox, marginTop: 12 }}>
+                <h4 style={formSectionHeading}>{updTierEditId ? `Section 1 — Edit tier ${updTierEditId}` : "Section 1 — Add tier"}</h4>
+                {tierFormUpdateFields}
+                <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                  <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveUpdateTier()}>
+                    {updTierEditId ? "Save tier changes" : "Create tier"}
                   </button>
-                ) : null}
+                  {updTierEditId ? (
+                    <button type="button" style={btn} onClick={clearTierUpdateForm}>
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
+                </div>
 
-            <div className="admin-sb-block">
+                <div id="sb-update-section-tasks-pricing" className="admin-sb-block">
               <UpdateSectionHead
-                badge="3"
+                badge="2"
                 title="Tasks & pricing for a tier"
                 hint="Select a tier, then add tasks (manually, from a task-group template, or both) and set pricing. Templates are configured in Admin → Task-Group templates."
                 muted={muted}
@@ -2871,7 +3050,9 @@ export function SolutionsBuilderPanel({
                   />
                 </>
               )}
-            </div>
+                </div>
+              </>
+            ) : null}
           </>
         )}
       </div>

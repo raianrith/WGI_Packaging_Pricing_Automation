@@ -861,7 +861,7 @@ button {
   flex-shrink: 0;
 }
 
-/* Tier detail copy: comfortable reading (sans, measure, line height) */
+/* Tier detail copy: full-width within category panel */
 .agency-tier-category {
   margin-top: 1.75rem;
   padding: 1.35rem 1.4rem 1.45rem;
@@ -897,7 +897,8 @@ button {
 }
 
 .agency-tier-prose {
-  max-width: 65ch;
+  width: 100%;
+  max-width: none;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 1.02rem;
   line-height: 1.7;
@@ -927,10 +928,6 @@ button {
 }
 
 @media (max-width: 40rem) {
-  .agency-tier-prose {
-    max-width: none;
-  }
-
   .agency-tier-category,
   .agency-tier-category.agency-tier-category--first {
     padding-left: 1.05rem;
@@ -1000,6 +997,8 @@ button {
 
 .agency-pricing__scope {
   margin: 0;
+  width: 100%;
+  max-width: none;
   font-size: 0.9rem;
   color: var(--text);
   line-height: 1.55;

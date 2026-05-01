@@ -455,6 +455,50 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return { sumTime, sumDuration, anyTime, anyDuration };
   }, [tasksForTier]);
 
+  /** Catalog mode KPIs: selected tier’s tasks, or tasks matching sidebar search filters. */
+  const tasksForKpi = useMemo(() => {
+    if (!data) return [];
+    if (tierId) {
+      return data.tasks
+        .filter((t) => t.solution_tier_id === tierId)
+        .sort((a, b) => sortId(a.task_id, b.task_id));
+    }
+    return data.tasks
+      .filter((task) => {
+        const tier = data.tiers.find((x) => x.solution_tier_id === task.solution_tier_id);
+        if (!tier) return false;
+        const sol = data.solutions.find((x) => x.solution_id === tier.solution_id);
+        if (!sol) return false;
+        const solOk =
+          matchesQuery(sol.solution_name, filterSol) || matchesQuery(sol.solution_id, filterSol);
+        const tierOk =
+          matchesQuery(tier.solution_tier_name, filterTier) ||
+          matchesQuery(tier.solution_tier_id, filterTier);
+        return solOk && tierOk;
+      })
+      .sort((a, b) => sortId(a.task_id, b.task_id));
+  }, [data, tierId, filterSol, filterTier]);
+
+  const taskKpis = useMemo(() => {
+    const list = tasksForKpi;
+    const n = list.length;
+    let sumTime = 0;
+    let sumDur = 0;
+    const roles = new Set<string>();
+    for (const t of list) {
+      if (t.task_time != null) sumTime += Number(t.task_time);
+      if (t.task_duration != null) sumDur += Number(t.task_duration);
+      if (t.task_implementer?.trim()) roles.add(t.task_implementer.trim());
+    }
+    return {
+      count: n,
+      sumTime,
+      sumDuration: sumDur,
+      distinctImplementers: roles.size,
+      avgTime: n > 0 ? sumTime / n : 0,
+    };
+  }, [tasksForKpi]);
+
   /** Package / solution for the selected tier (not the left-nav package). */
   const solutionForSelectedTier = useMemo(() => {
     if (!data || !selectedTier) return undefined;
@@ -469,6 +513,19 @@ export function AgencyView({ mode }: AgencyViewProps) {
     if (!link) return undefined;
     return data.packages.find((p) => p.package_id === link.package_id);
   }, [data, selectedTier]);
+
+  const kpiScopeLine = useMemo(() => {
+    if (!data) return "";
+    if (tierId && selectedTier && solutionForSelectedTier) {
+      const parts: string[] = [];
+      if (packageForSelectedTier) parts.push(packageForSelectedTier.package_name);
+      else parts.push("Standalone");
+      parts.push(solutionForSelectedTier.solution_name);
+      parts.push(selectedTier.solution_tier_name);
+      return `Scope: ${parts.join(" → ")}`;
+    }
+    return "Scope: pick a tier in the sidebar to show pricing and task KPIs.";
+  }, [data, tierId, selectedTier, solutionForSelectedTier, packageForSelectedTier]);
 
   /**
    * KPIs for the package selected in the catalog (left nav / pkgId) — not derived from the
@@ -1100,6 +1157,43 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 </div>
               </section>
             )}
+
+            {mode === "catalog" && (data.packages.length > 0 || data.solutions.length > 0) ? (
+              <section
+                className="agency-kpi-panel agency-kpi-panel--scope"
+                style={kpiSectionWrap}
+                aria-label="Tier pricing and task summary"
+              >
+                <div className="agency-kpi-panel__head">
+                  <h2 className="agency-kpi-panel__title">Tier summary</h2>
+                  <p className="agency-kpi-panel__scope">{kpiScopeLine}</p>
+                </div>
+                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
+                  <div className="agency-kpi-card agency-kpi-card--pricing">
+                    <span className="agency-kpi-card__label">Sell price</span>
+                    <span className="agency-kpi-card__value">
+                      {tierId && selectedTier ? sellPriceDisplay(selectedPricing) : "—"}
+                    </span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--pricing">
+                    <span className="agency-kpi-card__label">Tax status</span>
+                    <span className="agency-kpi-card__value agency-kpi-card__value--text">
+                      {tierId && selectedTier ? taxableLabel(selectedPricing) : "—"}
+                    </span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">Distinct implementers</span>
+                    <span className="agency-kpi-card__value">{taskKpis.distinctImplementers}</span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">Sum of task time</span>
+                    <span className="agency-kpi-card__value">
+                      {formatKpiNumber(taskKpis.sumTime)}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             {!selectedTier ? (
               <p style={emptyHint}>Select a tier to view details.</p>

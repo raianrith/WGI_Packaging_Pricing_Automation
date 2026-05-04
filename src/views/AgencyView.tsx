@@ -14,6 +14,7 @@ import {
 } from "../branding";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
+import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "../lib/tierPricingMath";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -452,7 +453,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
         anyDuration = true;
       }
     }
-    return { sumTime, sumDuration, anyTime, anyDuration };
+    const accountMgmtAddonHours = anyTime ? sumTime * ACCOUNT_MGMT_HOURS_ADDON_RATE : 0;
+    const sumTimeWithAccountMgmt = sumTime + accountMgmtAddonHours;
+    return { sumTime, sumDuration, anyTime, anyDuration, accountMgmtAddonHours, sumTimeWithAccountMgmt };
   }, [tasksForTier]);
 
   /** Catalog mode KPIs: selected tier’s tasks, or tasks matching sidebar search filters. */
@@ -1485,13 +1488,27 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           ))}
                         </tbody>
                         <tfoot>
+                          {taskTableTotals.anyTime ? (
+                            <tr className="agency-task-table__addon-row">
+                              <td colSpan={2} className="agency-task-table__addon-label">
+                                Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
+                              </td>
+                              <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                {formatKpiNumber(taskTableTotals.accountMgmtAddonHours)}
+                              </td>
+                              <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                              <td colSpan={2} className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                Included in tier pricing (Admin)
+                              </td>
+                            </tr>
+                          ) : null}
                           <tr className="agency-task-table__totals-row">
                             <td colSpan={2} className="agency-task-table__totals-label">
                               Totals
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">
                               {taskTableTotals.anyTime
-                                ? formatKpiNumber(taskTableTotals.sumTime)
+                                ? formatKpiNumber(taskTableTotals.sumTimeWithAccountMgmt)
                                 : "—"}
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">

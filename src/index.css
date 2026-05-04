@@ -955,6 +955,30 @@ button {
   font-size: 0.84rem;
 }
 
+.agency-task-table__addon-row td {
+  border-bottom: 1px solid rgba(226, 220, 211, 0.85);
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  border-top: 1px solid rgba(13, 92, 77, 0.14);
+  background: rgba(13, 92, 77, 0.045);
+}
+
+.agency-task-table__addon-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.agency-task-table__addon-time {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.agency-task-table__addon-muted {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .agency-task-table__totals-row td {
   border-bottom: none;
   padding-top: 0.75rem;

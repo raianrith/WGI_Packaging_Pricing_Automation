@@ -8,7 +8,7 @@ export function AgencyTabsShell() {
   return (
     <div className="agency-tabs-shell">
       <div className="agency-tabs-shell__bar">
-        <nav className="agency-tabs-nav" aria-label="Agency views">
+        <nav className="agency-tabs-nav" aria-label="Solutions overview">
           <ul className="agency-tabs">
             <li>
               <NavLink
@@ -18,7 +18,7 @@ export function AgencyTabsShell() {
                   `agency-tab${isActive ? " agency-tab--active" : ""}`
                 }
               >
-                All solutions
+                Solutions
               </NavLink>
             </li>
             <li>

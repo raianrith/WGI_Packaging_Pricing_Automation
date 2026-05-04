@@ -13,7 +13,7 @@ import {
   AGENCY_VIEW_DESCRIPTION,
 } from "../branding";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
-import { notifyPackagingDataChanged } from "../lib/packagingEvents";
+import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
 import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "../lib/tierPricingMath";
 import {
   browserKeyConfigurationError,
@@ -93,13 +93,13 @@ function taxableLabel(pricing: SolutionTierPricing | null): string {
 }
 
 function solutionNavTitle(s: Solution): string {
-  return `${s.solution_name} (${s.solution_id})`;
+  return s.solution_name.trim() || "Solution";
 }
 
 function tierNavTitle(t: SolutionTier, solutions: Solution[]): string {
   const sol = solutions.find((s) => s.solution_id === t.solution_id);
   const solPart = sol ? `${sol.solution_name} · ` : "";
-  return `${solPart}${t.solution_tier_name} (${t.solution_tier_id})`;
+  return `${solPart}${t.solution_tier_name}`.trim() || "Tier";
 }
 
 function assignedTierIdSet(packageTiers: PackageSolutionTier[]): Set<string> {
@@ -256,7 +256,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
     setState({ status: "ok", packages, solutions, tiers, packageTiers, tasks, pricing });
 
     if (mode === "package") {
-      notifyPackagingDataChanged();
       return;
     }
     if (mode === "catalog") {
@@ -272,10 +271,8 @@ export function AgencyView({ mode }: AgencyViewProps) {
             .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))[0]
         : null;
       setTierId(tr?.solution_tier_id ?? null);
-      notifyPackagingDataChanged();
       return;
     }
-    notifyPackagingDataChanged();
   }, [mode]);
 
   useEffect(() => {
@@ -292,6 +289,16 @@ export function AgencyView({ mode }: AgencyViewProps) {
       return;
     }
     void load();
+  }, [load]);
+
+  /** When Admin (or other tools) save, reload so this view stays in sync without a manual refresh button. */
+  useEffect(() => {
+    function onPackagingChanged() {
+      if (browserKeyConfigurationError() || !envConfigured()) return;
+      void load();
+    }
+    window.addEventListener(PACKAGING_DATA_CHANGED_EVENT, onPackagingChanged);
+    return () => window.removeEventListener(PACKAGING_DATA_CHANGED_EVENT, onPackagingChanged);
   }, [load]);
 
   const data = state.status === "ok" ? state : null;
@@ -574,7 +581,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
     return {
       title,
-      packageIdLabel: pkgId === STANDALONE_PACKAGE_NAV_ID ? "Standalone" : pkgId,
       tiersCount: tiersInPkg.length,
       sellTotalDisplay: pricedCount > 0 ? formatUsd(sellSum) : "—",
       distinctImplementers: roles.size,
@@ -681,25 +687,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
   }, [data, mode, pkgId, tiersForWorkspacePackage, solId, tiersForSolution, tierId]);
 
-  const heroEyebrow =
-    mode === "package" ? "Agency · package workspace" : "Agency · full catalog";
-
   return (
     <div className="agency-view-shell" style={layout.shell}>
       <header className="agency-page-header">
-        <div className="agency-hero-top">
-          <span className="agency-hero__eyebrow">{heroEyebrow}</span>
-          {state.status !== "loading" && state.status !== "idle" && (
-            <button
-              type="button"
-              className="agency-btn-secondary agency-hero__refresh"
-              style={btnSecondary}
-              onClick={() => void load()}
-            >
-              Refresh data
-            </button>
-          )}
-        </div>
         <h1 style={layout.title}>{AGENCY_HERO_TITLE}</h1>
         <p className="agency-hero__desc" style={layout.subtitle}>
           {AGENCY_VIEW_DESCRIPTION}{" "}
@@ -710,7 +700,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
             </>
           ) : (
             <>
-              Use the <Link className="agency-hub__link" to="/">All solutions</Link> tab to search
+              Use the <Link className="agency-hub__link" to="/">Solutions</Link> tab to search
               tiers across the entire catalog.
             </>
           )}
@@ -795,7 +785,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               className="agency-nav-sol-filter__input"
                               value={filterPkg}
                               onChange={(e) => setFilterPkg(e.target.value)}
-                              placeholder="Filter by name or package ID…"
+                              placeholder="Filter by name…"
                               autoComplete="off"
                             />
                             {filterPkg && (
@@ -826,16 +816,13 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                       ? "kb-nav-item kb-nav-item--active"
                                       : "kb-nav-item"
                                   }
-                                  title={`${p.package_name} (${p.package_id})`}
+                                  title={p.package_name}
                                   onClick={() => {
                                     setFilterPkg("");
                                     navigate(`/package/${encodeURIComponent(p.package_id)}`);
                                   }}
                                 >
                                   <span className="kb-nav-item__label">{p.package_name}</span>
-                                  <span className="kb-nav-item__meta" style={idChip}>
-                                    {p.package_id}
-                                  </span>
                                 </button>
                               </li>
                             ))
@@ -866,7 +853,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               className="agency-nav-sol-filter__input"
                               value={filterTier}
                               onChange={(e) => setFilterTier(e.target.value)}
-                              placeholder="Filter by name or tier ID…"
+                              placeholder="Filter by name…"
                               autoComplete="off"
                             />
                             {filterTier && (
@@ -905,9 +892,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                   }}
                                 >
                                   <span className="kb-nav-item__label">{t.solution_tier_name}</span>
-                                  <span className="kb-nav-item__meta" style={idChip}>
-                                    {t.solution_tier_id}
-                                  </span>
                                 </button>
                               </li>
                             ))
@@ -934,7 +918,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           className="agency-nav-sol-filter__input"
                           value={filterSol}
                           onChange={(e) => setFilterSol(e.target.value)}
-                          placeholder="Filter by name or ID…"
+                          placeholder="Filter by name…"
                           autoComplete="off"
                         />
                         {filterSol && (
@@ -977,9 +961,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               }}
                             >
                               <span className="kb-nav-item__label">{s.solution_name}</span>
-                              <span className="kb-nav-item__meta" style={idChip}>
-                                {s.solution_id}
-                              </span>
                             </button>
                           </li>
                         ))
@@ -1008,7 +989,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               className="agency-nav-sol-filter__input"
                               value={filterTier}
                               onChange={(e) => setFilterTier(e.target.value)}
-                              placeholder="Filter by name or tier ID…"
+                              placeholder="Filter by name…"
                               autoComplete="off"
                             />
                             {filterTier && (
@@ -1047,9 +1028,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                   }}
                                 >
                                   <span className="kb-nav-item__label">{t.solution_tier_name}</span>
-                                  <span className="kb-nav-item__meta" style={idChip}>
-                                    {t.solution_tier_id}
-                                  </span>
                                 </button>
                               </li>
                             ))
@@ -1067,15 +1045,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/">
-                  ← All solutions
+                  ← Solutions
                 </Link>
                 {selectedPackageOverview && (
                   <span className="agency-package-workspace-bar__context">
                     <strong>{selectedPackageOverview.title}</strong>
-                    <span className="agency-package-workspace-bar__id">
-                      {" "}
-                      · {selectedPackageOverview.packageIdLabel}
-                    </span>
                   </span>
                 )}
               </div>
@@ -1091,12 +1065,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
                   <h2 className="agency-kpi-panel__title">Package overview</h2>
                   <p className="agency-kpi-panel__scope">
                     <strong>{selectedPackageOverview.title}</strong>
-                    <span style={{ opacity: 0.85 }}> · {selectedPackageOverview.packageIdLabel}</span>
                     <br />
                     Totals include every tier in this package.
                   </p>
                 </div>
-                <div className="agency-kpi-panel__grid">
+                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
                   <div className="agency-kpi-card agency-kpi-card--tasks">
                     <span className="agency-kpi-card__label">Tiers in package</span>
                     <span className="agency-kpi-card__value">
@@ -1467,7 +1440,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             <tr key={t.task_id}>
                               <td>
                                 <span className="agency-task-table__name">{t.task_name}</span>
-                                <span className="agency-task-table__task-id">{t.task_id}</span>
                               </td>
                               <td>{t.task_implementer ?? "—"}</td>
                               <td className="agency-task-table__td--num">
@@ -1544,13 +1516,13 @@ const layout = {
     fontWeight: 700,
     letterSpacing: "-0.035em",
     lineHeight: 1.22,
-    maxWidth: "min(100%, 42rem)",
+    maxWidth: "100%",
   },
   subtitle: {
     margin: 0,
     color: "var(--muted)",
     fontSize: "0.94rem",
-    maxWidth: "min(100%, 68rem)",
+    maxWidth: "100%",
     lineHeight: 1.55,
   },
   grid: {
@@ -1584,13 +1556,6 @@ const list: CSSProperties = {
   display: "flex",
   flexDirection: "column" as const,
   gap: 6,
-};
-
-const idChip: CSSProperties = {
-  fontSize: "0.7rem",
-  color: "var(--muted)",
-  fontWeight: 500,
-  flexShrink: 0,
 };
 
 const emptyHint: CSSProperties = {
@@ -1641,16 +1606,6 @@ const loadingBox: CSSProperties = {
   padding: "2rem",
   textAlign: "center" as const,
   color: "var(--muted)",
-};
-
-const btnSecondary: CSSProperties = {
-  padding: "0.5rem 1rem",
-  fontSize: "0.85rem",
-  fontWeight: 600,
-  borderRadius: 10,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
-  color: "var(--text)",
 };
 
 const breadcrumb: CSSProperties = {

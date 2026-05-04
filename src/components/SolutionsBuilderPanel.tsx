@@ -2711,7 +2711,7 @@ export function SolutionsBuilderPanel({
               ) : null}
 
               <div style={{ ...formSectionBox, marginTop: "0.55rem" }}>
-                <h4 style={formSectionHeading}>All solutions</h4>
+                <h4 style={formSectionHeading}>Solutions</h4>
                 <div className="admin-table-scroll">
                   <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
                     <thead>

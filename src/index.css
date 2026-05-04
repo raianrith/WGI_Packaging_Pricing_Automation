@@ -346,6 +346,7 @@ button {
 }
 
 .kb-nav-item__label {
+  flex: 1;
   min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -529,33 +530,6 @@ button {
   padding-bottom: 1.35rem;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid rgba(226, 220, 211, 0.75);
-}
-
-.agency-hero-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem 1.25rem;
-  margin-bottom: 0.85rem;
-}
-
-.agency-hero__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.32rem 0.75rem;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--accent);
-  background: rgba(13, 92, 77, 0.08);
-  border: 1px solid rgba(13, 92, 77, 0.14);
-}
-
-.agency-hero__refresh {
-  margin-left: auto;
 }
 
 .agency-hero__desc {
@@ -2651,7 +2625,7 @@ button {
   padding: 1.25rem var(--agency-page-pad-x) 2.5rem;
 }
 
-/* —— Agency tabs (Packages | All solutions) —— */
+/* —— Agency tabs (Packages | Solutions) —— */
 
 .agency-tabs-shell__bar {
   box-sizing: border-box;

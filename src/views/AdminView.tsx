@@ -366,7 +366,7 @@ export function AdminView() {
         <p className="admin-hero__desc" style={subtitle}>
           {ADMIN_VIEW_DESCRIPTION}{" "}
           <Link to="/" style={link}>
-            Back to agency view
+            Back to solutions overview
           </Link>
         </p>
       </header>

@@ -803,7 +803,7 @@ export function RoadmapPlanningView() {
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [clientLabel, setClientLabel] = useState("");
   const [roadmapTitle, setRoadmapTitle] = useState("");
-  const [horizon, setHorizon] = useState<"3" | "6" | "12" | "custom">("6");
+  const [horizon, setHorizon] = useState<"3" | "4" | "6" | "12" | "custom">("6");
   const [clientBudget, setClientBudget] = useState("");
   const [scenarios, setScenarios] = useState<string[]>(() => [...DEFAULT_SCENARIOS]);
   const [cards, setCards] = useState<RoadmapCard[]>([]);
@@ -1171,7 +1171,7 @@ export function RoadmapPlanningView() {
       <div className="roadmap-page__inner roadmap-page__inner--wide">
         <header className="roadmap-hero">
           <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
-          <h1 className="roadmap-hero__title">Roadmap planning</h1>
+          <h1 className="roadmap-hero__title">Proposal Builder</h1>
           <p className="roadmap-hero__lead">
             Build up to three <strong>what-if columns</strong> to compare different mixes. Set a <strong>client budget</strong>{" "}
             to see each scenario subtotal, what is left, and whether you are under or over. Use <strong>Details</strong> on
@@ -1228,9 +1228,10 @@ export function RoadmapPlanningView() {
               <select
                 className="roadmap-input"
                 value={horizon}
-                onChange={(e) => setHorizon(e.target.value as "3" | "6" | "12" | "custom")}
+                onChange={(e) => setHorizon(e.target.value as "3" | "4" | "6" | "12" | "custom")}
               >
                 <option value="3">3 months</option>
+                <option value="4">4 months</option>
                 <option value="6">6 months</option>
                 <option value="12">12 months</option>
                 <option value="custom">Custom (describe in export)</option>

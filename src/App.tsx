@@ -1,5 +1,11 @@
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { APP_TITLE } from "./branding";
+import {
+  APP_BRAND_NAME,
+  APP_SCOPE_LABEL,
+  APP_TITLE,
+  NAV_PROPOSAL_BUILDER,
+  NAV_SOLUTIONS_OVERVIEW,
+} from "./branding";
 import { isAgencyRoute } from "./lib/agencyRoutes";
 import { AdminGate } from "./components/AdminGate";
 import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
@@ -17,11 +23,9 @@ export default function App() {
       <header className="app-top-bar">
         <div className="app-top-bar__inner">
           <div className="app-top-bar__brand" aria-label={APP_TITLE}>
-            <span className="app-top-bar__brand-name">Weidert Group, Inc.</span>
+            <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
             <span className="app-top-bar__brand-divider" aria-hidden />
-            <span className="app-top-bar__brand-scope">
-              Packaging & Pricing Knowledge Vault
-            </span>
+            <span className="app-top-bar__brand-scope">{APP_SCOPE_LABEL}</span>
           </div>
           <nav className="app-module-tabs" aria-label="Application area">
             <NavLink
@@ -30,7 +34,7 @@ export default function App() {
                 `app-module-tab${agencyTabActive ? " app-module-tab--active" : ""}`
               }
             >
-              Agency
+              {NAV_SOLUTIONS_OVERVIEW}
             </NavLink>
             <NavLink
               to="/roadmap"
@@ -38,7 +42,7 @@ export default function App() {
                 `app-module-tab${isActive ? " app-module-tab--active" : ""}`
               }
             >
-              Roadmap planning
+              {NAV_PROPOSAL_BUILDER}
             </NavLink>
             <NavLink
               to="/admin"

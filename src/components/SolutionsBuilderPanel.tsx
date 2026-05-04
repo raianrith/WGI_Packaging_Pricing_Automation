@@ -27,25 +27,36 @@ import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
 import { nextAutoTaskId } from "../lib/taskIds";
 import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
+  ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CLIENT_REVISION_RISK_SCORE_HINTS,
+  INTERNAL_COORDINATION_SCORE_HINTS,
+  SCOPE_RISK_SCORE_HINTS,
   computeTierPricing,
-  TIER_PRICING_HOURLY_RATE,
+  riskScore012Options,
+  riskScore012SelectTitle,
+  strategicValueScoreSelectTitle,
+  strategicValueScoreUiLabel,
+  type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import { PricingPanel } from "./PricingPanel";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 
 export { nextAutoTaskId };
 
-const SCORE012: { value: string; label: string }[] = [
-  { value: "0", label: "0" },
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-];
+function fmtDerivedHours(n: number): string {
+  return Number.isFinite(n)
+    ? n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+    : "0";
+}
 
-const STRATEGIC_OPTIONS: { value: string; label: string }[] = [
-  { value: "0", label: "0 — Support" },
-  { value: "1", label: "1 — Revenue" },
-  { value: "2", label: "2 — Growth" },
-];
+const SCOPE_RISK_OPTIONS = riskScore012Options(SCOPE_RISK_SCORE_HINTS);
+const INTERNAL_COORDINATION_OPTIONS = riskScore012Options(INTERNAL_COORDINATION_SCORE_HINTS);
+const CLIENT_REVISION_RISK_OPTIONS = riskScore012Options(CLIENT_REVISION_RISK_SCORE_HINTS);
+
+const STRATEGIC_OPTIONS: { value: string; label: string }[] = ([0, 1, 2] as const).map((s) => ({
+  value: String(s),
+  label: strategicValueScoreUiLabel(s),
+}));
 
 function parseNumStr(s: string): number | null {
   const t = s.trim();
@@ -425,6 +436,7 @@ export function SolutionsBuilderPanel({
   tiers,
   tasks,
   tierPricing,
+  tierPricingMathConfig,
   implementerHourGroups = [],
   taskGroups = [],
   taskGroupLines = [],
@@ -436,6 +448,7 @@ export function SolutionsBuilderPanel({
   styles: s,
 }: {
   subTab: SolutionsBuilderSubTab;
+  tierPricingMathConfig: TierPricingMathConfig;
   solutions: Solution[];
   tiers: SolutionTier[];
   tasks: TaskRow[];
@@ -574,18 +587,15 @@ export function SolutionsBuilderPanel({
     }
     return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [tasks]);
+  /** Match Implementer–Pricing mapping only (not every label ever used on tasks). */
   const distinctImplementerOptions = useMemo(() => {
     const seen = new Set<string>();
     for (const r of implementerHourGroups) {
       const n = (r.implementer_name ?? "").trim();
       if (n) seen.add(n);
     }
-    for (const k of tasks) {
-      const v = (k.task_implementer ?? "").trim();
-      if (v) seen.add(v);
-    }
     return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [implementerHourGroups, tasks]);
+  }, [implementerHourGroups]);
 
   const sortedTiersForAutofill = useMemo(
     () => [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id)),
@@ -634,14 +644,17 @@ export function SolutionsBuilderPanel({
 
   const fullPricingDerived = useMemo(
     () =>
-      computeTierPricing({
-        hours: fullPricingHours,
-        scopeRisk: Number(prScopeRisk),
-        internalCoordination: Number(prInternalCoord),
-        clientRevisionRisk: Number(prClientRev),
-        strategicValueScore: Number(prStratScore),
-      }),
-    [fullPricingHours, prScopeRisk, prInternalCoord, prClientRev, prStratScore]
+      computeTierPricing(
+        {
+          hours: fullPricingHours,
+          scopeRisk: Number(prScopeRisk),
+          internalCoordination: Number(prInternalCoord),
+          clientRevisionRisk: Number(prClientRev),
+          strategicValueScore: Number(prStratScore),
+        },
+        tierPricingMathConfig
+      ),
+    [fullPricingHours, prScopeRisk, prInternalCoord, prClientRev, prStratScore, tierPricingMathConfig]
   );
 
   const prPercentFromOld = useMemo(
@@ -2237,8 +2250,8 @@ export function SolutionsBuilderPanel({
                     Section 3 — Tier pricing
                   </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.65rem" }}>
-                    Same rules as the Pricing tab. Base rate {TIER_PRICING_HOURLY_RATE}
-                    /hr; sell updates from hours and scores.
+                    Derived sell amounts use the same math as the Pricing tab (rules:{" "}
+                    <strong>Admin → Pricing calculator</strong>, this browser).
                   </p>
                   <div className="admin-form-stack" style={formGrid}>
                   <div style={{ ...formSubHeading, gridColumn: "1 / -1", marginTop: 0 }}>Labels &amp; scope</div>
@@ -2281,26 +2294,43 @@ export function SolutionsBuilderPanel({
                     </label>
                   ))}
                   <label style={lbl}>
-                    <AdminFieldCaption>Total hours</AdminFieldCaption>
+                    <AdminFieldCaption>Total resource hours</AdminFieldCaption>
                     <input
                       style={{ ...input, cursor: "default" }}
                       readOnly
                       tabIndex={-1}
-                      value={
-                        Number.isFinite(fullPricingDerived.totalHours)
-                          ? fullPricingDerived.totalHours.toLocaleString(undefined, {
-                              maximumFractionDigits: 2,
-                              minimumFractionDigits: 0,
-                            })
-                          : "0"
-                      }
+                      value={fmtDerivedHours(fullPricingDerived.totalHours)}
+                    />
+                  </label>
+                  <label style={lbl}>
+                    <AdminFieldCaption>Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%)</AdminFieldCaption>
+                    <input
+                      style={{ ...input, cursor: "default" }}
+                      readOnly
+                      tabIndex={-1}
+                      title="Automatic before sell math."
+                      value={fmtDerivedHours(fullPricingDerived.accountMgmtAddonHours)}
+                    />
+                  </label>
+                  <label style={lbl}>
+                    <AdminFieldCaption>Billable hours (resource + account mgmt)</AdminFieldCaption>
+                    <input
+                      style={{ ...input, cursor: "default" }}
+                      readOnly
+                      tabIndex={-1}
+                      value={fmtDerivedHours(fullPricingDerived.hoursForExpectedEffort)}
                     />
                   </label>
                   <div style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Risk &amp; value</div>
                   <label style={lbl}>
                     <AdminFieldCaption>Scope risk</AdminFieldCaption>
-                    <select style={input} value={prScopeRisk} onChange={(e) => setPrScopeRisk(e.target.value)}>
-                      {SCORE012.map((o) => (
+                    <select
+                      style={input}
+                      value={prScopeRisk}
+                      title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
+                      onChange={(e) => setPrScopeRisk(e.target.value)}
+                    >
+                      {SCOPE_RISK_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>
@@ -2309,8 +2339,13 @@ export function SolutionsBuilderPanel({
                   </label>
                   <label style={lbl}>
                     <AdminFieldCaption>Internal coordination</AdminFieldCaption>
-                    <select style={input} value={prInternalCoord} onChange={(e) => setPrInternalCoord(e.target.value)}>
-                      {SCORE012.map((o) => (
+                    <select
+                      style={input}
+                      value={prInternalCoord}
+                      title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
+                      onChange={(e) => setPrInternalCoord(e.target.value)}
+                    >
+                      {INTERNAL_COORDINATION_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>
@@ -2319,8 +2354,13 @@ export function SolutionsBuilderPanel({
                   </label>
                   <label style={lbl}>
                     <AdminFieldCaption>Client revision risk</AdminFieldCaption>
-                    <select style={input} value={prClientRev} onChange={(e) => setPrClientRev(e.target.value)}>
-                      {SCORE012.map((o) => (
+                    <select
+                      style={input}
+                      value={prClientRev}
+                      title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
+                      onChange={(e) => setPrClientRev(e.target.value)}
+                    >
+                      {CLIENT_REVISION_RISK_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>
@@ -2329,7 +2369,12 @@ export function SolutionsBuilderPanel({
                   </label>
                   <label style={lbl}>
                     <AdminFieldCaption>Strategic value</AdminFieldCaption>
-                    <select style={input} value={prStratScore} onChange={(e) => setPrStratScore(e.target.value)}>
+                    <select
+                      style={input}
+                      value={prStratScore}
+                      title={strategicValueScoreSelectTitle()}
+                      onChange={(e) => setPrStratScore(e.target.value)}
+                    >
                       {STRATEGIC_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
@@ -2597,6 +2642,7 @@ export function SolutionsBuilderPanel({
                       </p>
                       <PricingPanel
                         key={ctxTierId}
+                        tierPricingMathConfig={tierPricingMathConfig}
                         subTab="create"
                         tiers={tiers}
                         pricing={tierPricing}
@@ -3023,6 +3069,7 @@ export function SolutionsBuilderPanel({
                   )}
 
                   <PricingPanel
+                    tierPricingMathConfig={tierPricingMathConfig}
                     subTab="update"
                     tiers={tiers}
                     pricing={tierPricing}

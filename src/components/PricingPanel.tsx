@@ -12,10 +12,19 @@ import { insertAuditLog } from "../lib/audit";
 import { getSupabase } from "../lib/supabase";
 import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
+  ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CLIENT_REVISION_RISK_SCORE_HINTS,
+  INTERNAL_COORDINATION_SCORE_HINTS,
+  SCOPE_RISK_SCORE_HINTS,
   computeTierPricing,
   scoreToString,
   clampScore012,
-  TIER_PRICING_HOURLY_RATE,
+  riskScore012Options,
+  riskScore012SelectTitle,
+  strategicValueScoreSelectTitle,
+  strategicValueScoreUiLabel,
+  type RiskStrategicScore,
+  type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import type { PricingHourGroupKey, SolutionTier, SolutionTierPricing } from "../types";
 
@@ -39,146 +48,100 @@ function AdminFieldCaption({ children }: { children: ReactNode }) {
   return <span className="admin-field-caption">{children}</span>;
 }
 
-const SCORE012: { value: string; label: string }[] = [
-  { value: "0", label: "0" },
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-];
+const SCOPE_RISK_OPTIONS = riskScore012Options(SCOPE_RISK_SCORE_HINTS);
+const INTERNAL_COORDINATION_OPTIONS = riskScore012Options(INTERNAL_COORDINATION_SCORE_HINTS);
+const CLIENT_REVISION_RISK_OPTIONS = riskScore012Options(CLIENT_REVISION_RISK_SCORE_HINTS);
 
-const STRATEGIC_OPTIONS: { value: string; label: string }[] = [
-  { value: "0", label: "0 — Support" },
-  { value: "1", label: "1 — Revenue" },
-  { value: "2", label: "2 — Growth" },
-];
+const STRATEGIC_OPTIONS: { value: string; label: string }[] = ([0, 1, 2] as const).map((s) => ({
+  value: String(s),
+  label: strategicValueScoreUiLabel(s),
+}));
 
-function PricingCalcDetails() {
+function formatMultCell(n: number): string {
+  return Number.isInteger(n) && n === Math.floor(n) ? n.toFixed(1) : String(n);
+}
+
+function fmtDerivedHours(n: number): string {
+  return Number.isFinite(n)
+    ? n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 })
+    : "0";
+}
+
+function riskBandTableRows(config: TierPricingMathConfig): { label: string; mult: string }[] {
+  const bands = [...config.riskBands].sort((a, b) => a.sumMax - b.sumMax);
+  return bands.map((b, i) => {
+    const lo = i === 0 ? 0 : bands[i - 1].sumMax + 1;
+    const hi = b.sumMax;
+    const label = lo >= hi ? String(hi) : `${lo}–${hi}`;
+    return { label, mult: formatMultCell(b.multiplier) };
+  });
+}
+
+/** Compact reference under Sell calculation — tables + formulas only. */
+function PricingSellCalcCompact({ mathConfig }: { mathConfig: TierPricingMathConfig }) {
+  const riskRows = riskBandTableRows(mathConfig);
+  const stratRows = ([0, 1, 2] as const).map((score: RiskStrategicScore) => ({
+    v: strategicValueScoreUiLabel(score),
+    m: formatMultCell(mathConfig.strategicMultipliers[score]),
+  }));
   return (
-    <details className="admin-pricing-details">
-      <summary>How pricing is calculated</summary>
-      <div className="admin-pricing-details__body">
-        <p className="admin-pricing-details__lead">
-          Numbers below mirror the spreadsheet logic: effort from hours, then risk, then strategic uplift, then
-          rounding to the nearest hundred dollars up.
-        </p>
-
-        <h4 className="admin-pricing-details__subtitle">Fields vs math</h4>
-        <p>
-          The large <strong>Scope</strong> text box under <em>Tier &amp; scope</em> is documentation only — what is
-          included, boundaries, assumptions. It is <strong>not</strong> used in the formula. What <em>does</em> feed
-          pricing is the separate <strong>Scope risk</strong> score (0–2) in the sell section, together with{" "}
-          <strong>Internal coordination</strong> and <strong>Client revision risk</strong>.
-        </p>
-
-        <h4 className="admin-pricing-details__subtitle">What the three risk scores mean</h4>
-        <ul className="admin-pricing-details__list">
-          <li>
-            <strong>Scope risk (0–2)</strong> — How heavy or ambiguous the delivery boundary feels: unknowns,
-            breadth of work, dependency on things outside your control, or scope-creep exposure. Higher scores mean
-            more buffer in the multiplier chain (same spreadsheet bands as “scope” in the risk sum).
-          </li>
-          <li>
-            <strong>Internal coordination (0–2)</strong> — How much orchestration you expect inside your team:
-            handoffs, parallel tracks, seats, tooling, or stakeholders to align before the client sees output. The
-            form tooltip describes this as seats and orchestration; 0 is lightest, 2 is heaviest.
-          </li>
-          <li>
-            <strong>Client revision risk (0–2)</strong> — How likely the client is to iterate, rework, or expand
-            feedback cycles after delivery milestones.
-          </li>
-        </ul>
-        <p>
-          Each score is clamped to 0, 1, or 2. They are <strong>added</strong> (not averaged). That sum drives the
-          risk multiplier in the table below.
-        </p>
-
-        <h4 className="admin-pricing-details__subtitle">Step 1 — Effort (hours)</h4>
-        <p>
-          <strong>Total hours</strong> is the sum of all nine hour buckets (client, copy, design, web, video, data,
-          paid media, HubSpot, other).
-        </p>
-        <p className="admin-pricing-details__formula">
-          Expected effort = total hours × ${TIER_PRICING_HOURLY_RATE}/hr
-        </p>
-
-        <h4 className="admin-pricing-details__subtitle">Step 2 — Risk multiplier</h4>
-        <p>
-          Let <strong>S</strong> = scope risk + internal coordination + client revision (each 0–2, so{" "}
-          <strong>S</strong> is 0–6).
-        </p>
-        <table className="admin-pricing-details__table">
-          <caption>Risk sum → multiplier</caption>
-          <thead>
-            <tr>
-              <th scope="col">Sum of three scores (S)</th>
-              <th scope="col">Risk multiplier</th>
+    <div className="admin-pricing-sell-calc">
+      <p className="admin-pricing-sell-calc__hint">
+        To change hourly rate, risk bands, or strategic multipliers, use <strong>Admin → Pricing calculator</strong>{" "}
+        (this browser).
+      </p>
+      <p className="admin-pricing-details__formula admin-pricing-sell-calc__formula">
+        {`Expected effort = resource hours × (1 + ${ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%) × $${mathConfig.hourlyRate}/hr`}
+      </p>
+      <table className="admin-pricing-details__table admin-pricing-sell-calc__table">
+        <caption>Risk sum ranges → multiplier</caption>
+        <thead>
+          <tr>
+            <th scope="col">Sum of three scores (S)</th>
+            <th scope="col">Risk multiplier</th>
+          </tr>
+        </thead>
+        <tbody>
+          {riskRows.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td>{row.mult}</td>
             </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>0</td>
-              <td>1.0</td>
+          ))}
+        </tbody>
+      </table>
+      <p className="admin-pricing-details__formula admin-pricing-sell-calc__formula">
+        Risk mitigated = expected effort × risk multiplier
+      </p>
+      <table className="admin-pricing-details__table admin-pricing-sell-calc__table">
+        <caption>Strategic value → multiplier</caption>
+        <thead>
+          <tr>
+            <th scope="col">Strategic value</th>
+            <th scope="col">Multiplier</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stratRows.map((row, idx) => (
+            <tr key={idx}>
+              <td className="admin-pricing-sell-calc__strat-cell">{row.v}</td>
+              <td>{row.m}</td>
             </tr>
-            <tr>
-              <td>1–2</td>
-              <td>1.1</td>
-            </tr>
-            <tr>
-              <td>3–4</td>
-              <td>1.2</td>
-            </tr>
-            <tr>
-              <td>5–6</td>
-              <td>1.3</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="admin-pricing-details__formula">
-          Risk mitigated = expected effort × risk multiplier
-        </p>
-
-        <h4 className="admin-pricing-details__subtitle">Step 3 — Strategic multiplier</h4>
-        <p>
-          <strong>Strategic value</strong> is a second 0–2 score (Support / Revenue / Growth in the dropdown). It does
-          not add to <strong>S</strong>; it applies after risk.
-        </p>
-        <table className="admin-pricing-details__table">
-          <caption>Strategic score → multiplier</caption>
-          <thead>
-            <tr>
-              <th scope="col">Strategic value</th>
-              <th scope="col">Multiplier</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>0</td>
-              <td>1.0</td>
-            </tr>
-            <tr>
-              <td>1</td>
-              <td>1.1</td>
-            </tr>
-            <tr>
-              <td>2</td>
-              <td>1.2</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h4 className="admin-pricing-details__subtitle">Step 4 — Sell price</h4>
-        <p className="admin-pricing-details__formula">
-          Raw sell = risk mitigated × strategic multiplier
-        </p>
-        <p>
-          <strong>Sell price</strong> is <code>CEILING(raw sell, 100)</code>: round <em>up</em> to the nearest $100.
-          If the raw amount is zero or invalid, the shown sell rounds to 0.
-        </p>
-      </div>
-    </details>
+          ))}
+        </tbody>
+      </table>
+      <p className="admin-pricing-details__formula admin-pricing-sell-calc__formula">
+        Raw sell = risk mitigated × strategic multiplier
+      </p>
+      <p className="admin-pricing-details__formula admin-pricing-sell-calc__formula">
+        Sell price = CEILING(raw sell, ${mathConfig.sellCeilingStep})
+      </p>
+    </div>
   );
 }
 
 type Props = {
+  tierPricingMathConfig: TierPricingMathConfig;
   /** Create new row vs browse table + edit loaded row */
   subTab: "create" | "update";
   tiers: SolutionTier[];
@@ -219,6 +182,7 @@ type Props = {
 };
 
 export function PricingPanel({
+  tierPricingMathConfig,
   subTab,
   tiers,
   pricing,
@@ -285,14 +249,17 @@ export function PricingPanel({
 
   const derived = useMemo(
     () =>
-      computeTierPricing({
-        hours: hourBreakdown,
-        scopeRisk: Number(scopeRisk),
-        internalCoordination: Number(internalCoord),
-        clientRevisionRisk: Number(clientRev),
-        strategicValueScore: Number(stratScore),
-      }),
-    [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore]
+      computeTierPricing(
+        {
+          hours: hourBreakdown,
+          scopeRisk: Number(scopeRisk),
+          internalCoordination: Number(internalCoord),
+          clientRevisionRisk: Number(clientRev),
+          strategicValueScore: Number(stratScore),
+        },
+        tierPricingMathConfig
+      ),
+    [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore, tierPricingMathConfig]
   );
 
   const percentFromOld = useMemo(
@@ -577,21 +544,18 @@ export function PricingPanel({
       <p className="admin-intro admin-intro--tight" style={muted}>
         {subTab === "create" ? (
           <>
-            Add or replace a row — saves upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>.
-            Dollar amounts in the last section update automatically; open <em>How pricing is calculated</em> when you
-            need the rules.
+            Add or replace a row — upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Sell
+            amounts in the last section follow the tables there.
           </>
         ) : updateAutoLoadTierId ? (
           <>
-            The tier selected in <strong>Tasks &amp; pricing (pick tier)</strong> above is loaded here automatically.
-            Still upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Open{" "}
-            <em>How pricing is calculated</em> for the sell formula.
+            The tier selected in <strong>Tasks &amp; pricing</strong> above is loaded here. Upsert on{" "}
+            <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>.
           </>
         ) : (
           <>
-            Load a row from the table to edit, or pick a tier below — upsert on{" "}
-            <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Dollar amounts in the last section update
-            automatically; open <em>How pricing is calculated</em> when you need the rules.
+            Load a row from the table or pick a tier — upsert on{" "}
+            <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>.
           </>
         )}
       </p>
@@ -721,20 +685,34 @@ export function PricingPanel({
             </label>
           ))}
           <label style={lbl}>
-            <AdminFieldCaption>Total hours</AdminFieldCaption>
+            <AdminFieldCaption>Total resource hours</AdminFieldCaption>
             <input
               className="admin-pricing-readonly"
               style={readonlyInput}
               readOnly
               tabIndex={-1}
-              value={
-                Number.isFinite(derived.totalHours)
-                  ? derived.totalHours.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                      minimumFractionDigits: 0,
-                    })
-                  : "0"
-              }
+              value={fmtDerivedHours(derived.totalHours)}
+            />
+          </label>
+          <label style={lbl}>
+            <AdminFieldCaption>Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%)</AdminFieldCaption>
+            <input
+              className="admin-pricing-readonly"
+              style={readonlyInput}
+              readOnly
+              tabIndex={-1}
+              title="Automatic: this percent of total resource hours, before hourly rate."
+              value={fmtDerivedHours(derived.accountMgmtAddonHours)}
+            />
+          </label>
+          <label style={lbl}>
+            <AdminFieldCaption>Billable hours (resource + account mgmt)</AdminFieldCaption>
+            <input
+              className="admin-pricing-readonly"
+              style={readonlyInput}
+              readOnly
+              tabIndex={-1}
+              value={fmtDerivedHours(derived.hoursForExpectedEffort)}
             />
           </label>
         </div>
@@ -742,7 +720,7 @@ export function PricingPanel({
 
       <div className="admin-pricing-section">
         <h3 className="admin-pricing-section__title">Sell calculation</h3>
-        <PricingCalcDetails />
+        <PricingSellCalcCompact mathConfig={tierPricingMathConfig} />
         <div className="admin-form-stack" style={formGrid}>
           <label style={lbl}>
             <AdminFieldCaption>Expected effort</AdminFieldCaption>
@@ -751,6 +729,7 @@ export function PricingPanel({
               style={readonlyInput}
               readOnly
               tabIndex={-1}
+              title="Billable hours (resource + account mgmt add-on) × hourly rate."
               value={`$${Math.round(derived.expectedEffortBase).toLocaleString()}`}
             />
           </label>
@@ -760,9 +739,9 @@ export function PricingPanel({
               style={input}
               value={scopeRisk}
               onChange={(e) => setScopeRisk(e.target.value)}
-              title="Execution predictability (0 = lowest risk)"
+              title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
             >
-              {SCORE012.map((o) => (
+              {SCOPE_RISK_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -775,9 +754,9 @@ export function PricingPanel({
               style={input}
               value={internalCoord}
               onChange={(e) => setInternalCoord(e.target.value)}
-              title="Seats & orchestration (0 = lightest)"
+              title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
             >
-              {SCORE012.map((o) => (
+              {INTERNAL_COORDINATION_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -790,9 +769,9 @@ export function PricingPanel({
               style={input}
               value={clientRev}
               onChange={(e) => setClientRev(e.target.value)}
-              title="Rework / iteration likelihood (0 = lowest)"
+              title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
             >
-              {SCORE012.map((o) => (
+              {CLIENT_REVISION_RISK_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
@@ -821,7 +800,12 @@ export function PricingPanel({
           </label>
           <label style={lbl}>
             <AdminFieldCaption>Strategic value</AdminFieldCaption>
-            <select style={input} value={stratScore} onChange={(e) => setStratScore(e.target.value)}>
+            <select
+              style={input}
+              value={stratScore}
+              title={strategicValueScoreSelectTitle()}
+              onChange={(e) => setStratScore(e.target.value)}
+            >
               {STRATEGIC_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}

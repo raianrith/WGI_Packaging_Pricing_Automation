@@ -237,18 +237,15 @@ export function TaskGroupBuilderPanel({
     [tasks]
   );
 
+  /** Match Implementer–Pricing mapping only (not every label ever used on tasks). */
   const implementerSelectOptions = useMemo(() => {
     const seen = new Set<string>();
     for (const r of implementerHourGroups) {
       const n = (r.implementer_name ?? "").trim();
       if (n) seen.add(n);
     }
-    for (const k of tasks) {
-      const v = (k.task_implementer ?? "").trim();
-      if (v) seen.add(v);
-    }
     return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [implementerHourGroups, tasks]);
+  }, [implementerHourGroups]);
 
   const filteredForLink = useMemo(() => {
     const q = linkSearch.trim().toLowerCase();

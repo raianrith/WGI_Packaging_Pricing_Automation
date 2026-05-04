@@ -15,7 +15,17 @@ import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
-import { computeTierPricing } from "../lib/tierPricingMath";
+import {
+  computeTierPricing,
+  loadTierPricingMathConfigFromStorage,
+  normalizeTierPricingMathConfig,
+  type TierPricingMathConfig,
+} from "../lib/tierPricingMath";
+import {
+  buildSolutionTierPricingMathUpdate,
+  storedTierPricingMathDiffersFromCompute,
+} from "../lib/recomputeStoredTierPricing";
+import { PricingCalculatorPanel } from "../components/PricingCalculatorPanel";
 import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
@@ -37,6 +47,7 @@ type AdminTab =
   | "packages"
   | "solutions_builder"
   | "task_group_builder"
+  | "pricing_calculator"
   | "bulk"
   | "glossary"
   | "implementer_mapping"
@@ -93,6 +104,10 @@ export function AdminView() {
   const [taskGroups, setTaskGroups] = useState<TaskGroupRow[]>([]);
   const [taskGroupLines, setTaskGroupLines] = useState<TaskGroupLineRow[]>([]);
   const [taskGroupDataLoadNote, setTaskGroupDataLoadNote] = useState<string | null>(null);
+  const [tierPricingMathConfig, setTierPricingMathConfig] = useState<TierPricingMathConfig>(() =>
+    loadTierPricingMathConfigFromStorage()
+  );
+  const [recalculateAllSavedPricingBusy, setRecalculateAllSavedPricingBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [opErr, setOpErr] = useState<string | null>(null);
@@ -250,6 +265,71 @@ export function AdminView() {
     []
   );
 
+  const recalculateAllSavedTierPricing = useCallback(async () => {
+    const client = getSupabase();
+    if (!client || !envConfigured()) {
+      setOpErr("Supabase is not configured.");
+      return;
+    }
+    if (tierPricing.length === 0) {
+      setOpErr(null);
+      setOpOk("No pricing rows in Supabase to update.");
+      return;
+    }
+    setOpErr(null);
+    setOpOk(null);
+    setRecalculateAllSavedPricingBusy(true);
+    const math = normalizeTierPricingMathConfig(tierPricingMathConfig);
+    let updated = 0;
+    let skipped = 0;
+    const failures: string[] = [];
+    try {
+      for (const row of tierPricing) {
+        if (!storedTierPricingMathDiffersFromCompute(row, math)) {
+          skipped++;
+          continue;
+        }
+        const payload = buildSolutionTierPricingMathUpdate(row, math);
+        const { solution_tier_id, ...rest } = payload;
+        const { error } = await client
+          .from("solution_tier_pricing")
+          .update(rest)
+          .eq("solution_tier_id", solution_tier_id);
+        if (error) {
+          failures.push(`${solution_tier_id}: ${friendlyMutationMessage(error.message)}`);
+          continue;
+        }
+        const after = { ...row, ...payload } as SolutionTierPricing;
+        await logAudit(client, {
+          entityType: "solution_tier_pricing",
+          entityId: solution_tier_id,
+          action: "update",
+          before: rowJson(row),
+          after: rowJson(after),
+        });
+        updated++;
+      }
+      if (failures.length) {
+        setOpErr(
+          `Updated ${updated} row(s). Failed (${failures.length}): ${failures.slice(0, 3).join("; ")}${
+            failures.length > 3 ? "…" : ""
+          }`
+        );
+      } else {
+        setOpOk(
+          updated > 0
+            ? `Updated ${updated} pricing row(s) in Supabase from current workspace math (${skipped} unchanged).`
+            : `All ${skipped} pricing row(s) already match current math — nothing to write.`
+        );
+      }
+      if (updated > 0) {
+        await refreshAfterSave();
+      }
+    } finally {
+      setRecalculateAllSavedPricingBusy(false);
+    }
+  }, [tierPricing, tierPricingMathConfig, logAudit, refreshAfterSave, setOpErr, setOpOk]);
+
   const filteredAudit = useMemo(() => {
     let list = auditLog;
     if (auditEntityType !== "all") {
@@ -327,6 +407,7 @@ export function AdminView() {
                 ["solutions_builder", "Solutions Builder"],
                 ["task_group_builder", "Task-Group Builder"],
                 ["implementer_mapping", "Implementer-Pricing Mapping"],
+                ["pricing_calculator", "Pricing calculator"],
                 ["glossary", "Data Glossary"],
                 ["bulk", "Bulk Import"],
                 ["audit", "Change history"],
@@ -354,6 +435,7 @@ export function AdminView() {
             tab !== "bulk" &&
             tab !== "glossary" &&
             tab !== "implementer_mapping" &&
+            tab !== "pricing_calculator" &&
             tab !== "task_group_builder" &&
             tab !== "solutions_builder" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
@@ -425,6 +507,7 @@ export function AdminView() {
           {tab === "solutions_builder" && (
             <SolutionsBuilderPanel
               subTab={adminSubTab}
+              tierPricingMathConfig={tierPricingMathConfig}
               solutions={solutions}
               tiers={tiers}
               tasks={tasks}
@@ -481,6 +564,26 @@ export function AdminView() {
               td={td}
             />
           )}
+          {tab === "pricing_calculator" && (
+            <PricingCalculatorPanel
+              config={tierPricingMathConfig}
+              onApply={setTierPricingMathConfig}
+              panel={panel}
+              h2={h2}
+              muted={muted}
+              formGrid={formGrid}
+              lbl={lbl}
+              input={input}
+              textarea={textarea}
+              btn={btn}
+              btnPrimary={btnPrimary}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              onRecalculateAllSavedPricing={recalculateAllSavedTierPricing}
+              savedPricingRowCount={tierPricing.length}
+              recalculateAllSavedPricingBusy={recalculateAllSavedPricingBusy}
+            />
+          )}
           {tab === "bulk" && (
             <BulkImportPanel
               packages={packages}
@@ -489,6 +592,7 @@ export function AdminView() {
               tasks={tasks}
               pricing={tierPricing}
               packageTiers={packageTiers}
+              tierPricingMathConfig={tierPricingMathConfig}
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
@@ -675,7 +779,7 @@ function normBool(v: unknown, fallback = false): boolean {
   return fallback;
 }
 
-function buildBulkPreview(doc: BulkImportDoc): BulkPreview {
+function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig): BulkPreview {
   const today = todayISODate();
   const packages: Package[] = (doc.packages ?? [])
     .map((r) => {
@@ -770,13 +874,16 @@ function buildBulkPreview(doc: BulkImportDoc): BulkPreview {
       hubspot: normOptNum(r.hours_hubspot) ?? 0,
       other: normOptNum(r.hours_other) ?? 0,
     };
-    const derived = computeTierPricing({
-      hours,
-      scopeRisk: normOptNum(r.scope_risk),
-      internalCoordination: normOptNum(r.internal_coordination),
-      clientRevisionRisk: normOptNum(r.client_revision_risk),
-      strategicValueScore: normOptNum(r.strategic_value_score),
-    });
+    const derived = computeTierPricing(
+      {
+        hours,
+        scopeRisk: normOptNum(r.scope_risk),
+        internalCoordination: normOptNum(r.internal_coordination),
+        clientRevisionRisk: normOptNum(r.client_revision_risk),
+        strategicValueScore: normOptNum(r.strategic_value_score),
+      },
+      mathConfig
+    );
     pricing.push({
       solution_tier_id: tierId,
       solution_label: normOptStr(r.solution_label),
@@ -1620,6 +1727,7 @@ function BulkImportPanel({
   tasks,
   pricing,
   packageTiers,
+  tierPricingMathConfig,
   onSaved,
   setOpErr,
   setOpOk,
@@ -1630,6 +1738,7 @@ function BulkImportPanel({
   tasks: TaskRow[];
   pricing: SolutionTierPricing[];
   packageTiers: PackageSolutionTier[];
+  tierPricingMathConfig: TierPricingMathConfig;
   onSaved: () => Promise<void>;
   setOpErr: (s: string | null) => void;
   setOpOk: (s: string | null) => void;
@@ -1652,7 +1761,7 @@ function BulkImportPanel({
       return;
     }
     try {
-      const p = buildBulkPreview(uploadedDoc);
+      const p = buildBulkPreview(uploadedDoc, tierPricingMathConfig);
       const errs = validateBulkPreview(p, { packages, solutions, tiers });
       setPreview(p);
       setValidErrs(errs);
@@ -1984,7 +2093,7 @@ function BulkImportPanel({
           </p>
           <ul style={{ ...muted, margin: "0 0 0 1.1rem", lineHeight: 1.5 }}>
             <li>
-              <strong>Expected effort</strong> = total hours x hourly rate ($210).
+              <strong>Expected effort</strong> = total hours × hourly rate (${tierPricingMathConfig.hourlyRate}).
             </li>
             <li>
               <strong>Risk multiplier</strong> is based on{" "}
@@ -1997,8 +2106,8 @@ function BulkImportPanel({
               <strong>Strategic multiplier</strong> comes from <code>strategic_value_score</code> (0-2).
             </li>
             <li>
-              <strong>Sell price</strong> = risk mitigated base x strategic multiplier, rounded up to the
-              nearest $100.
+              <strong>Sell price</strong> = risk mitigated base × strategic multiplier,{" "}
+              {`rounded up to the nearest $${tierPricingMathConfig.sellCeilingStep}.`}
             </li>
           </ul>
         </div>

@@ -10,7 +10,8 @@ type Props = {
 };
 
 /**
- * Dropdown of known implementer labels; keeps current value visible even if not in `options`.
+ * Implementer dropdown. `options` should be the mapping table names only; the current `value`
+ * is appended when missing so existing tasks stay editable until remapped.
  */
 export function TaskImplementerSelect({ value, options, inputStyle, onChange, disabled }: Props) {
   const merged = useMemo(() => {

@@ -2504,6 +2504,119 @@ button {
   font-size: 0.85em;
 }
 
+/* Tier pricing — compact sell reference (tables + formulas, no long prose) */
+.admin-pricing-sell-calc {
+  margin: 0 0 0.85rem;
+  max-width: min(100%, 28rem);
+}
+
+.admin-pricing-sell-calc__hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.admin-pricing-sell-calc__formula {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.admin-pricing-sell-calc__table {
+  margin-top: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.admin-pricing-sell-calc__table caption {
+  padding-bottom: 0.25rem;
+}
+
+.admin-pricing-sell-calc__strat-cell {
+  white-space: normal;
+  max-width: 18rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+/* Pricing calculator tab — walkthrough + pipeline */
+.admin-pricing-calculator-summary {
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 220, 211, 0.9);
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.admin-pricing-calculator-summary strong {
+  color: var(--text);
+}
+
+.admin-pricing-calculator-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.2rem;
+  margin: 0.45rem 0 0.15rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.admin-pricing-calculator-pipeline__arrow {
+  color: var(--muted);
+  font-weight: 600;
+  user-select: none;
+}
+
+.admin-pricing-calculator-pipeline__box {
+  padding: 0.22rem 0.42rem;
+  border-radius: 6px;
+  background: rgba(13, 92, 77, 0.07);
+  border: 1px solid rgba(13, 92, 77, 0.16);
+  white-space: nowrap;
+}
+
+.admin-pricing-calculator-walkthrough {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(214, 206, 194, 0.85);
+  background: rgba(255, 252, 247, 0.65);
+}
+
+.admin-pricing-calculator-walkthrough > h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.admin-pricing-calculator-walkthrough ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.admin-pricing-calculator-walkthrough li {
+  margin-bottom: 0.75rem;
+}
+
+.admin-pricing-calculator-walkthrough li:last-child {
+  margin-bottom: 0;
+}
+
+.admin-pricing-calculator-walkthrough .admin-pricing-details__formula {
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
 /* —— Agency workspace shell (catalog & package views) —— */
 
 .agency-view-shell {

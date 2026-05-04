@@ -13,7 +13,17 @@ import {
   AGENCY_VIEW_DESCRIPTION,
 } from "../branding";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
+import {
+  mergePricingWithPackageOverrides,
+  parsePricingOverrides,
+  parseTaskOverridesMap,
+} from "../lib/packagePricingTaskOverrides";
+import {
+  mergeTierWithPackageOverrides,
+  parseTierOverrides,
+} from "../lib/packageTierOverrides";
 import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
+import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
 import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "../lib/tierPricingMath";
 import {
   browserKeyConfigurationError,
@@ -417,32 +427,83 @@ export function AgencyView({ mode }: AgencyViewProps) {
       .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
   }, [data, solId]);
 
+  /** Full `package_solution_tiers` rows for the locked package workspace (for merged tier/pricing/tasks). */
+  const packageWorkspaceLinkByTierId = useMemo(() => {
+    if (!data || mode !== "package" || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) {
+      return null as Map<string, PackageSolutionTier> | null;
+    }
+    const m = new Map<string, PackageSolutionTier>();
+    for (const r of data.packageTiers) {
+      if (r.package_id !== pkgId) continue;
+      m.set(r.solution_tier_id, r);
+    }
+    return m;
+  }, [data, mode, pkgId]);
+
   const tiersNavList = useMemo(() => {
     const base =
       mode === "package" && pkgId != null ? tiersForWorkspacePackage : tiersForSolution;
-    return base.filter(
+    const decorated =
+      packageWorkspaceLinkByTierId == null
+        ? base
+        : base.map((t) => {
+            const link = packageWorkspaceLinkByTierId.get(t.solution_tier_id);
+            return mergeTierWithPackageOverrides(t, parseTierOverrides(link?.tier_overrides));
+          });
+    return decorated.filter(
       (t) =>
         matchesQuery(t.solution_tier_name, filterTier) ||
         matchesQuery(t.solution_tier_id, filterTier)
     );
-  }, [mode, pkgId, tiersForWorkspacePackage, tiersForSolution, filterTier]);
+  }, [mode, pkgId, tiersForWorkspacePackage, tiersForSolution, filterTier, packageWorkspaceLinkByTierId]);
 
   const selectedTier = useMemo(() => {
     if (!data || !tierId) return null;
     return data.tiers.find((t) => t.solution_tier_id === tierId) ?? null;
   }, [data, tierId]);
 
+  const selectedTierDisplay = useMemo(() => {
+    if (!selectedTier) return null;
+    if (!packageWorkspaceLinkByTierId) return selectedTier;
+    const link = packageWorkspaceLinkByTierId.get(selectedTier.solution_tier_id);
+    return mergeTierWithPackageOverrides(selectedTier, parseTierOverrides(link?.tier_overrides));
+  }, [selectedTier, packageWorkspaceLinkByTierId]);
+
   const selectedPricing = useMemo(() => {
     if (!data || !tierId) return null;
     return data.pricing.find((p) => p.solution_tier_id === tierId) ?? null;
   }, [data, tierId]);
 
-  const tasksForTier = useMemo(() => {
+  const selectedPricingDisplay = useMemo(() => {
+    if (!data || !tierId) return null;
+    const vault = data.pricing.find((p) => p.solution_tier_id === tierId) ?? null;
+    if (!packageWorkspaceLinkByTierId) return vault;
+    const link = packageWorkspaceLinkByTierId.get(tierId);
+    return mergePricingWithPackageOverrides(vault, tierId, parsePricingOverrides(link?.pricing_overrides));
+  }, [data, tierId, packageWorkspaceLinkByTierId]);
+
+  const showPricingSection = useMemo(() => {
+    if (!tierId || !data) return false;
+    if (data.pricing.some((p) => p.solution_tier_id === tierId)) return true;
+    const link = packageWorkspaceLinkByTierId?.get(tierId);
+    return Object.keys(parsePricingOverrides(link?.pricing_overrides)).length > 0;
+  }, [tierId, data, packageWorkspaceLinkByTierId]);
+
+  const tasksForTierDisplay = useMemo(() => {
     if (!data || !tierId) return [];
-    return data.tasks
+    const vaultSorted = data.tasks
       .filter((t) => t.solution_tier_id === tierId)
       .sort((a, b) => sortId(a.task_id, b.task_id));
-  }, [data, tierId]);
+    if (!packageWorkspaceLinkByTierId) return vaultSorted;
+    const link = packageWorkspaceLinkByTierId.get(tierId);
+    if (!link) return vaultSorted;
+    return buildMergedTaskRowsForPackageTier({
+      tierId,
+      vaultTasks: data.tasks,
+      taskOverrides: parseTaskOverridesMap(link.task_overrides),
+      taskExtensions: parseTaskExtensions(link.task_extensions),
+    });
+  }, [data, tierId, packageWorkspaceLinkByTierId]);
 
   /** Sums for the tier tasks table footer (Time + Duration columns). */
   const taskTableTotals = useMemo(() => {
@@ -450,7 +511,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     let sumDuration = 0;
     let anyTime = false;
     let anyDuration = false;
-    for (const t of tasksForTier) {
+    for (const t of tasksForTierDisplay) {
       if (t.task_time != null && Number.isFinite(Number(t.task_time))) {
         sumTime += Number(t.task_time);
         anyTime = true;
@@ -463,7 +524,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     const accountMgmtAddonHours = anyTime ? sumTime * ACCOUNT_MGMT_HOURS_ADDON_RATE : 0;
     const sumTimeWithAccountMgmt = sumTime + accountMgmtAddonHours;
     return { sumTime, sumDuration, anyTime, anyDuration, accountMgmtAddonHours, sumTimeWithAccountMgmt };
-  }, [tasksForTier]);
+  }, [tasksForTierDisplay]);
 
   /** Catalog mode KPIs: selected tier’s tasks, or tasks matching sidebar search filters. */
   const tasksForKpi = useMemo(() => {
@@ -531,11 +592,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
       if (packageForSelectedTier) parts.push(packageForSelectedTier.package_name);
       else parts.push("Standalone");
       parts.push(solutionForSelectedTier.solution_name);
-      parts.push(selectedTier.solution_tier_name);
+      parts.push((selectedTierDisplay ?? selectedTier).solution_tier_name);
       return `Scope: ${parts.join(" → ")}`;
     }
     return "Scope: pick a tier in the sidebar to show pricing and task KPIs.";
-  }, [data, tierId, selectedTier, solutionForSelectedTier, packageForSelectedTier]);
+  }, [data, tierId, selectedTier, selectedTierDisplay, solutionForSelectedTier, packageForSelectedTier]);
 
   /**
    * KPIs for the package selected in the catalog (left nav / pkgId) — not derived from the
@@ -553,25 +614,69 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     const tierIds = new Set(tiersInPkg.map((t) => t.solution_tier_id));
 
+    const useMergedPackage =
+      mode === "package" && pkgId != null && pkgId !== STANDALONE_PACKAGE_NAV_ID;
+
     let sellSum = 0;
     let pricedCount = 0;
-    for (const pr of data.pricing) {
-      if (!tierIds.has(pr.solution_tier_id)) continue;
-      const n = pr.sell_price ?? pr.standalone_sell_price;
-      if (n != null && Number.isFinite(Number(n))) {
-        sellSum += Number(n);
-        pricedCount += 1;
+    if (useMergedPackage) {
+      for (const t of tiersInPkg) {
+        const vault = data.pricing.find((p) => p.solution_tier_id === t.solution_tier_id) ?? null;
+        const link = data.packageTiers.find(
+          (r) => r.package_id === pkgId && r.solution_tier_id === t.solution_tier_id
+        );
+        const merged = mergePricingWithPackageOverrides(
+          vault,
+          t.solution_tier_id,
+          parsePricingOverrides(link?.pricing_overrides)
+        );
+        const n = merged.sell_price ?? merged.standalone_sell_price;
+        if (n != null && Number.isFinite(Number(n))) {
+          sellSum += Number(n);
+          pricedCount += 1;
+        }
+      }
+    } else {
+      for (const pr of data.pricing) {
+        if (!tierIds.has(pr.solution_tier_id)) continue;
+        const n = pr.sell_price ?? pr.standalone_sell_price;
+        if (n != null && Number.isFinite(Number(n))) {
+          sellSum += Number(n);
+          pricedCount += 1;
+        }
       }
     }
 
-    const tasksInPkg = data.tasks.filter((t) => tierIds.has(t.solution_tier_id));
     const roles = new Set<string>();
     let sumTime = 0;
-    for (const t of tasksInPkg) {
-      if (t.task_time != null && Number.isFinite(Number(t.task_time))) {
-        sumTime += Number(t.task_time);
+    const taskPatchByTier = new Map<string, ReturnType<typeof parseTaskOverridesMap>>();
+    const taskExtByTier = new Map<string, ReturnType<typeof parseTaskExtensions>>();
+    if (useMergedPackage) {
+      for (const t of tiersInPkg) {
+        const link = data.packageTiers.find(
+          (r) => r.package_id === pkgId && r.solution_tier_id === t.solution_tier_id
+        );
+        taskPatchByTier.set(t.solution_tier_id, parseTaskOverridesMap(link?.task_overrides));
+        taskExtByTier.set(t.solution_tier_id, parseTaskExtensions(link?.task_extensions));
       }
-      if (t.task_implementer?.trim()) roles.add(t.task_implementer.trim());
+    }
+    for (const t of tiersInPkg) {
+      const mergedList = useMergedPackage
+        ? buildMergedTaskRowsForPackageTier({
+            tierId: t.solution_tier_id,
+            vaultTasks: data.tasks,
+            taskOverrides: taskPatchByTier.get(t.solution_tier_id),
+            taskExtensions: taskExtByTier.get(t.solution_tier_id),
+          })
+        : data.tasks
+            .filter((tk) => tk.solution_tier_id === t.solution_tier_id)
+            .sort((a, b) => sortId(a.task_id, b.task_id));
+      for (const m of mergedList) {
+        if (m.task_time != null && Number.isFinite(Number(m.task_time))) {
+          sumTime += Number(m.task_time);
+        }
+        if (m.task_implementer?.trim()) roles.add(m.task_implementer.trim());
+      }
     }
 
     const title =
@@ -586,7 +691,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
       distinctImplementers: roles.size,
       sumTaskTime: sumTime,
     };
-  }, [data, pkgId]);
+  }, [data, pkgId, mode]);
 
   /** Full solution × tier price grid for the locked package workspace. */
   const packagePriceMatrix = useMemo(() => {
@@ -611,11 +716,26 @@ export function AgencyView({ mode }: AgencyViewProps) {
       const trs = bySol.get(s.solution_id);
       if (!trs?.length) continue;
       for (const t of [...trs].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))) {
+        const vault = data.pricing.find((p) => p.solution_tier_id === t.solution_tier_id) ?? null;
+        const link =
+          pkgId !== STANDALONE_PACKAGE_NAV_ID
+            ? data.packageTiers.find((r) => r.package_id === pkgId && r.solution_tier_id === t.solution_tier_id)
+            : undefined;
         const pr =
-          data.pricing.find((p) => p.solution_tier_id === t.solution_tier_id) ?? null;
+          pkgId !== STANDALONE_PACKAGE_NAV_ID
+            ? mergePricingWithPackageOverrides(
+                vault,
+                t.solution_tier_id,
+                parsePricingOverrides(link?.pricing_overrides)
+              )
+            : vault;
+        const tierDisplay =
+          pkgId !== STANDALONE_PACKAGE_NAV_ID
+            ? mergeTierWithPackageOverrides(t, parseTierOverrides(link?.tier_overrides))
+            : t;
         rows.push({
           solution: s,
-          tier: t,
+          tier: tierDisplay,
           sell: sellPriceDisplay(pr),
           tax: taxableLabel(pr),
         });
@@ -1106,7 +1226,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 <div className="agency-package-matrix__head">
                   <h2 className="agency-package-matrix__title">Price sheet (this package)</h2>
                   <p className="agency-package-matrix__lede">
-                    Every solution tier in the package and its sell price from the vault.
+                    Sell price and tax reflect package overrides when set; otherwise the vault pricing row.
                   </p>
                 </div>
                 <div className="agency-package-matrix__scroll">
@@ -1171,7 +1291,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
               </section>
             ) : null}
 
-            {!selectedTier ? (
+            {!selectedTier || !selectedTierDisplay ? (
               <p style={emptyHint}>Select a tier to view details.</p>
             ) : (
               <>
@@ -1192,48 +1312,48 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </>
                   )}
                   <span style={bcSep}>›</span>
-                  <span>{selectedTier.solution_tier_name}</span>
+                  <span>{selectedTierDisplay.solution_tier_name}</span>
                 </div>
 
                 <article className="agency-article" style={articleCard}>
                   <header style={articleHead}>
-                    <h2 style={articleTitle}>{selectedTier.solution_tier_name}</h2>
-                    {selectedTier.solution_tier_owner && (
+                    <h2 style={articleTitle}>{selectedTierDisplay.solution_tier_name}</h2>
+                    {selectedTierDisplay.solution_tier_owner && (
                       <p style={ownerLine}>
                         Owner:{" "}
-                        <strong>{selectedTier.solution_tier_owner}</strong>
+                        <strong>{selectedTierDisplay.solution_tier_owner}</strong>
                       </p>
                     )}
-                    {selectedTier.solution_tier_overview_link && (
+                    {selectedTierDisplay.solution_tier_overview_link && (
                       <p style={metaLine}>
-                        Link label: {selectedTier.solution_tier_overview_link}
+                        Link label: {selectedTierDisplay.solution_tier_overview_link}
                       </p>
                     )}
                   </header>
 
-                  {selectedPricing ? (
+                  {showPricingSection && selectedPricingDisplay ? (
                     <section className="agency-pricing" style={block}>
                       <h3 className="agency-block-title" style={blockTitle}>
                         Pricing
                       </h3>
-                      {selectedPricing.scope ? (
+                      {selectedPricingDisplay.scope ? (
                         <div className="agency-pricing__scope-wrap">
                           <p className="agency-pricing__scope pre-wrap">
-                            {selectedPricing.scope}
+                            {selectedPricingDisplay.scope}
                           </p>
                         </div>
                       ) : null}
-                      {selectedPricing.tags ? (
+                      {selectedPricingDisplay.tags ? (
                         <p className="agency-pricing__tags">
                           <span className="agency-pricing__tags-label">Tags</span>
-                          {selectedPricing.tags}
+                          {selectedPricingDisplay.tags}
                         </p>
                       ) : null}
-                      {selectedPricing.notes ? (
+                      {selectedPricingDisplay.notes ? (
                         <div className="agency-pricing__notes">
                           <h4 className="agency-pricing__notes-title">Pricing notes</h4>
                           <div className="agency-pricing__notes-body pre-wrap">
-                            {selectedPricing.notes}
+                            {selectedPricingDisplay.notes}
                           </div>
                         </div>
                       ) : null}
@@ -1250,7 +1370,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                   )}
 
                   {(() => {
-                    const t = selectedTier;
+                    const t = selectedTierDisplay;
                     const first = firstTierCategory(t);
                     const hasDesc = Boolean(
                       t.solution_tier_what_is_it ||
@@ -1414,9 +1534,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
                 <section className="agency-tasks-panel" style={tasksSection}>
                   <h2 className="agency-tasks-panel__title" style={tasksTitle}>
-                    Tasks ({tasksForTier.length})
+                    Tasks ({tasksForTierDisplay.length})
                   </h2>
-                  {tasksForTier.length === 0 ? (
+                  {tasksForTierDisplay.length === 0 ? (
                     <p style={emptyHint}>No tasks for this tier.</p>
                   ) : (
                     <div className="agency-task-table-wrap">
@@ -1436,7 +1556,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {tasksForTier.map((t) => (
+                          {tasksForTierDisplay.map((t) => (
                             <tr key={t.task_id}>
                               <td>
                                 <span className="agency-task-table__name">{t.task_name}</span>
@@ -1489,7 +1609,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 : "—"}
                             </td>
                             <td colSpan={2} className="agency-task-table__totals-meta">
-                              {tasksForTier.length} task{tasksForTier.length === 1 ? "" : "s"}
+                              {tasksForTierDisplay.length} task{tasksForTierDisplay.length === 1 ? "" : "s"}
                             </td>
                           </tr>
                         </tfoot>

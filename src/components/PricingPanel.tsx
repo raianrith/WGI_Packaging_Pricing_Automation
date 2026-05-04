@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -179,6 +180,12 @@ type Props = {
   taskDrivenHours?: boolean;
   /** Per pricing group: summed task times for the tier; required when `taskDrivenHours`. */
   taskHourRollup?: Record<PricingHourGroupKey, number> | null;
+  /** Default writes to `solution_tier_pricing`. `package` pushes drafts to parent only (package link JSON). */
+  persistTarget?: "vault" | "package";
+  /** When `persistTarget` is `package`, seed the form from this merged row (vault + existing package overrides). */
+  packagePricingSeed?: SolutionTierPricing | null;
+  /** When `persistTarget` is `package`, receive the live merged pricing row (including derived sell). */
+  onPackagePricingDraft?: (row: SolutionTierPricing) => void;
 };
 
 export function PricingPanel({
@@ -208,6 +215,9 @@ export function PricingPanel({
   updateAutoLoadTierId = null,
   taskDrivenHours = false,
   taskHourRollup = null,
+  persistTarget = "vault",
+  packagePricingSeed = null,
+  onPackagePricingDraft,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [scope, setScope] = useState("");
@@ -362,6 +372,9 @@ export function PricingPanel({
   }, [subTab, startNew]);
 
   useEffect(() => {
+    if (persistTarget === "package") {
+      return;
+    }
     if (subTab !== "update" || !updateAutoLoadTierId?.trim()) {
       if (subTab === "update") {
         prevSyncTierRef.current = null;
@@ -398,6 +411,7 @@ export function PricingPanel({
       }
     }
   }, [
+    persistTarget,
     subTab,
     updateAutoLoadTierId,
     pricing,
@@ -406,6 +420,75 @@ export function PricingPanel({
     startNew,
     tierScopeSet,
   ]);
+
+  useLayoutEffect(() => {
+    if (persistTarget !== "package" || !packagePricingSeed) return;
+    loadRow(packagePricingSeed);
+  }, [persistTarget, packagePricingSeed, loadRow]);
+
+  const packageDraftRow = useMemo(() => {
+    if (persistTarget !== "package" || !tierPick.trim()) return null;
+    const d = derived;
+    const pc = percentChangeFromSellAndOld(d.sellPrice, oldPrice);
+    const tierRow = tiersScoped.find((t) => t.solution_tier_id === tierPick.trim()) ?? null;
+    return {
+      solution_tier_id: tierPick.trim(),
+      solution_label: tierRow?.solution_tier_name ?? null,
+      tier: tierRow?.solution_tier_name ?? null,
+      scope: scope.trim() || null,
+      hours_client_services: parseNum(hCs) ?? 0,
+      hours_copy: parseNum(hCp) ?? 0,
+      hours_design: parseNum(hDs) ?? 0,
+      hours_web_dev: parseNum(hWd) ?? 0,
+      hours_video: parseNum(hVi) ?? 0,
+      hours_data: parseNum(hDa) ?? 0,
+      hours_paid_media: parseNum(hPm) ?? 0,
+      hours_hubspot: parseNum(hHb) ?? 0,
+      hours_other: parseNum(hOt) ?? 0,
+      total_hours: d.totalHours,
+      expected_effort_base_price: d.expectedEffortBase,
+      scope_risk: d.scopeRisk,
+      internal_coordination: d.internalCoordination,
+      client_revision_risk: d.clientRevisionRisk,
+      risk_multiplier: d.riskMultiplier,
+      risk_mitigated_base_price: d.riskMitigatedBase,
+      strategic_value_score: d.strategicValueScore,
+      strategic_value_multiplier: d.strategicMultiplier,
+      sell_price: d.sellPrice,
+      standalone_sell_price: null,
+      old_price: parseNum(oldPrice),
+      percent_change: pc.forDb,
+      requires_customization: reqCustom,
+      taxable,
+      notes: notes.trim() || null,
+      tags: tags.trim() || null,
+    } as SolutionTierPricing;
+  }, [
+    persistTarget,
+    tierPick,
+    scope,
+    hCs,
+    hCp,
+    hDs,
+    hWd,
+    hVi,
+    hDa,
+    hPm,
+    hHb,
+    hOt,
+    derived,
+    oldPrice,
+    reqCustom,
+    taxable,
+    notes,
+    tags,
+    tiersScoped,
+  ]);
+
+  useEffect(() => {
+    if (persistTarget !== "package" || !packageDraftRow || !onPackagePricingDraft) return;
+    onPackagePricingDraft(packageDraftRow);
+  }, [persistTarget, packageDraftRow, onPackagePricingDraft]);
 
   useEffect(() => {
     if (!taskDrivenHours || !taskHourRollup) {
@@ -462,6 +545,9 @@ export function PricingPanel({
   };
 
   const save = async () => {
+    if (persistTarget === "package") {
+      return;
+    }
     const client = getSupabase();
     if (!client) return;
     setOpErr(null);
@@ -502,6 +588,7 @@ export function PricingPanel({
   };
 
   const remove = async (r: SolutionTierPricing) => {
+    if (persistTarget === "package") return;
     const client = getSupabase();
     if (!client) return;
     setOpErr(null);
@@ -542,7 +629,13 @@ export function PricingPanel({
       <div className="admin-editor-layout admin-editor-layout--wide admin-pricing-layout">
       <h2 style={h2}>Tier pricing</h2>
       <p className="admin-intro admin-intro--tight" style={muted}>
-        {subTab === "create" ? (
+        {persistTarget === "package" ? (
+          <>
+            Same pricing form as <strong>Solutions Builder</strong>. Edits are stored on the <strong>package–tier</strong>{" "}
+            link when you click <strong>Save package</strong> (vault <code style={{ fontSize: "0.85em" }}>solution_tier_pricing</code>{" "}
+            is not updated here).
+          </>
+        ) : subTab === "create" ? (
           <>
             Add or replace a row — upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Sell
             amounts in the last section follow the tables there.
@@ -560,7 +653,7 @@ export function PricingPanel({
         )}
       </p>
 
-      {subTab === "update" && (
+      {subTab === "update" && persistTarget !== "package" && (
         <>
           <div className="admin-table-scroll">
           <table className="admin-data-table" style={{ ...tbl, marginTop: 8 }}>
@@ -872,12 +965,20 @@ export function PricingPanel({
       </div>
 
       <div className="admin-actions-row" style={{ marginTop: 14 }}>
-        <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void save()}>
-          Save pricing
-        </button>
-        <button type="button" style={btn} onClick={() => startNew()}>
-          {subTab === "update" && editingTierId ? "Cancel edit" : "Clear form"}
-        </button>
+        {persistTarget === "package" ? (
+          <p className="admin-hint" style={{ ...muted, margin: 0, maxWidth: "56ch" }}>
+            Pricing is included when you save the package (no separate pricing save to the vault).
+          </p>
+        ) : (
+          <>
+            <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void save()}>
+              Save pricing
+            </button>
+            <button type="button" style={btn} onClick={() => startNew()}>
+              {subTab === "update" && editingTierId ? "Cancel edit" : "Clear form"}
+            </button>
+          </>
+        )}
       </div>
         </>
       ) : null}

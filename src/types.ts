@@ -12,13 +12,6 @@ export type Solution = {
   solution_modified_date: string;
 };
 
-/** Links a tier to a package (tiers are assignable individually; each tier is in at most one package). */
-export type PackageSolutionTier = {
-  package_id: string;
-  solution_tier_id: string;
-  created_at?: string;
-};
-
 export type SolutionTier = {
   solution_tier_id: string;
   solution_id: string;
@@ -42,6 +35,29 @@ export type SolutionTier = {
   solution_tier_created_date: string;
   solution_tier_modified_date: string;
 };
+
+/** Sparse overrides for how a tier appears inside a package only (canonical row is `solution_tiers`). */
+export type PackageTierOverrides = Partial<
+  Pick<
+    SolutionTier,
+    | "solution_tier_name"
+    | "solution_tier_owner"
+    | "solution_tier_overview"
+    | "solution_tier_overview_link"
+    | "solution_tier_direction"
+    | "solution_tier_sop"
+    | "solution_tier_resources"
+    | "solution_tier_what_is_it"
+    | "solution_tier_why_is_it_valuable"
+    | "solution_tier_when_should_it_be_used"
+    | "solution_tier_assumption_prerequisites"
+    | "solution_tier_in_scope"
+    | "solution_tier_out_of_scope"
+    | "solution_tier_final_deliverable"
+    | "solution_tier_how_do_we_get_this_work_done"
+    | "solution_tier_described_to_client"
+  >
+>;
 
 export type TaskRow = {
   task_id: string;
@@ -122,6 +138,56 @@ export type SolutionTierPricing = {
   tags: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+/** Sparse overrides vs `solution_tier_pricing` for this package link only. */
+export type PackagePricingOverrides = Partial<
+  Omit<SolutionTierPricing, "solution_tier_id" | "created_at" | "updated_at">
+>;
+
+/** Per-field overrides for one vault task when viewed inside a package (`null` clears to empty in UI). */
+export type PackageTaskOverride = Partial<{
+  task_name: string | null;
+  task_implementer: string | null;
+  task_time: number | null;
+  task_duration: number | null;
+  task_dependencies: string | null;
+  task_notes: string | null;
+}>;
+
+/** Map of `task_id` → sparse patch (vault `tasks` row unchanged). */
+export type PackageTaskOverridesMap = Record<string, PackageTaskOverride>;
+
+/** Package-only task line (not a row in `tasks`). */
+export type PackageExtraTaskRow = {
+  package_task_id: string;
+  task_name: string;
+  task_implementer: string | null;
+  task_time: number | null;
+  task_duration: number | null;
+  task_dependencies: string | null;
+  task_notes: string | null;
+};
+
+/** Hide vault tasks in this package and/or add tasks that exist only on the package link. */
+export type PackageTaskExtensions = {
+  hidden_task_ids?: string[];
+  extra_tasks?: PackageExtraTaskRow[];
+};
+
+/** Links a tier to a package (tiers are assignable individually; each tier is in at most one package). */
+export type PackageSolutionTier = {
+  package_id: string;
+  solution_tier_id: string;
+  created_at?: string;
+  /** Sparse JSON vs vault tier narrative (`solution_tiers`). */
+  tier_overrides?: PackageTierOverrides | null;
+  /** Sparse JSON vs vault pricing row (`solution_tier_pricing`). */
+  pricing_overrides?: PackagePricingOverrides | null;
+  /** Sparse JSON: task_id → patch vs vault `tasks`. */
+  task_overrides?: PackageTaskOverridesMap | null;
+  /** JSON: hidden vault task ids + package-only extra task rows. */
+  task_extensions?: PackageTaskExtensions | null;
 };
 
 export type AuditLogRow = {

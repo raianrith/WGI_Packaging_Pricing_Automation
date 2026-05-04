@@ -30,6 +30,7 @@ import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
+import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
@@ -70,17 +71,6 @@ function sortId(a: string, b: string): number {
     if (na !== nb) return na - nb;
   }
   return a.localeCompare(b);
-}
-
-/** Next id in the `1-n` sequence (admin package builder). Ignores other id shapes. */
-function nextAutoPackageId(packages: Package[]): string {
-  let max = 0;
-  const re = /^1-(\d+)$/i;
-  for (const p of packages) {
-    const m = p.package_id.trim().match(re);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `1-${max + 1}`;
 }
 
 function rowJson(row: object): Record<string, unknown> {
@@ -244,9 +234,9 @@ export function AdminView() {
   }, [tab]);
 
   useLayoutEffect(() => {
-    if (!opErr) return;
-    opFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [opErr]);
+    if (!opErr && !opOk) return;
+    opFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [opErr, opOk]);
 
   const logAudit = useCallback(
     async (
@@ -436,8 +426,7 @@ export function AdminView() {
             tab !== "glossary" &&
             tab !== "implementer_mapping" &&
             tab !== "pricing_calculator" &&
-            tab !== "task_group_builder" &&
-            tab !== "solutions_builder" && (
+            tab !== "task_group_builder" && (
             <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
               <button
                 type="button"
@@ -476,32 +465,39 @@ export function AdminView() {
             </div>
           )}
 
-          {(opErr || opOk) && (
-            <div ref={opFeedbackRef} className="admin-workspace__op-messages" aria-live="polite" aria-atomic>
-              {opErr ? (
-                <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
-                  {opErr}
-                </div>
-              ) : null}
-              {opOk ? (
-                <div className="admin-banner admin-banner--ok" style={bannerOk} role="status">
-                  {opOk}
-                </div>
-              ) : null}
-            </div>
-          )}
-
           {tab === "packages" && (
-            <PackagesPanel
+            <PackagesBuilderPanel
               subTab={adminSubTab}
               packages={packages}
               solutions={solutions}
               tiers={tiers}
+              tasks={tasks}
+              tierPricing={tierPricing}
+              tierPricingMathConfig={tierPricingMathConfig}
               packageTiers={packageTiers}
+              taskGroups={taskGroups}
+              taskGroupLines={taskGroupLines}
+              implementerHourGroups={implementerHourGroups}
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
               logAudit={logAudit}
+              styles={{
+                panel,
+                formGrid,
+                lbl,
+                input,
+                textarea,
+                btn,
+                btnPrimary,
+                btnDangerSm,
+                btnSm,
+                tbl,
+                th,
+                td,
+                h2,
+                muted,
+              }}
             />
           )}
           {tab === "solutions_builder" && (
@@ -703,6 +699,21 @@ export function AdminView() {
               </div>
               </div>
             </section>
+          )}
+
+          {(opErr || opOk) && (
+            <div ref={opFeedbackRef} className="admin-workspace__op-messages" aria-live="polite" aria-atomic>
+              {opErr ? (
+                <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
+                  {opErr}
+                </div>
+              ) : null}
+              {opOk ? (
+                <div className="admin-banner admin-banner--ok" style={bannerOk} role="status">
+                  {opOk}
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
       )}
@@ -1643,6 +1654,26 @@ const BULK_GLOSSARY: Record<
         name: "created_at",
         description: "Optional row creation time (timestamptz); may be left blank on import (database default).",
       },
+      {
+        name: "tier_overrides",
+        description:
+          "Optional JSON object: sparse tier text fields that differ from the vault tier for this package only (see Package Builder).",
+      },
+      {
+        name: "pricing_overrides",
+        description:
+          "Optional JSON object: sparse fields vs solution_tier_pricing for this package link only.",
+      },
+      {
+        name: "task_overrides",
+        description:
+          "Optional JSON object: map of task_id to sparse patch vs vault tasks for this package link only.",
+      },
+      {
+        name: "task_extensions",
+        description:
+          "Optional JSON: hidden_task_ids (vault tasks omitted in this package) and extra_tasks (package-only lines).",
+      },
     ],
   },
   audit_log: {
@@ -2307,450 +2338,6 @@ function DataGlossaryPanel() {
     </section>
   );
 }
-
-function PackagesPanel({
-  subTab,
-  packages,
-  solutions,
-  tiers,
-  packageTiers,
-  onSaved,
-  setOpErr,
-  setOpOk,
-  logAudit,
-}: {
-  subTab: AdminSubTab;
-  packages: Package[];
-  solutions: Solution[];
-  tiers: SolutionTier[];
-  packageTiers: PackageSolutionTier[];
-  onSaved: () => Promise<void>;
-  setOpErr: (s: string | null) => void;
-  setOpOk: (s: string | null) => void;
-  logAudit: (
-    client: SupabaseClient,
-    p: Parameters<typeof insertAuditLog>[1]
-  ) => Promise<void>;
-}) {
-  const [nameField, setNameField] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
-  const [tierSearch, setTierSearch] = useState("");
-
-  const startNew = () => {
-    setEditingId(null);
-    setNameField("");
-    setSelectedTierIds([]);
-    setTierSearch("");
-  };
-
-  const loadPackageForEdit = (p: Package) => {
-    setEditingId(p.package_id);
-    setNameField(p.package_name);
-    setTierSearch("");
-    setSelectedTierIds(
-      packageTiers.filter((r) => r.package_id === p.package_id).map((r) => r.solution_tier_id)
-    );
-  };
-
-  useEffect(() => {
-    if (subTab === "create") startNew();
-  }, [subTab]);
-
-  const solutionById = useMemo(() => {
-    const m = new Map<string, Solution>();
-    for (const s of solutions) m.set(s.solution_id, s);
-    return m;
-  }, [solutions]);
-
-  const packageNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of packages) m.set(p.package_id, p.package_name);
-    return m;
-  }, [packages]);
-
-  const tierRows = useMemo(() => {
-    const q = tierSearch.trim().toLowerCase();
-    const rows = [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    if (!q) return rows;
-    return rows.filter((t) => {
-      const sol = solutionById.get(t.solution_id);
-      const solName = sol?.solution_name?.toLowerCase() ?? "";
-      return (
-        t.solution_tier_name.toLowerCase().includes(q) ||
-        t.solution_tier_id.toLowerCase().includes(q) ||
-        t.solution_id.toLowerCase().includes(q) ||
-        solName.includes(q)
-      );
-    });
-  }, [tiers, tierSearch, solutionById]);
-
-  const tierToPackageId = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const r of packageTiers) m.set(r.solution_tier_id, r.package_id);
-    return m;
-  }, [packageTiers]);
-
-  const toggleTier = (tierId: string, include: boolean) => {
-    setSelectedTierIds((prev) => {
-      if (include) return prev.includes(tierId) ? prev : [...prev, tierId];
-      return prev.filter((x) => x !== tierId);
-    });
-  };
-
-  /** Each tier belongs to at most one package (unique solution_tier_id in junction). */
-  const applyPackageTierMembership = async (
-    client: SupabaseClient,
-    packageId: string,
-    wantedTierIds: string[]
-  ): Promise<string | null> => {
-    const { error: e0 } = await client
-      .from("package_solution_tiers")
-      .delete()
-      .eq("package_id", packageId);
-    if (e0) return friendlyMutationMessage(e0.message);
-    if (wantedTierIds.length === 0) return null;
-    const { error: e1 } = await client
-      .from("package_solution_tiers")
-      .delete()
-      .in("solution_tier_id", wantedTierIds);
-    if (e1) return friendlyMutationMessage(e1.message);
-    const { error: e2 } = await client.from("package_solution_tiers").insert(
-      wantedTierIds.map((solution_tier_id) => ({ package_id: packageId, solution_tier_id }))
-    );
-    if (e2) return friendlyMutationMessage(e2.message);
-    return null;
-  };
-
-  const save = async () => {
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const today = todayISODate();
-    const wanted = [...selectedTierIds];
-
-    if (subTab === "create") {
-      const name = nameField.trim();
-      if (!name) {
-        setOpErr("Package name is required.");
-        return;
-      }
-      const newId = nextAutoPackageId(packages);
-      const row: Package = {
-        package_id: newId,
-        package_name: name,
-        package_create_date: today,
-        package_modified_date: today,
-      };
-      const { error } = await client.from("packages").insert(row);
-      if (error) {
-        setOpErr(friendlyMutationMessage(error.message));
-        return;
-      }
-      const assignErr = await applyPackageTierMembership(client, newId, wanted);
-      if (assignErr) {
-        setOpErr(`${assignErr} (Package ${newId} was created; fix links in Package Builder if needed.)`);
-        await onSaved();
-        return;
-      }
-      await logAudit(client, {
-        entityType: "packages",
-        entityId: newId,
-        action: "insert",
-        before: null,
-        after: { ...(rowJson(row) as Record<string, unknown>), solution_tier_ids: wanted },
-      });
-      setOpOk(`Package created as ${newId} with ${wanted.length} tier link(s).`);
-      startNew();
-      await onSaved();
-      return;
-    }
-
-    if (!editingId) {
-      setOpErr("Select a package to update.");
-      return;
-    }
-    const prev = packages.find((x) => x.package_id === editingId);
-    if (!prev) return;
-    const name = nameField.trim();
-    if (!name) {
-      setOpErr("Name is required.");
-      return;
-    }
-    const { error } = await client
-      .from("packages")
-      .update({ package_name: name, package_modified_date: today })
-      .eq("package_id", editingId);
-    if (error) {
-      setOpErr(friendlyMutationMessage(error.message));
-      return;
-    }
-    const afterPkg = { ...prev, package_name: name, package_modified_date: today };
-    await logAudit(client, {
-      entityType: "packages",
-      entityId: editingId,
-      action: "update",
-      before: rowJson(prev),
-      after: rowJson(afterPkg),
-    });
-    const assignErr = await applyPackageTierMembership(client, editingId, wanted);
-    if (assignErr) {
-      setOpErr(assignErr);
-      await onSaved();
-      return;
-    }
-    setOpOk("Package and tier links saved.");
-    startNew();
-    await onSaved();
-  };
-
-  const removeCurrentPackage = async () => {
-    if (!editingId) {
-      setOpErr("Select a package first.");
-      return;
-    }
-    const p = packages.find((x) => x.package_id === editingId);
-    if (!p) return;
-    if (
-      !window.confirm(
-        `Delete package "${p.package_name}" (${p.package_id})? Tier links for this package will be removed.`
-      )
-    ) {
-      return;
-    }
-    const client = getSupabase();
-    if (!client) return;
-    setOpErr(null);
-    setOpOk(null);
-    const { error } = await client.from("packages").delete().eq("package_id", p.package_id);
-    if (error) {
-      setOpErr(friendlyMutationMessage(error.message));
-      return;
-    }
-    await logAudit(client, {
-      entityType: "packages",
-      entityId: p.package_id,
-      action: "delete",
-      before: rowJson(p),
-      after: null,
-    });
-    setOpOk("Package deleted.");
-    startNew();
-    await onSaved();
-  };
-
-  const isCreate = subTab === "create";
-
-  const tierPickerIntro =
-    "Check each solution tier to include in this package. A tier can only belong to one package at a time; saving here moves it from another package if needed.";
-
-  const tierPickerBlock = (
-    <>
-      <p className="admin-intro" style={{ ...muted, marginTop: "0.75rem" }}>
-        {tierPickerIntro}
-      </p>
-      <label style={{ ...lbl, marginTop: 8 }}>
-        <AdminFieldCaption>Filter tiers</AdminFieldCaption>
-        <input
-          style={input}
-          value={tierSearch}
-          onChange={(e) => setTierSearch(e.target.value)}
-          placeholder="Tier name, tier id, solution id, or solution name…"
-        />
-      </label>
-      <div
-        className="admin-table-scroll"
-        style={{ maxHeight: "min(22rem, 50vh)", marginTop: 8, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8 }}
-      >
-        <table className="admin-data-table" style={{ ...tbl, marginTop: 0 }}>
-          <thead>
-            <tr>
-              <th style={{ ...th, width: "2.25rem" }} aria-label="Include tier in package" />
-              <th style={th}>Solution</th>
-              <th style={th}>Tier</th>
-              <th style={th}>Tier id</th>
-              <th style={th}>Current package</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tierRows.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={td}>
-                  No tiers match this filter.
-                </td>
-              </tr>
-            ) : (
-              tierRows.map((t) => {
-                const sol = solutionById.get(t.solution_id);
-                const checked = selectedTierIds.includes(t.solution_tier_id);
-                const pid = tierToPackageId.get(t.solution_tier_id);
-                const pkgLabel =
-                  pid == null
-                    ? "—"
-                    : `${packageNameById.get(pid) ?? "—"} (${pid})`;
-                return (
-                  <tr key={t.solution_tier_id}>
-                    <td style={td}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) =>
-                          toggleTier(t.solution_tier_id, e.target.checked)
-                        }
-                        aria-label={`Include tier ${t.solution_tier_name} in this package`}
-                      />
-                    </td>
-                    <td style={td}>{sol?.solution_name ?? t.solution_id}</td>
-                    <td style={td}>{t.solution_tier_name}</td>
-                    <td style={td}>
-                      <code style={{ fontSize: "0.85em" }}>{t.solution_tier_id}</code>
-                    </td>
-                    <td style={{ ...td, fontSize: "0.88em", color: "var(--muted, #666)" }}>
-                      {pkgLabel}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-
-  return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
-      <div className="admin-editor-layout">
-        <h2 style={h2}>Package Builder</h2>
-        {isCreate ? (
-          <>
-            <p className="admin-intro" style={muted}>
-              Name the bundle and choose which solution tiers belong to it. The next package id in
-              the <code style={{ fontSize: "0.9em" }}>1-n</code> sequence is assigned automatically
-              (for example if the highest existing id is <code style={{ fontSize: "0.9em" }}>1-11</code>
-              , the new package becomes <code style={{ fontSize: "0.9em" }}>1-12</code>).
-            </p>
-            <div className="admin-form-stack" style={formGrid}>
-              <label style={lbl}>
-                <AdminFieldCaption>Next package id (preview)</AdminFieldCaption>
-                <input
-                  style={{ ...input, opacity: 0.92 }}
-                  readOnly
-                  value={packages.length ? nextAutoPackageId(packages) : "1-1"}
-                  aria-readonly="true"
-                />
-              </label>
-              <label style={lbl}>
-                <AdminFieldCaption>Name</AdminFieldCaption>
-                <input
-                  style={input}
-                  value={nameField}
-                  onChange={(e) => setNameField(e.target.value)}
-                  placeholder="Display name"
-                />
-              </label>
-            </div>
-            {tierPickerBlock}
-            <div className="admin-actions-row">
-              <button
-                type="button"
-                className="admin-btn-primary"
-                style={btnPrimary}
-                onClick={() => void save()}
-              >
-                Create package
-              </button>
-              <button type="button" style={btn} onClick={startNew}>
-                Clear form
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="admin-intro" style={muted}>
-              Select an existing package, rename it if needed, and add or remove individual
-              solution tiers using the list below.
-            </p>
-            <div className="admin-form-stack" style={formGrid}>
-              <label style={lbl}>
-                <AdminFieldCaption>Package</AdminFieldCaption>
-                <select
-                  style={input}
-                  value={editingId ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (!v) {
-                      startNew();
-                      return;
-                    }
-                    const p = packages.find((x) => x.package_id === v);
-                    if (p) loadPackageForEdit(p);
-                  }}
-                >
-                  <option value="">Select a package…</option>
-                  {[...packages]
-                    .sort((a, b) => sortId(a.package_id, b.package_id))
-                    .map((p) => (
-                      <option key={p.package_id} value={p.package_id}>
-                        {p.package_name} ({p.package_id})
-                      </option>
-                    ))}
-                </select>
-              </label>
-            </div>
-            {editingId ? (
-              <>
-                <h3 className="admin-editing-heading" style={{ marginTop: "1rem" }}>
-                  Editing <code style={{ fontSize: "0.9em" }}>{editingId}</code>
-                </h3>
-                <div className="admin-form-stack" style={formGrid}>
-                  <label style={lbl}>
-                    <AdminFieldCaption>
-                      Package id <span style={muted}>(locked)</span>
-                    </AdminFieldCaption>
-                    <input style={input} value={editingId} disabled />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Name</AdminFieldCaption>
-                    <input
-                      style={input}
-                      value={nameField}
-                      onChange={(e) => setNameField(e.target.value)}
-                      placeholder="Display name"
-                    />
-                  </label>
-                </div>
-                {tierPickerBlock}
-                <div className="admin-actions-row">
-                  <button
-                    type="button"
-                    className="admin-btn-primary"
-                    style={btnPrimary}
-                    onClick={() => void save()}
-                  >
-                    Save changes
-                  </button>
-                  <button type="button" style={btn} onClick={startNew}>
-                    Clear selection
-                  </button>
-                  <button
-                    type="button"
-                    style={btnDangerSm}
-                    onClick={() => void removeCurrentPackage()}
-                  >
-                    Delete package
-                  </button>
-                </div>
-              </>
-            ) : null}
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
 
 const shell: CSSProperties = {
   minHeight: "100%",

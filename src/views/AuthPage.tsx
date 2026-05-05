@@ -128,7 +128,8 @@ export function AuthPage() {
   return (
     <div className="auth-page">
       <div className="auth-page__ambient" aria-hidden />
-      <div className="auth-page__shell">
+      <div className="auth-page__frame">
+        <div className="auth-page__shell">
         <aside className="auth-page__hero">
           <p className="auth-page__hero-org">{APP_BRAND_NAME}</p>
           <h1 className="auth-page__hero-title">{APP_SCOPE_LABEL}</h1>
@@ -150,8 +151,10 @@ export function AuthPage() {
           <div className="auth-card">
             <header className="auth-card__head">
               <div className="auth-card__identity" aria-label={`${APP_BRAND_NAME} ${APP_SCOPE_LABEL}`}>
-                <span className="auth-card__eyebrow">{APP_BRAND_NAME}</span>
-                <p className="auth-card__product">{APP_SCOPE_LABEL}</p>
+                <div className="auth-card__identity-copy">
+                  <span className="auth-card__eyebrow">{APP_BRAND_NAME}</span>
+                  <p className="auth-card__product">{APP_SCOPE_LABEL}</p>
+                </div>
               </div>
               {mode !== "forgot" ? (
                 <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
@@ -296,6 +299,7 @@ export function AuthPage() {
             By continuing you agree to your organization&apos;s policies. Authentication is powered by Supabase Auth.
           </p>
         </main>
+        </div>
       </div>
     </div>
   );

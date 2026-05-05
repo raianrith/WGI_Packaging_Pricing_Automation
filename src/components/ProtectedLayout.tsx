@@ -62,7 +62,9 @@ export function ProtectedLayout() {
       <header className="app-top-bar">
         <div className="app-top-bar__inner">
           <div className="app-top-bar__brand" aria-label={APP_TITLE}>
-            <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
+            <div className="app-top-bar__brand-lockup">
+              <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
+            </div>
             <span className="app-top-bar__brand-divider" aria-hidden />
             <span className="app-top-bar__brand-scope">{APP_SCOPE_LABEL}</span>
           </div>

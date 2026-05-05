@@ -82,6 +82,13 @@ body {
   min-width: 0;
 }
 
+.app-top-bar__brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
 .app-top-bar__brand-name {
   font-size: 1.1rem;
   font-weight: 700;
@@ -319,7 +326,8 @@ body {
   position: relative;
   min-height: 100vh;
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   padding: clamp(1.25rem, 4vw, 2.5rem);
   background: var(--bg);
@@ -340,10 +348,20 @@ body {
   opacity: 1;
 }
 
-.auth-page__shell {
+.auth-page__frame {
   position: relative;
   z-index: 1;
   width: min(1040px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 0 1 auto;
+}
+
+.auth-page__shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: clamp(1.5rem, 4vw, 3rem);
@@ -354,9 +372,11 @@ body {
   .auth-page__shell {
     grid-template-columns: 1fr;
     max-width: 440px;
+    margin: 0 auto;
   }
 
   .auth-page__hero {
+    justify-self: center;
     text-align: center;
     padding: 0.25rem 0 0.5rem;
   }
@@ -372,24 +392,34 @@ body {
     margin-left: auto;
     margin-right: auto;
   }
+
+  .auth-page__hero-org {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .auth-page__hero {
-  padding: 0.5rem 0.5rem 0.5rem 0.25rem;
+  padding: 0 0 0.65rem;
+  justify-self: start;
+  width: 100%;
+  max-width: 100%;
 }
 
 .auth-page__hero-org {
-  margin: 0 0 0.55rem;
-  font-size: 0.7rem;
+  margin: 0 0 0.45rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
+  line-height: 1.2;
 }
 
 .auth-page__hero-title {
-  margin: 0 0 0.85rem;
-  padding-bottom: 0.75rem;
+  margin: 0 0 0.45rem;
+  padding-bottom: 0.4rem;
   font-family: var(--font-ui);
   font-size: clamp(2rem, 1.35rem + 3.4vw, 3.15rem);
   font-weight: 800;
@@ -400,7 +430,7 @@ body {
 }
 
 .auth-page__hero-lead {
-  margin: 0 0 1.1rem;
+  margin: -0.1rem 0 0.7rem;
   max-width: 44ch;
   font-size: 0.95rem;
   line-height: 1.65;
@@ -469,6 +499,11 @@ body {
 
 .auth-card__identity {
   margin-bottom: 0.95rem;
+}
+
+.auth-card__identity-copy {
+  min-width: 0;
+  flex: 1;
 }
 
 .auth-card__eyebrow {

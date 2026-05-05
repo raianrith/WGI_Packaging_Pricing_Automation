@@ -19,6 +19,10 @@ export const NAV_PROPOSAL_BUILDER = "Proposal Builder";
 export const AGENCY_VIEW_DESCRIPTION =
   "A living reference for how we package and price work: programs, solutions, tier options, and the tasks teams use to deliver. Explore in read-only mode—use the sidebar to move through each level, and the main area fills in with KPIs, overviews, and task detail.";
 
+/** Login / sign-up page: explains what Solutions Directory is (product, not infra). */
+export const AUTH_HERO_DESCRIPTION =
+  "One place for how we package and price work: browse programs, solution tiers, scope, tasks, and sell-side context. Editors keep packages, templates, and pricing tools current so the whole org works from the same playbook—everyone else explores it read-only.";
+
 /** Shorter hero copy on the Agency package hub (package-first landing). */
 export const AGENCY_HUB_DESCRIPTION =
   "Each card opens a dedicated workspace for that bundle: solutions, tier sell prices, scope KPIs, and task detail—read only, synced from Supabase. Solutions without a package live on the Solutions tab, not here.";

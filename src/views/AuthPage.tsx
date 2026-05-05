@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { APP_BRAND_NAME, APP_SCOPE_LABEL, APP_TITLE } from "../branding";
+import {
+  APP_BRAND_NAME,
+  APP_SCOPE_LABEL,
+  AUTH_HERO_DESCRIPTION,
+} from "../branding";
 import { useAuth } from "../context/AuthContext";
 import { friendlyAuthMessage } from "../lib/authMessages";
 import {
@@ -126,23 +130,29 @@ export function AuthPage() {
       <div className="auth-page__ambient" aria-hidden />
       <div className="auth-page__shell">
         <aside className="auth-page__hero">
-          <p className="auth-page__hero-badge">{APP_SCOPE_LABEL}</p>
-          <h1 className="auth-page__hero-title">{APP_BRAND_NAME}</h1>
-          <p className="auth-page__hero-lead">
-            Sign in to explore packaged solutions, pricing context, and admin workspaces—all synced from your Supabase
-            project.
-          </p>
+          <p className="auth-page__hero-org">{APP_BRAND_NAME}</p>
+          <h1 className="auth-page__hero-title">{APP_SCOPE_LABEL}</h1>
+          <p className="auth-page__hero-lead">{AUTH_HERO_DESCRIPTION}</p>
           <ul className="auth-page__hero-list">
-            <li>Solutions overview &amp; package workspaces</li>
-            <li>Proposal Builder roadmap</li>
-            <li>Secure admin editing &amp; audit history</li>
+            <li>
+              <strong>Solutions &amp; packages</strong> — tier overviews, KPIs, task lists, and how work is scoped
+            </li>
+            <li>
+              <strong>Proposal Builder</strong> — roadmap-style workspace to shape what you take to the client
+            </li>
+            <li>
+              <strong>Admin (editors only)</strong> — packages, tiers, task groups, pricing math, and audit history
+            </li>
           </ul>
         </aside>
 
         <main className="auth-page__panel">
           <div className="auth-card">
             <header className="auth-card__head">
-              <span className="auth-card__eyebrow">{APP_TITLE}</span>
+              <div className="auth-card__identity" aria-label={`${APP_BRAND_NAME} ${APP_SCOPE_LABEL}`}>
+                <span className="auth-card__eyebrow">{APP_BRAND_NAME}</span>
+                <p className="auth-card__product">{APP_SCOPE_LABEL}</p>
+              </div>
               {mode !== "forgot" ? (
                 <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
                   <button

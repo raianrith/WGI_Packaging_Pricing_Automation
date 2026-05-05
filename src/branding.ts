@@ -25,4 +25,4 @@ export const AGENCY_HUB_DESCRIPTION =
 
 /** Subtitle copy on the Admin view hero. */
 export const ADMIN_VIEW_DESCRIPTION =
-  "Edit mode — create and update packages, solutions, tiers, and tasks. Writes go to Supabase; change history lives in the audit log.";
+  "Edit mode — create and update packages, solutions, tiers, and tasks (requires signing in). Writes go to Supabase; change history lives in the audit log.";

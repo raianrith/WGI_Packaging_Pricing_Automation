@@ -193,6 +193,16 @@ export type PackageSolutionTier = {
   task_extensions?: PackageTaskExtensions | null;
 };
 
+/** `public.profiles` — optional; used for admin UI access (see profiles_and_auth.sql). */
+export type ProfileRow = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  is_admin: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AuditLogRow = {
   id: string;
   entity_type: string;

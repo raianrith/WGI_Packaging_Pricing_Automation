@@ -1,78 +1,39 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import {
-  APP_BRAND_NAME,
-  APP_SCOPE_LABEL,
-  APP_TITLE,
-  NAV_PROPOSAL_BUILDER,
-  NAV_SOLUTIONS_OVERVIEW,
-} from "./branding";
-import { isAgencyRoute } from "./lib/agencyRoutes";
-import { AdminGate } from "./components/AdminGate";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import { ProtectedLayout } from "./components/ProtectedLayout";
 import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
 import { AgencyTabsShell } from "./views/AgencyTabsShell";
 import { AgencyView } from "./views/AgencyView";
+import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminView } from "./views/AdminView";
+import { AuthPage } from "./views/AuthPage";
 import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
 
 export default function App() {
-  const location = useLocation();
-  const agencyTabActive = isAgencyRoute(location.pathname);
-
   return (
-    <div style={{ minHeight: "100%" }}>
-      <header className="app-top-bar">
-        <div className="app-top-bar__inner">
-          <div className="app-top-bar__brand" aria-label={APP_TITLE}>
-            <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
-            <span className="app-top-bar__brand-divider" aria-hidden />
-            <span className="app-top-bar__brand-scope">{APP_SCOPE_LABEL}</span>
-          </div>
-          <nav className="app-module-tabs" aria-label="Application area">
-            <NavLink
-              to="/"
-              className={() =>
-                `app-module-tab${agencyTabActive ? " app-module-tab--active" : ""}`
-              }
-            >
-              {NAV_SOLUTIONS_OVERVIEW}
-            </NavLink>
-            <NavLink
-              to="/roadmap"
-              className={({ isActive }) =>
-                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
-              }
-            >
-              {NAV_PROPOSAL_BUILDER}
-            </NavLink>
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
-              }
-            >
-              Admin
-            </NavLink>
-          </nav>
-        </div>
-      </header>
+    <AuthProvider>
       <Routes>
-        <Route path="/catalog" element={<Navigate to="/" replace />} />
-        <Route path="/roadmap" element={<RoadmapPlanningView />} />
-        <Route path="/" element={<AgencyTabsShell />}>
-          <Route index element={<AgencyView mode="catalog" />} />
-          <Route path="packages" element={<AgencyPackagesRedirect />} />
-          <Route path="package/standalone" element={<Navigate to="/" replace />} />
-          <Route path="package/:packageId" element={<AgencyView mode="package" />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/catalog" element={<Navigate to="/" replace />} />
+          <Route path="/roadmap" element={<RoadmapPlanningView />} />
+          <Route path="/" element={<AgencyTabsShell />}>
+            <Route index element={<AgencyView mode="catalog" />} />
+            <Route path="packages" element={<AgencyPackagesRedirect />} />
+            <Route path="package/standalone" element={<Navigate to="/" replace />} />
+            <Route path="package/:packageId" element={<AgencyView mode="package" />} />
+          </Route>
+          <Route
+            path="/admin"
+            element={
+              <RequireAdmin>
+                <AdminView />
+              </RequireAdmin>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-        <Route
-          path="/admin"
-          element={
-            <AdminGate>
-              <AdminView />
-            </AdminGate>
-          }
-        />
       </Routes>
-    </div>
+    </AuthProvider>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -31,6 +31,7 @@ import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
+import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
@@ -104,10 +105,6 @@ export function AdminView() {
   const [opErr, setOpErr] = useState<string | null>(null);
   const [opOk, setOpOk] = useState<string | null>(null);
   const opFeedbackRef = useRef<HTMLDivElement | null>(null);
-
-  const [expAuditId, setExpAuditId] = useState<string | null>(null);
-  const [auditEntityType, setAuditEntityType] = useState<string>("all");
-  const [auditTextSearch, setAuditTextSearch] = useState("");
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
@@ -327,23 +324,6 @@ export function AdminView() {
       setRecalculateAllSavedPricingBusy(false);
     }
   }, [tierPricing, tierPricingMathConfig, logAudit, refreshAfterSave, setOpErr, setOpOk]);
-
-  const filteredAudit = useMemo(() => {
-    let list = auditLog;
-    if (auditEntityType !== "all") {
-      list = list.filter((r) => r.entity_type === auditEntityType);
-    }
-    const q = auditTextSearch.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (r) =>
-          r.entity_id.toLowerCase().includes(q) ||
-          r.action.toLowerCase().includes(q) ||
-          r.entity_type.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [auditLog, auditEntityType, auditTextSearch]);
 
   return (
     <div className="admin-page-shell" style={shell}>
@@ -612,88 +592,18 @@ export function AdminView() {
             />
           )}
           {tab === "audit" && (
-            <section className="admin-panel admin-panel--editor" style={panel}>
-              <div className="admin-editor-layout admin-editor-layout--wide">
-              <h2 style={h2}>Change history</h2>
-              <p className="admin-intro" style={muted}>
-                Filter by entity type or search id / action (substring).
-              </p>
-              <div className="admin-audit-toolbar">
-                <select
-                  className="admin-field"
-                  style={{ ...input, marginTop: 0, maxWidth: 280 }}
-                  value={auditEntityType}
-                  onChange={(e) => setAuditEntityType(e.target.value)}
-                >
-                  <option value="all">All entity types</option>
-                  <option value="packages">packages</option>
-                  <option value="solutions">solutions</option>
-                  <option value="solution_tiers">solution_tiers</option>
-                  <option value="solution_tier_pricing">solution_tier_pricing</option>
-                  <option value="package_solution_tiers">package_solution_tiers</option>
-                  <option value="tasks">tasks</option>
-                  <option value="task_groups">task_groups</option>
-                  <option value="task_group_lines">task_group_lines</option>
-                  <option value="solution_tier_task_group_applied">solution_tier_task_group_applied</option>
-                </select>
-                <input
-                  className="admin-field kb-filter-input"
-                  style={{ ...input, marginTop: 0, flex: "1 1 200px", maxWidth: 420 }}
-                  placeholder="Search id, type, or action…"
-                  value={auditTextSearch}
-                  onChange={(e) => setAuditTextSearch(e.target.value)}
-                />
-              </div>
-              <div className="admin-table-scroll" style={{ marginTop: 12 }}>
-                <table className="admin-data-table" style={tbl}>
-                  <thead>
-                    <tr>
-                      <th style={th}>When (UTC)</th>
-                      <th style={th}>Entity</th>
-                      <th style={th}>Id</th>
-                      <th style={th}>Action</th>
-                      <th style={th}>Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAudit.map((row) => (
-                      <tr key={row.id}>
-                        <td style={td}>{row.created_at?.replace("T", " ").slice(0, 19)}</td>
-                        <td style={td}>{row.entity_type}</td>
-                        <td style={td}>{row.entity_id}</td>
-                        <td style={td}>{row.action}</td>
-                        <td style={td}>
-                          <button
-                            type="button"
-                            style={btnSm}
-                            onClick={() =>
-                              setExpAuditId((id) => (id === row.id ? null : row.id))
-                            }
-                          >
-                            {expAuditId === row.id ? "Hide" : "JSON"}
-                          </button>
-                          {expAuditId === row.id && (
-                            <pre style={preJson}>
-                              {JSON.stringify(
-                                { before: row.before_data, after: row.after_data },
-                                null,
-                                2
-                              )}
-                            </pre>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {filteredAudit.length === 0 && (
-                  <p className="admin-hint" style={muted}>
-                    No audit rows yet. Apply database migration and save an edit.
-                  </p>
-                )}
-              </div>
-              </div>
-            </section>
+            <ChangeHistoryPanel
+              auditLog={auditLog}
+              packages={packages}
+              solutions={solutions}
+              tiers={tiers}
+              tasks={tasks}
+              packageTiers={packageTiers}
+              taskGroups={taskGroups}
+              taskGroupLines={taskGroupLines}
+              taskGroupApplied={taskGroupApplied}
+              styles={{ panel, h2, muted, tbl, th, td, btnSm, input, preJson }}
+            />
           )}
 
           {(opErr || opOk) && (

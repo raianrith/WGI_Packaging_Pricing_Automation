@@ -1,5 +1,5 @@
--- Optional: profiles + trigger on auth.users (only if you use Supabase Auth elsewhere).
--- The Vite app does not depend on this file; Admin access uses AdminGate (client-side password).
+-- Optional: profiles + trigger on auth.users when using Supabase Auth with this app.
+-- The Vite app gates routes with Supabase Auth (see src/views/AuthPage.tsx). You can extend with is_app_admin() for RLS.
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,

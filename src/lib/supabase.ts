@@ -1,7 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+/** Single browser client so Auth session and RLS share one localStorage key. */
+let supabaseSingleton: SupabaseClient | null | undefined;
 
 /** JWT payload role; only applies to legacy `eyJ…` keys. */
 function jwtRole(jwt: string): string | null {
@@ -55,14 +58,26 @@ export function browserKeyConfigurationError(): string | null {
   return null;
 }
 
-export function getSupabase() {
+export function getSupabase(): SupabaseClient | null {
+  if (supabaseSingleton !== undefined) {
+    return supabaseSingleton;
+  }
   if (!url || !key) {
+    supabaseSingleton = null;
     return null;
   }
   if (isForbiddenKeyInBrowser()) {
+    supabaseSingleton = null;
     return null;
   }
-  return createClient(url, key.trim());
+  supabaseSingleton = createClient(url.trim(), key.trim(), {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+  return supabaseSingleton;
 }
 
 export function envConfigured(): boolean {

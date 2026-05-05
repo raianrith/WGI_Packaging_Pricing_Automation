@@ -1,0 +1,292 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { APP_BRAND_NAME, APP_SCOPE_LABEL, APP_TITLE } from "../branding";
+import { useAuth } from "../context/AuthContext";
+import { friendlyAuthMessage } from "../lib/authMessages";
+import {
+  browserKeyConfigurationError,
+  envConfigured,
+  getSupabase,
+} from "../lib/supabase";
+
+type AuthMode = "signin" | "signup" | "forgot";
+
+const MIN_PASSWORD_LEN = 8;
+
+export function AuthPage() {
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from =
+    (location.state as { from?: string } | null)?.from && (location.state as { from: string }).from !== "/login"
+      ? (location.state as { from: string }).from
+      : "/";
+
+  const [mode, setMode] = useState<AuthMode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const keyErr = browserKeyConfigurationError();
+  const hasEnv = envConfigured() && !keyErr;
+
+  useEffect(() => {
+    if (!loading && session) {
+      navigate(from, { replace: true });
+    }
+  }, [from, loading, session, navigate]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    const client = getSupabase();
+    if (!client) {
+      setError("Supabase isn’t configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.");
+      return;
+    }
+    const em = email.trim();
+    if (!em) {
+      setError("Enter your email.");
+      return;
+    }
+    if (mode === "forgot") {
+      setBusy(true);
+      const { error: err } = await client.auth.resetPasswordForEmail(em, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      setBusy(false);
+      if (err) {
+        setError(friendlyAuthMessage(err.message));
+        return;
+      }
+      setInfo("Check your email for a password reset link.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+    if (mode === "signup" && password.length < MIN_PASSWORD_LEN) {
+      setError(`Use at least ${MIN_PASSWORD_LEN} characters for your password.`);
+      return;
+    }
+
+    setBusy(true);
+    if (mode === "signup") {
+      const { error: err } = await client.auth.signUp({
+        email: em,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      setBusy(false);
+      if (err) {
+        setError(friendlyAuthMessage(err.message));
+        return;
+      }
+      setInfo(
+        "Account created — if email confirmation is enabled in Supabase, check your inbox to verify before signing in."
+      );
+      setPassword("");
+      setMode("signin");
+      return;
+    }
+
+    const { error: err } = await client.auth.signInWithPassword({
+      email: em,
+      password,
+    });
+    setBusy(false);
+    if (err) {
+      setError(friendlyAuthMessage(err.message));
+      return;
+    }
+    navigate(from, { replace: true });
+  }
+
+  if (!loading && session) {
+    return <Navigate to={from} replace />;
+  }
+
+  if (loading && !session && hasEnv) {
+    return (
+      <div className="auth-loading-screen auth-loading-screen--auth" aria-busy aria-live="polite">
+        <div className="auth-loading-screen__spinner" />
+        <p className="auth-loading-screen__text">Loading session…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-page">
+      <div className="auth-page__ambient" aria-hidden />
+      <div className="auth-page__shell">
+        <aside className="auth-page__hero">
+          <p className="auth-page__hero-badge">{APP_SCOPE_LABEL}</p>
+          <h1 className="auth-page__hero-title">{APP_BRAND_NAME}</h1>
+          <p className="auth-page__hero-lead">
+            Sign in to explore packaged solutions, pricing context, and admin workspaces—all synced from your Supabase
+            project.
+          </p>
+          <ul className="auth-page__hero-list">
+            <li>Solutions overview &amp; package workspaces</li>
+            <li>Proposal Builder roadmap</li>
+            <li>Secure admin editing &amp; audit history</li>
+          </ul>
+        </aside>
+
+        <main className="auth-page__panel">
+          <div className="auth-card">
+            <header className="auth-card__head">
+              <span className="auth-card__eyebrow">{APP_TITLE}</span>
+              {mode !== "forgot" ? (
+                <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === "signin"}
+                    className={`auth-tab${mode === "signin" ? " auth-tab--active" : ""}`}
+                    onClick={() => {
+                      setMode("signin");
+                      setError(null);
+                      setInfo(null);
+                    }}
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === "signup"}
+                    className={`auth-tab${mode === "signup" ? " auth-tab--active" : ""}`}
+                    onClick={() => {
+                      setMode("signup");
+                      setError(null);
+                      setInfo(null);
+                    }}
+                  >
+                    Sign up
+                  </button>
+                </div>
+              ) : (
+                <h2 className="auth-card__title">Reset password</h2>
+              )}
+            </header>
+
+            {!hasEnv && (
+              <div className="auth-banner auth-banner--err" role="alert">
+                {keyErr ??
+                  "Add valid Supabase URL and anon/publishable key in `.env` (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY), then restart the dev server."}
+              </div>
+            )}
+
+            <form className="auth-form" onSubmit={onSubmit} noValidate>
+              <label className="auth-field">
+                <span className="auth-field__label">Email</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  className="auth-field__input"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={busy || !hasEnv}
+                  spellCheck={false}
+                  aria-required={true}
+                />
+              </label>
+
+              {mode !== "forgot" && (
+                <label className="auth-field">
+                  <span className="auth-field__label">
+                    Password
+                    {mode === "signup" ? (
+                      <span className="auth-field__hint"> · min {MIN_PASSWORD_LEN} characters</span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                    className="auth-field__input"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy || !hasEnv}
+                    aria-required={true}
+                  />
+                </label>
+              )}
+
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  className="auth-linkish"
+                  onClick={() => {
+                    setMode("forgot");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  Forgot password?
+                </button>
+              )}
+
+              {mode === "forgot" && (
+                <button
+                  type="button"
+                  className="auth-linkish"
+                  onClick={() => {
+                    setMode("signin");
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  ← Back to sign in
+                </button>
+              )}
+
+              {error ? (
+                <p className="auth-banner auth-banner--err" role="alert">
+                  {error}
+                </p>
+              ) : null}
+
+              {info ? (
+                <p className="auth-banner auth-banner--ok" role="status">
+                  {info}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                className="auth-submit"
+                disabled={busy || !hasEnv || loading}
+              >
+                {busy ? (
+                  "Working…"
+                ) : mode === "signup" ? (
+                  "Create account"
+                ) : mode === "forgot" ? (
+                  "Send reset email"
+                ) : (
+                  "Sign in"
+                )}
+              </button>
+            </form>
+
+            <footer className="auth-card__footer">
+              <span className="auth-card__footer-muted">Protected workspace — sign in required.</span>
+            </footer>
+          </div>
+          <p className="auth-page__terms">
+            By continuing you agree to your organization&apos;s policies. Authentication is powered by Supabase Auth.
+          </p>
+        </main>
+      </div>
+    </div>
+  );
+}

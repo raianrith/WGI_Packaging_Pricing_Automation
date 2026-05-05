@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState, type CSSProperties } from "react";
 import type { AuditLogRow } from "../types";
 import {
   auditActionLabel,
+  auditActorLabel,
   auditRecordTypeLabel,
   auditRowSearchText,
   buildAuditDescription,
@@ -105,7 +106,8 @@ export function ChangeHistoryPanel(props: Props) {
       <div className="admin-editor-layout admin-editor-layout--wide">
         <h2 style={h2}>Change History</h2>
         <p className="admin-intro" style={muted}>
-          Recent saves from this admin workspace are recorded below. Dates use your browser&apos;s local
+          Recent saves from this admin workspace are recorded below. Each row shows who was signed in when
+          the save ran (after the database migration is applied). Dates use your browser&apos;s local
           timezone. Open a row to see which fields changed (updates) or the full snapshot (raw JSON).
         </p>
         <div className="admin-audit-toolbar">
@@ -140,6 +142,7 @@ export function ChangeHistoryPanel(props: Props) {
             <thead>
               <tr>
                 <th style={th}>When (local)</th>
+                <th style={th}>Who</th>
                 <th style={th}>Action</th>
                 <th style={th}>Record type</th>
                 <th style={th}>What happened</th>
@@ -155,6 +158,7 @@ export function ChangeHistoryPanel(props: Props) {
                 const friendly = resolver.labelFor(row.entity_type, row.entity_id, row);
                 const snapName = pickNameFromSnapshot(row.after_data ?? row.before_data ?? undefined);
                 const desc = buildAuditDescription(row, diff, friendly, snapName);
+                const actor = auditActorLabel(row);
                 const expanded = expandedId === row.id;
                 const badgeClass =
                   row.action === "insert"
@@ -166,6 +170,13 @@ export function ChangeHistoryPanel(props: Props) {
                   <Fragment key={row.id}>
                     <tr>
                       <td style={td}>{formatLocalWhen(row.created_at ?? "")}</td>
+                      <td style={td} className="admin-audit-who-cell" title={actor || undefined}>
+                        {actor ? (
+                          <span className="admin-audit-who">{actor}</span>
+                        ) : (
+                          <span style={muted}>Unknown</span>
+                        )}
+                      </td>
                       <td style={td}>
                         <span className={badgeClass}>{auditActionLabel(row.action)}</span>
                       </td>
@@ -192,7 +203,7 @@ export function ChangeHistoryPanel(props: Props) {
                     </tr>
                     {expanded && (
                       <tr className="admin-audit-expand-row">
-                        <td style={{ ...td, padding: "0 0.6rem 0.85rem" }} colSpan={6}>
+                        <td style={{ ...td, padding: "0 0.6rem 0.85rem" }} colSpan={7}>
                           <div
                             id={`audit-detail-${row.id}`}
                             className="admin-audit-detail"
@@ -245,6 +256,8 @@ export function ChangeHistoryPanel(props: Props) {
                                     entity_type: row.entity_type,
                                     entity_id: row.entity_id,
                                     action: row.action,
+                                    changed_by_user_id: row.changed_by_user_id ?? null,
+                                    changed_by_email: row.changed_by_email ?? null,
                                     before: row.before_data,
                                     after: row.after_data,
                                   },

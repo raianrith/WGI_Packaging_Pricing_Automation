@@ -23,12 +23,18 @@ export async function insertAuditLog(
     after: Record<string, unknown> | null;
   }
 ): Promise<{ error: string | null }> {
+  const {
+    data: { session },
+  } = await client.auth.getSession();
+  const user = session?.user;
   const { error } = await client.from("audit_log").insert({
     entity_type: params.entityType,
     entity_id: params.entityId,
     action: params.action,
     before_data: params.before,
     after_data: params.after,
+    changed_by_user_id: user?.id ?? null,
+    changed_by_email: user?.email ?? null,
   });
   return { error: error?.message ?? null };
 }

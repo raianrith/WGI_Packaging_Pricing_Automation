@@ -267,6 +267,15 @@ export function buildAuditDescription(
   return name ? `${action} ${typeLabel} ${name}: ${head}${tail}` : `${action} ${typeLabel}: ${head}${tail}`;
 }
 
+/** Display label for who recorded the audit row (email preferred). */
+export function auditActorLabel(row: AuditLogRow): string {
+  const email = row.changed_by_email?.trim();
+  if (email) return email;
+  const uid = row.changed_by_user_id?.trim();
+  if (uid) return uid.length <= 14 ? uid : `${uid.slice(0, 8)}…${uid.slice(-4)}`;
+  return "";
+}
+
 export function auditRowSearchText(
   row: AuditLogRow,
   resolver: ReturnType<typeof createAuditEntityLabelResolver>,
@@ -276,6 +285,7 @@ export function auditRowSearchText(
   const snapName = pickNameFromSnapshot(row.after_data ?? row.before_data ?? undefined);
   const diff = computeAuditDiff(row.before_data, row.after_data);
   const diffBlob = diff.map((d) => `${d.fieldLabel} ${d.before} ${d.after}`).join(" ");
+  const actor = auditActorLabel(row);
   return [
     row.entity_id,
     row.entity_type,
@@ -286,6 +296,8 @@ export function auditRowSearchText(
     auditActionLabel(row.action),
     description,
     diffBlob,
+    actor,
+    row.changed_by_user_id ?? "",
   ]
     .join(" ")
     .toLowerCase();

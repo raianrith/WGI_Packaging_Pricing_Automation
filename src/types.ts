@@ -211,6 +211,9 @@ export type AuditLogRow = {
   before_data: Record<string, unknown> | null;
   after_data: Record<string, unknown> | null;
   created_at: string;
+  /** Present on rows inserted after `audit_log_changed_by.sql`; null for older history. */
+  changed_by_user_id?: string | null;
+  changed_by_email?: string | null;
 };
 
 /** Column group in `solution_tier_pricing` hours (maps from task implementer). */

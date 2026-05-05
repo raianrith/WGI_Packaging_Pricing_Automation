@@ -2111,6 +2111,20 @@ button {
   border-radius: 4px;
 }
 
+.admin-audit-who-cell {
+  max-width: 14rem;
+}
+
+.admin-audit-who {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  vertical-align: bottom;
+}
+
 .admin-audit-badge {
   display: inline-block;
   font-size: 0.72rem;

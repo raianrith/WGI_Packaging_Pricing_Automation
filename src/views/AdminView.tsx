@@ -250,8 +250,9 @@ export function AdminView() {
     ) => {
       const { error } = await insertAuditLog(client, params);
       if (error) {
-        const hint =
-          /audit_log|schema cache/i.test(error)
+        const hint = /changed_by/i.test(error)
+          ? " Run supabase/audit_log_changed_by.sql in Supabase → SQL Editor, then save again (or wait ~1 min for the API cache to refresh)."
+          : /audit_log|schema cache/i.test(error)
             ? " Run supabase/audit_log.sql in Supabase → SQL Editor, then save again (or wait ~1 min for the API cache to refresh)."
             : "";
         setOpErr(`Saved, but history was not recorded: ${error}.${hint}`);
@@ -1619,6 +1620,14 @@ const BULK_GLOSSARY: Record<
       {
         name: "created_at",
         description: "When the event was recorded (timestamptz).",
+      },
+      {
+        name: "changed_by_user_id",
+        description: "Supabase Auth user id at insert time (null for rows before migration or unauthenticated writes).",
+      },
+      {
+        name: "changed_by_email",
+        description: "Email from the session at insert time (for Change History display).",
       },
     ],
   },

@@ -1,0 +1,611 @@
+
+
+  VITE v6.4.1  ready in 204 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+1:30:08 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:23:08 PM [vite] (client) hmr update /src/App.tsx, /src/views/AgencyView.tsx, /src/views/AdminView.tsx
+2:23:09 PM [vite] (client) hmr update /src/App.tsx
+2:23:10 PM [vite] (client) hmr update /src/App.tsx (x2)
+2:23:11 PM [vite] (client) hmr update /src/App.tsx (x3)
+2:23:12 PM [vite] (client) hmr update /src/App.tsx (x4)
+2:23:12 PM [vite] (client) page reload index.html
+2:23:13 PM [vite] (client) hmr update /src/views/AdminView.tsx
+2:23:13 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:23:14 PM [vite] (client) hmr update /src/views/AgencyTabsShell.tsx
+2:23:16 PM [vite] (client) hmr update /src/views/RoadmapPlanningView.tsx
+2:24:34 PM [vite] (client) hmr update /src/views/AgencyTabsShell.24:34 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:24:35 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+2:24:36 PM [vite] (client) hmr update /src/App.tsx, /src/views/AgencyView.tsx, /src/views/AdminView.tsx
+2:24:36 PM [vite] (client) hmr update /src/components/SolutionsBuilderPanel.tsx
+2:24:36 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId
+2:24:36 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent
+2:24:36 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+2:24:36 PM [vite] (client) hmr update /src/views/AdminView.tsx
+2:24:38 PM [vite] (client) hmr update /src/index.css
+2:24:42 PM [vite] (client) hmr update /src/App.tsx, /src/views/AgencyView.tsx, /src/views/AdminView.tsx
+2:26:58 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:27:02 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+2:27:03 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x3)
+2:27:05 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x4)
+2:27:06 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x5)
+2:27:07 PM [vite] (client) hmr update /src/index.css
+2:30:30 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:30:31 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+2:30:31 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x3)
+2:30:32 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x4)
+2:30:35 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x5)
+2:30:40 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x6)
+2:30:41 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x7)
+2:30:42 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x8)
+2:30:43 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x9)
+2:30:45 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x10)
+2:30:47 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x11)
+2:30:48 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x12)
+2:30:49 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x13)
+2:30:50 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x14)
+2:31:18 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x15)
+2:31:34 PM [vite] (client) hmr update /src/index.css
+2:33:54 PM [vite] (client) hmr update /src/views/RoadmapPlanningView.tsx
+2:33:56 PM [vite] (client) hmr update /src/views/RoadmapPlanningView.tsx (x2)
+2:35:32 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:36:53 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+2:50:09 PM [vite] (client) hmr update /src/views/AdminView.tsx
+2:50:10 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+2:50:12 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+2:50:30 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+2:50:52 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+2:51:50 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+2:51:56 PM [vite] (client) hmr update /src/views/AdminView.tsx (x7)
+2:51:58 PM [vite] (client) hmr update /src/views/AdminView.tsx (x8)
+2:52:00 PM [vite] (client) hmr update /src/views/AdminView.tsx (x9)
+2:52:19 PM [vite] (client) hmr update /src/views/AdminView.tsx (x10)
+2:52:26 PM [vite] (client) hmr update /src/views/AdminView.tsx (x11)
+2:52:28 PM [vite] (client) hmr update /src/views/AdminView.tsx (x12)
+2:52:30 PM [vite] (client) hmr update /src/views/AdminView.tsx (x13)
+2:52:44 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+2:52:45 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+2:52:51 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x3)
+2:53:40 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x4)
+2:53:49 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x5)
+2:53:50 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x6)
+3:01:15 PM [vite] (client) hmr update /src/views/AdminView.tsx
+3:01:30 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+3:01:31 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+3:01:35 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+3:02:43 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+3:02:52 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+3:02:58 PM [vite] (client) hmr update /src/views/AdminView.tsx (x7)
+3:03:14 PM [vite] (client) hmr update /src/views/AdminView.tsx (x8)
+3:03:21 PM [vite] (client) hmr update /src/views/AdminView.tsx (x9)
+3:03:22 PM [vite] (client) hmr update /src/views/AdminView.tsx (x10)
+3:03:23 PM [vite] (client) hmr update /src/views/AdminView.tsx (x11)
+3:03:26 PM [vite] (client) hmr update /src/views/AdminView.tsx (x12)
+3:03:57 PM [vite] (client) hmr update /src/views/AdminView.tsx (x13)
+3:04:21 PM [vite] (client) hmr update /src/views/AdminView.tsx (x14)
+3:04:33 PM [vite] (client) hmr update /src/views/AdminView.tsx (x15)
+3:04:35 PM [vite] (client) hmr update /src/views/AdminView.tsx (x16)
+3:05:14 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+3:05:15 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+3:05:22 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x3)
+3:05:39 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x4)
+3:05:41 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x5)
+3:06:27 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x6)
+3:06:36 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x7)
+3:06:37 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x8)
+3:06:42 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x9)
+3:06:55 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x10)
+3:07:01 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x11)
+3:07:04 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x12)
+3:07:18 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x13)
+3:07:45 PM [vite] (client) hmr update /src/views/AdminView.tsx, /src/views/AgencyView.tsx
+3:08:12 PM [vite] (client) hmr update /src/views/AdminView.tsx, /src/views/AgencyView.tsx (x2)
+3:08:29 PM [vite] (client) hmr update /src/views/AdminView.tsx, /src/views/AgencyView.tsx (x3)
+3:47:51 PM [vite] (client) hmr update /src/views/AdminView.tsx
+3:47:58 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+3:47:58 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+3:48:00 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+3:48:01 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+3:48:04 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+3:48:06 PM [vite] (client) hmr update /src/views/AdminView.tsx (x7)
+3:48:28 PM [vite] (client) hmr update /src/views/AdminView.tsx (x8)
+3:48:30 PM [vite] (client) hmr update /src/views/AdminView.tsx (x9)
+3:48:32 PM [vite] (client) hmr update /src/views/AdminView.tsx (x10)
+3:48:35 PM [vite] (client) hmr update /src/views/AdminView.tsx (x11)
+3:48:38 PM [vite] (client) hmr update /src/views/AdminView.tsx (x12)
+3:48:43 PM [vite] (client) hmr update /src/views/AdminView.tsx (x13)
+3:48:45 PM [vite] (client) hmr update /src/views/AdminView.tsx (x14)
+3:48:52 PM [vite] (client) hmr update /src/views/AdminView.tsx (x15)
+3:48:54 PM [vite] (client) hmr update /src/views/AdminView.tsx (x16)
+3:49:01 PM [vite] (client) hmr update /src/views/AdminView.tsx (x17)
+3:49:13 PM [vite] (client) hmr update /src/views/AdminView.tsx (x18)
+3:49:55 PM [vite] (client) hmr update /src/views/AdminView.tsx (x19)
+3:52:09 PM [vite] (client) hmr update /src/views/AdminView.tsx (x20)
+3:52:19 PM [vite] (client) hmr update /src/views/AdminView.tsx (x21)
+3:52:44 PM [vite] (client) hmr update /src/views/AgencyView.tsx
+3:52:48 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x2)
+3:52:54 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x3)
+3:52:59 PM [vite] (client) hmr update /src/views/AgencyView.tsx (x4)
+4:01:02 PM [vite] (client) hmr update /src/views/AdminView.tsx
+4:01:03 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+4:01:16 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+4:01:26 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+4:01:35 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+4:01:40 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+4:01:47 PM [vite] (client) hmr update /src/views/AdminView.tsx (x7)
+4:02:03 PM [vite] (client) hmr update /src/views/AdminView.tsx (x8)
+4:02:16 PM [vite] (client) hmr update /src/views/AdminView.tsx (x9)
+4:02:20 PM [vite] (client) hmr update /src/views/AdminView.tsx (x10)
+4:02:21 PM [vite] (client) hmr update /src/views/AdminView.tsx (x11)
+4:09:05 PM [vite] (client) hmr update /src/views/AdminView.tsx (x12)
+4:09:19 PM [vite] (client) hmr update /src/views/AdminView.tsx (x13)
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>.
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (3476:18)
+
+  3474 |                       })}
+  3475 |                     </div>
+> 3476 |                   </>
+       |                   ^
+  3477 |                 ) : null}
+  3478 |                 <h4 className="admin-editing-heading" style={{ marginTop: "1.15rem", fontSize: "1.02rem" }}>
+  3479 |                   Package-only tasks
+  Plugin: vite:react-babel
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.t
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx:3476:18
+  3474|                        })}
+  3475|                      </div>
+  3476|                    </>
+     |                    ^
+  3477|                  ) : null}
+  3478|                  <h4 className="admin-editing-heading" style={{ marginTop: "1.15rem", fontSize: "1.02rem" }}>
+      at constructor (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mo
+      at constructor (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Au
+      at TypeScriptParserMixin.raise (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packagin
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4742:18)
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_P
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pri
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9775:39
+      at TypeScriptParserMixin.tryParse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+      at TypeScriptParserMixin.tryParse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9775:18)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pa
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Auto
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automa
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_P
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pri
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pa
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10891:30)
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9603:18)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10885:17)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExpressionBase (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10784:23)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10780:17)
+      at TypeScriptParserMixin.jsxParseExpressionContainer (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WG
+      at TypeScriptParserMixin.jsxParseExpressionContainer (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4632:31)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packagin
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4711:36)
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21)
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>.
+4:09:19 PM [vite] Internal server error: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx: Adjacent JSX elements must be wrapped in an enclosing tag. Did you want a JSX fragment <>...</>? (3476:18)
+
+  3474 |                       })}
+  3475 |                     </div>
+> 3476 |                   </>
+       |                   ^
+  3477 |                 ) : null}
+  3478 |                 <h4 className="admin-editing-heading" style={{ marginTop: "1.15rem", fontSize: "1.02rem" }}>
+  3479 |                   Package-only tasks
+  Plugin: vite:react-babel
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.t
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/views/AdminView.tsx:3476:18
+  3474|                        })}
+  3475|                      </div>
+  3476|                    </>
+     |                    ^
+  3477|                  ) : null}
+  3478|                  <h4 className="admin-editing-heading" style={{ marginTop: "1.15rem", fontSize: "1.02rem" }}>
+      at constructor (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mo
+      at constructor (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Au
+      at TypeScriptParserMixin.raise (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packagin
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4742:18)
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_P
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pri
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9775:39
+      at TypeScriptParserMixin.tryParse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+      at TypeScriptParserMixin.tryParse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9775:18)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pa
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Auto
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automa
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11675:28)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseMaybeUnary (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_P
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pri
+      at TypeScriptParserMixin.parseExprOps (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pa
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10891:30)
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9603:18)
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Pack
+      at TypeScriptParserMixin.parseMaybeConditional (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10885:17)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging
+      at TypeScriptParserMixin.parseMaybeAssign (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:9786:20)
+      at TypeScriptParserMixin.parseExpressionBase (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExpressionBase (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10784:23)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at TypeScriptParserMixin.allowInAnd (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.parseExpression (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:10780:17)
+      at TypeScriptParserMixin.jsxParseExpressionContainer (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WG
+      at TypeScriptParserMixin.jsxParseExpressionContainer (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4632:31)
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packagin
+      at TypeScriptParserMixin.jsxParseElementAt (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4711:36)
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_
+      at TypeScriptParserMixin.jsxParseElement (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pr
+      at TypeScriptParserMixin.parseExprAtom (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packag
+      at TypeScriptParserMixin.parseExprSubscripts (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pric
+      at TypeScriptParserMixin.parseUpdate (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/parser/lib/index.js:11066:21) (x2)
+4:09:21 PM [vite] (client) hmr update /src/views/AdminView.tsx
+4:09:41 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+4:22:12 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+4:22:16 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+4:22:21 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+4:22:23 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+4:23:19 PM [vite] (client) hmr update /src/views/AdminView.tsx (x7)
+4:35:58 PM [vite] (client) hmr update /src/views/AdminView.tsx (x8)
+4:36:04 PM [vite] (client) hmr update /src/views/AdminView.tsx (x9)
+4:36:05 PM [vite] (client) hmr update /src/views/AdminView.tsx (x10)
+4:36:17 PM [vite] (client) hmr update /src/views/AdminView.tsx (x11)
+4:36:19 PM [vite] (client) hmr update /src/views/AdminView.tsx (x12)
+4:36:21 PM [vite] (client) hmr update /src/views/AdminView.tsx (x13)
+4:46:42 PM [vite] (client) hmr update /src/views/AdminView.tsx, /src/views/AgencyView.tsx
+4:49:12 PM [vite] (client) hmr update /src/views/AdminView.tsx
+4:49:13 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+4:49:15 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+4:49:32 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+4:49:50 PM [vite] (client) hmr update /src/views/AdminView.tsx (x5)
+4:49:51 PM [vite] (client) hmr update /src/views/AdminView.tsx (x6)
+4:50:14 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx
+4:57:45 PM [vite] (client) hmr update /src/components/SolutionsBuilderPanel.tsx
+4:57:45 PM [vite] Internal server error: Duplicate declaration "MarkdownTextarea"
+  78 | };
+  79 |
+> 80 | function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2 }: MarkdownTextareaProps) {
+     |          ^^^^^^^^^^^^^^^^
+  81 |   const ref = useRef<HTMLTextAreaElement | null>(null);
+  82 |
+  83 |   const setNext = useCallback(
+  Plugin: vite:react-babel
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/components/Soluti
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/components/SolutionsBuilderPanel.tsx
+      at File.buildCodeFrameError (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Autom
+      at File.buildCodeFrameError (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/file/file.js:189:12)
+      at Scope.checkBlockScopedCollisions (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at Scope.checkBlockScopedCollisions (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:433:27)
+      at Scope.registerBinding (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automati
+      at Scope.registerBinding (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:530:16)
+      at Scope.registerDeclaration (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at Scope.registerDeclaration (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:475:12)
+      at Object.BlockScoped (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/
+      at Object.BlockScoped (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:276:12)
+      at Object.newFn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_m
+      at Object.newFn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/visitors.js:203:17)
+      at NodePath._call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node
+      at NodePath._call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:50:20)
+      at NodePath.call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_
+      at NodePath.call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:40:18)
+      at NodePath.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node
+      at NodePath.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:87:31)
+      at TraversalContext.visitQueue (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Au
+      at TraversalContext.visitQueue (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:96:16)
+      at TraversalContext.visitMultiple (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+      at TraversalContext.visitMultiple (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:68:17)
+      at TraversalContext.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automat
+      at TraversalContext.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:117:19)
+      at traverseNode (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_m
+      at traverseNode (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/traverse-node.js:130:17)
+      at traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modul
+      at traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/index.js:53:34)
+      at NodePath.traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/n
+      at NodePath.traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/index.js:120:24)
+      at Scope.crawl (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mo
+      at Scope.crawl (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:695:10)
+      at Scope.init (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mod
+      at Scope.init (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:661:12)
+      at NodePath.setScope (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/n
+      at NodePath.setScope (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:139:55)
+      at NodePath.setContext (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation
+      at NodePath.setContext (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:151:12)
+      at new File (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modul
+      at new File (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/file/file.js:80:8)
+      at normalizeFile (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_
+      at normalizeFile (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/normalize-file.js:96:10)
+      at normalizeFile.next (<anonymous>)
+      at run (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@b
+      at run (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modu
+      at transform (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/g
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:261:32)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:273:13
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:223:11)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:189:28
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/gensync-utils/async.js:67:7
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:113:33
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/g
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:287:14)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:273:13
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:223:11)
+4:57:45 PM [vite] Internal server error: Duplicate declaration "MarkdownTextarea"
+  78 | };
+  79 |
+> 80 | function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2 }: MarkdownTextareaProps) {
+     |          ^^^^^^^^^^^^^^^^
+  81 |   const ref = useRef<HTMLTextAreaElement | null>(null);
+  82 |
+  83 |   const setNext = useCallback(
+  Plugin: vite:react-babel
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/components/Soluti
+  File: /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/src/components/SolutionsBuilderPanel.tsx
+      at File.buildCodeFrameError (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Autom
+      at File.buildCodeFrameError (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/file/file.js:189:12)
+      at Scope.checkBlockScopedCollisions (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Prici
+      at Scope.checkBlockScopedCollisions (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:433:27)
+      at Scope.registerBinding (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automati
+      at Scope.registerBinding (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:530:16)
+      at Scope.registerDeclaration (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at Scope.registerDeclaration (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:475:12)
+      at Object.BlockScoped (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/
+      at Object.BlockScoped (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:276:12)
+      at Object.newFn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_m
+      at Object.newFn (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/visitors.js:203:17)
+      at NodePath._call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node
+      at NodePath._call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:50:20)
+      at NodePath.call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_
+      at NodePath.call (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:40:18)
+      at NodePath.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node
+      at NodePath.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:87:31)
+      at TraversalContext.visitQueue (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Au
+      at TraversalContext.visitQueue (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:96:16)
+      at TraversalContext.visitMultiple (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing
+      at TraversalContext.visitMultiple (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:68:17)
+      at TraversalContext.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automat
+      at TraversalContext.visit (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/context.js:117:19)
+      at traverseNode (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_m
+      at traverseNode (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/traverse-node.js:130:17)
+      at traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modul
+      at traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/index.js:53:34)
+      at NodePath.traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/n
+      at NodePath.traverse (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/index.js:120:24)
+      at Scope.crawl (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mo
+      at Scope.crawl (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:695:10)
+      at Scope.init (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_mod
+      at Scope.init (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/scope/index.js:661:12)
+      at NodePath.setScope (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/n
+      at NodePath.setScope (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:139:55)
+      at NodePath.setContext (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation
+      at NodePath.setContext (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/traverse/lib/path/context.js:151:12)
+      at new File (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modul
+      at new File (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/file/file.js:80:8)
+      at normalizeFile (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_
+      at normalizeFile (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/normalize-file.js:96:10)
+      at normalizeFile.next (<anonymous>)
+      at run (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@b
+      at run (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transformation/index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modu
+      at transform (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/g
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:261:32)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:273:13
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:223:11)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:189:28
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/@babel/core/lib/gensync-utils/async.js:67:7
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:113:33
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/g
+      at step (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:287:14)
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync
+      at /Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:273:13
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Auto
+      at async.call.result.err.err (/Users/raianrith/Desktop/Cursor/WGI_Packaging_Pricing_Automation/WGI_Packaging_Pricing_Automation/node_modules/gensync/index.js:223:11) (x2)
+4:57:51 PM [vite] (client) hmr update /src/components/SolutionsBuilderPanel.tsx
+4:57:51 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId
+4:57:51 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent
+4:57:51 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+4:57:51 PM [vite] (client) hmr update /src/views/AdminView.tsx
+4:58:11 PM [vite] (client) hmr update /src/components/PricingPanel.tsx
+4:58:12 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x2)
+4:58:13 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x3)
+4:58:14 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x4)
+4:58:18 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x5)
+4:58:19 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x6)
+4:58:20 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x7)
+4:58:23 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x8)
+4:58:25 PM [vite] (client) hmr update /src/components/PricingPanel.tsx (x9)
+4:59:36 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx
+4:59:39 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x2)
+4:59:40 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x3)
+4:59:47 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x4)
+4:59:48 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x5)
+4:59:48 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x6)
+4:59:51 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x7)
+4:59:58 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x8)
+5:00:00 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x9)
+5:00:18 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x10)
+5:00:20 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x11)
+5:00:21 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x12)
+5:00:23 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x13)
+5:00:43 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x14)
+5:00:57 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x15)
+5:01:11 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x16)
+5:01:20 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x17)
+5:01:22 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x18)
+5:01:23 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x19)
+5:01:24 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x20)
+5:01:28 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x21)
+5:02:13 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x22)
+5:02:23 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx (x23)
+5:02:24 PM [vite] (client) hmr update /src/views/AdminView.tsx
+5:02:34 PM [vite] (client) hmr update /src/components/PackagesBuilderPanel.tsx
+5:02:42 PM [vite] (client) hmr update /src/components/SolutionsBuilderPanel.tsx
+5:02:42 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId
+5:02:42 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent
+5:02:42 PM [vite] (client) hmr invalidate /src/components/SolutionsBuilderPanel.tsx Could not Fast Refresh ("nextAutoSolutionId" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+5:02:42 PM [vite] (client) hmr update /src/views/AdminView.tsx
+5:09:03 PM [vite] (client) hmr update /src/views/AdminView.tsx (x2)
+5:09:04 PM [vite] (client) hmr update /src/views/AdminView.tsx (x3)
+5:09:06 PM [vite] (client) hmr update /src/views/AdminView.tsx (x4)
+5:09:08 PM [vite] (client) hmr update /src/index.css
+^C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[B
+≈ç

@@ -754,8 +754,11 @@ export function PackagesBuilderPanel({
     for (const t of tasks) {
       if (t.task_name.trim()) s.add(t.task_name.trim());
     }
+    for (const line of taskGroupLines) {
+      if (line.task_name.trim()) s.add(line.task_name.trim());
+    }
     return [...s].sort((a, b) => a.localeCompare(b));
-  }, [tasks]);
+  }, [tasks, taskGroupLines]);
 
   const pkgTiersForAutofill = useMemo(() => {
     if (!pkgEditTierId) return [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));

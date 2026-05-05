@@ -153,6 +153,8 @@ type DraftTaskRow = {
   dur: string;
   dep: string;
   notes: string;
+  /** Where this draft task came from in the UI (manual vs task-group template). */
+  source: string;
 };
 
 function newDraftTaskRow(): DraftTaskRow {
@@ -164,11 +166,16 @@ function newDraftTaskRow(): DraftTaskRow {
     dur: "",
     dep: "",
     notes: "",
+    source: "Created Task (manual)",
   };
 }
 
 /** Build draft task rows from a task-group template (one-page "new solution" — no tier id until final save). */
-function draftRowsFromTaskGroupLines(lines: TaskGroupLineRow[], allTasks: TaskRow[]): DraftTaskRow[] {
+function draftRowsFromTaskGroupLines(
+  lines: TaskGroupLineRow[],
+  allTasks: TaskRow[],
+  sourceTaskGroupName: string
+): DraftTaskRow[] {
   const sorted = [...lines].sort((a, b) => a.sort_order - b.sort_order);
   const out: DraftTaskRow[] = [];
   for (const line of sorted) {
@@ -185,6 +192,7 @@ function draftRowsFromTaskGroupLines(lines: TaskGroupLineRow[], allTasks: TaskRo
           dur: af.dur,
           dep: af.dep,
           notes: af.notes,
+          source: `From Task Group: ${sourceTaskGroupName}`,
         });
         continue;
       }
@@ -197,6 +205,7 @@ function draftRowsFromTaskGroupLines(lines: TaskGroupLineRow[], allTasks: TaskRo
       dur: "",
       dep: "",
       notes: "",
+      source: `From Task Group: ${sourceTaskGroupName}`,
     });
   }
   return out;
@@ -405,6 +414,9 @@ export function SolutionsBuilderPanel({
   /** When set, new tier inserts also copy hidden legacy fields (overview, link, direction) from this row. */
   const [createAutofillFrom, setCreateAutofillFrom] = useState<SolutionTier | null>(null);
   const [draftTasks, setDraftTasks] = useState<DraftTaskRow[]>([newDraftTaskRow()]);
+  const [draftTaskBulkSelectedKeys, setDraftTaskBulkSelectedKeys] = useState<Set<string>>(
+    new Set()
+  );
 
   const [prSolLabel, setPrSolLabel] = useState("");
   const [prTierLabel, setPrTierLabel] = useState("");
@@ -450,6 +462,7 @@ export function SolutionsBuilderPanel({
     setTRes("");
     setCreateAutofillFrom(null);
     setDraftTasks([newDraftTaskRow()]);
+    setDraftTaskBulkSelectedKeys(new Set());
     setPrSolLabel("");
     setPrTierLabel("");
     setPrScope("");
@@ -499,8 +512,15 @@ export function SolutionsBuilderPanel({
         out.push(n);
       }
     }
+    for (const line of taskGroupLines) {
+      const n = line.task_name.trim();
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
     return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [tasks]);
+  }, [tasks, taskGroupLines]);
   /** Match Implementer–Pricing mapping only (not every label ever used on tasks). */
   const distinctImplementerOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -905,6 +925,18 @@ export function SolutionsBuilderPanel({
     setDraftTasks((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
   };
 
+  const draftTaskTotalHours = useMemo(() => {
+    let sum = 0;
+    for (const d of draftTasks) {
+      const t = d.time.trim();
+      if (!t) continue;
+      const n = Number(t);
+      if (!Number.isFinite(n)) continue;
+      sum += n;
+    }
+    return sum;
+  }, [draftTasks]);
+
   // —— Update workspace ——
   const [updSolutionId, setUpdSolutionId] = useState("");
   /** Keep update page concise until user chooses to edit a solution. */
@@ -957,6 +989,42 @@ export function SolutionsBuilderPanel({
       .filter((k) => k.solution_tier_id === updTierFocus)
       .sort((a, b) => sortId(a.task_id, b.task_id));
   }, [tasks, updTierFocus]);
+
+  const updTierTotalTaskHours = useMemo(() => {
+    let sum = 0;
+    for (const t of tasksOfFocusTier) {
+      const n = t.task_time;
+      if (n == null || !Number.isFinite(Number(n))) continue;
+      sum += Number(n);
+    }
+    return sum;
+  }, [tasksOfFocusTier]);
+
+  const [updTaskBulkSelectedIds, setUpdTaskBulkSelectedIds] = useState<Set<string>>(new Set());
+  const [updTaskBulkBusy, setUpdTaskBulkBusy] = useState(false);
+
+  useEffect(() => {
+    setUpdTaskBulkSelectedIds(new Set());
+  }, [updTierFocus]);
+
+  const taskGroupById = useMemo(() => new Map(taskGroups.map((g) => [g.id, g])), [taskGroups]);
+  const taskGroupLineById = useMemo(
+    () => new Map(taskGroupLines.map((l) => [l.id, l])),
+    [taskGroupLines]
+  );
+
+  const sourceLabelForTask = (t: TaskRow): string => {
+    const lineId = t.spawned_from_task_group_line_id ?? null;
+    if (lineId) {
+      const line = taskGroupLineById.get(lineId);
+      if (line) {
+        const group = taskGroupById.get(line.task_group_id);
+        return group?.name ? `From "${group.name}"` : "From task group";
+      }
+      return "From task group";
+    }
+    return "Created Task (manual)";
+  };
 
 
   const implementerToGroup = useMemo(
@@ -1125,6 +1193,7 @@ export function SolutionsBuilderPanel({
     setUpdKDep("");
     setUpdKNotes("");
     setUpdNewTaskDrafts([newDraftTaskRow()]);
+    setUpdTaskBulkSelectedIds(new Set());
   };
 
   useEffect(() => {
@@ -1470,6 +1539,66 @@ export function SolutionsBuilderPanel({
     await onSaved();
   };
 
+  const bulkDeleteSelectedUpdateTasks = useCallback(async () => {
+    const ids = [...updTaskBulkSelectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} selected task(s) from this tier?`)) return;
+
+    const client = getSupabase();
+    if (!client) return;
+    setUpdTaskBulkBusy(true);
+    setOpErr(null);
+    setOpOk(null);
+
+    const selectedTasks = tasksOfFocusTier.filter((t) => updTaskBulkSelectedIds.has(t.task_id));
+
+    try {
+      // Prevent task-group template lines that were using these tasks as source from breaking shape-checks.
+      const { error: relinkErr } = await client
+        .from("task_group_lines")
+        .update({ line_type: "archetype", source_task_id: null })
+        .in("source_task_id", ids);
+      if (relinkErr) {
+        setOpErr(`Could not detach task-group template references: ${relinkErr.message}`);
+        return;
+      }
+
+      const { error: delErr } = await client.from("tasks").delete().in("task_id", ids);
+      if (delErr) {
+        setOpErr(delErr.message);
+        return;
+      }
+
+      for (const t of selectedTasks) {
+        await logAudit(client, {
+          entityType: "tasks",
+          entityId: t.task_id,
+          action: "delete",
+          before: rowJson(t),
+          after: null,
+        });
+      }
+
+      if (updTaskEditId && ids.includes(updTaskEditId)) clearTaskUpdateForm();
+      setUpdTaskBulkSelectedIds(new Set());
+      setOpOk(`Deleted ${ids.length} task(s).`);
+      await onSaved();
+    } finally {
+      setUpdTaskBulkBusy(false);
+    }
+  }, [
+    clearTaskUpdateForm,
+    logAudit,
+    onSaved,
+    onSaved,
+    rowJson,
+    setOpErr,
+    setOpOk,
+    tasksOfFocusTier,
+    updTaskBulkSelectedIds,
+    updTaskEditId,
+  ]);
+
   const applyTaskGroupTemplateToTier = useCallback(async () => {
     if (!updTierFocus || !applyTemplateGroupId) {
       setOpErr("Select a tier and a task group template.");
@@ -1530,7 +1659,9 @@ export function SolutionsBuilderPanel({
       setOpErr("This task group has no lines.");
       return;
     }
-    const newRows = draftRowsFromTaskGroupLines(lines, tasks);
+    const sourceTaskGroupName =
+      taskGroups.find((g) => g.id === fullStackApplyGroupId)?.name ?? fullStackApplyGroupId;
+    const newRows = draftRowsFromTaskGroupLines(lines, tasks, sourceTaskGroupName);
     if (newRows.length === 0) {
       setOpErr("No rows could be built from that template.");
       return;
@@ -1544,6 +1675,7 @@ export function SolutionsBuilderPanel({
   }, [fullStackApplyGroupId, setOpErr, setOpOk, taskGroupLines, tasks]);
 
   const startEditTask = (k: TaskRow) => {
+    setUpdTaskBulkSelectedIds(new Set());
     setUpdNewTaskDrafts([newDraftTaskRow()]);
     setUpdTaskEditId(k.task_id);
     setUpdKName(k.task_name);
@@ -2091,7 +2223,11 @@ export function SolutionsBuilderPanel({
                   <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                     <thead>
                       <tr>
+                        <th style={th}>
+                          <span style={{ opacity: 0.6 }}>#</span>
+                        </th>
                         <th style={th}>Task name</th>
+                        <th style={th}>SOURCE</th>
                         <th style={th}>Implementer</th>
                         <th style={th}>Time</th>
                         <th style={th}>Duration</th>
@@ -2105,12 +2241,27 @@ export function SolutionsBuilderPanel({
                         <tr key={d.key}>
                           <td style={td}>
                             <input
+                              type="checkbox"
+                              checked={draftTaskBulkSelectedKeys.has(d.key)}
+                              onChange={() => {
+                                setDraftTaskBulkSelectedKeys((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(d.key)) next.delete(d.key);
+                                  else next.add(d.key);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </td>
+                          <td style={td}>
+                            <input
                               style={input}
                               list={taskNameDatalistId}
                               value={d.name}
                               onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                             />
                           </td>
+                          <td style={td}>{d.source}</td>
                           <td style={td}>
                             <TaskImplementerSelect
                               value={d.impl}
@@ -2154,9 +2305,46 @@ export function SolutionsBuilderPanel({
                           </td>
                         </tr>
                       ))}
+                      <tr>
+                        <td style={td} />
+                        <td style={td} />
+                        <td style={td} />
+                        <td style={td} />
+                        <td style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                        <td style={{ ...td, fontWeight: 700 }}>{draftTaskTotalHours}</td>
+                        <td style={td} />
+                        <td style={td} />
+                        <td style={td} />
+                      </tr>
                     </tbody>
                   </table>
                 </div>
+                </div>
+
+                <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    style={btnDangerSm}
+                    disabled={
+                      draftTaskBulkSelectedKeys.size === 0 ||
+                      draftTasks.every((d) => !draftTaskBulkSelectedKeys.has(d.key))
+                    }
+                    onClick={() => {
+                      const ids = [...draftTaskBulkSelectedKeys].filter((k) =>
+                        draftTasks.some((d) => d.key === k)
+                      );
+                      if (ids.length === 0) return;
+                      if (!window.confirm(`Delete ${ids.length} selected task draft(s)?`)) return;
+                      const idSet = new Set(ids);
+                      setDraftTasks((prev) => {
+                        const next = prev.filter((d) => !idSet.has(d.key));
+                        return next.length === 0 ? [newDraftTaskRow()] : next;
+                      });
+                      setDraftTaskBulkSelectedKeys(new Set());
+                    }}
+                  >
+                    Bulk delete selected tasks
+                  </button>
                 </div>
 
                 <div style={formSectionBox}>
@@ -2461,19 +2649,37 @@ export function SolutionsBuilderPanel({
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
                             <tr>
-                              <th style={th}>Task name</th>
-                              <th style={th}>Implementer</th>
-                              <th style={th}>Time</th>
-                              <th style={th}>Duration</th>
-                              <th style={th}>Dependencies</th>
-                              <th style={th}>Notes</th>
-                              <th style={{ ...th, width: 90 }} />
+                          <th style={th}>
+                            <span style={{ opacity: 0.6 }}>#</span>
+                          </th>
+                          <th style={th}>Task name</th>
+                          <th style={th}>SOURCE</th>
+                          <th style={th}>Implementer</th>
+                          <th style={th}>Time</th>
+                          <th style={th}>Duration</th>
+                          <th style={th}>Dependencies</th>
+                          <th style={th}>Notes</th>
+                          <th style={{ ...th, width: 90 }} />
                             </tr>
                           </thead>
                           <tbody>
                             {draftTasks.map((d) => (
                               <tr key={d.key}>
-                                <td style={td}>
+                            <td style={td}>
+                              <input
+                                type="checkbox"
+                                checked={draftTaskBulkSelectedKeys.has(d.key)}
+                                onChange={() => {
+                                  setDraftTaskBulkSelectedKeys((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(d.key)) next.delete(d.key);
+                                    else next.add(d.key);
+                                    return next;
+                                  });
+                                }}
+                              />
+                            </td>
+                            <td style={td}>
                                   <input
                                     style={input}
                                     list={taskNameDatalistId}
@@ -2481,7 +2687,8 @@ export function SolutionsBuilderPanel({
                                     onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                                   />
                                 </td>
-                                <td style={td}>
+                            <td style={td}>{d.source}</td>
+                            <td style={td}>
                                   <TaskImplementerSelect
                                     value={d.impl}
                                     options={distinctImplementerOptions}
@@ -2489,28 +2696,28 @@ export function SolutionsBuilderPanel({
                                     onChange={(v) => updateDraftRow(d.key, { impl: v })}
                                   />
                                 </td>
-                                <td style={td}>
+                            <td style={td}>
                                   <input
                                     style={input}
                                     value={d.time}
                                     onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
                                   />
                                 </td>
-                                <td style={td}>
+                            <td style={td}>
                                   <input
                                     style={input}
                                     value={d.dur}
                                     onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
                                   />
                                 </td>
-                                <td style={td}>
+                            <td style={td}>
                                   <input
                                     style={input}
                                     value={d.dep}
                                     onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
                                   />
                                 </td>
-                                <td style={td}>
+                            <td style={td}>
                                   <input
                                     style={input}
                                     value={d.notes}
@@ -2527,7 +2734,32 @@ export function SolutionsBuilderPanel({
                           </tbody>
                         </table>
                       </div>
-                      <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                  <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      style={btnDangerSm}
+                      disabled={
+                        draftTaskBulkSelectedKeys.size === 0 ||
+                        draftTasks.every((d) => !draftTaskBulkSelectedKeys.has(d.key))
+                      }
+                      onClick={() => {
+                        const ids = [...draftTaskBulkSelectedKeys].filter((k) =>
+                          draftTasks.some((d) => d.key === k)
+                        );
+                        if (ids.length === 0) return;
+                        if (!window.confirm(`Delete ${ids.length} selected task draft(s)?`)) return;
+                        const idSet = new Set(ids);
+                        setDraftTasks((prev) => {
+                          const next = prev.filter((d) => !idSet.has(d.key));
+                          return next.length === 0 ? [newDraftTaskRow()] : next;
+                        });
+                        setDraftTaskBulkSelectedKeys(new Set());
+                      }}
+                    >
+                      Bulk delete selected tasks
+                    </button>
+                  </div>
+                  <div className="admin-actions-row" style={{ marginTop: 10 }}>
                         <button
                           type="button"
                           className="admin-btn-primary"
@@ -2849,16 +3081,54 @@ export function SolutionsBuilderPanel({
                     <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
                       <thead>
                         <tr>
+                          <th style={th}>
+                            <input
+                              type="checkbox"
+                              checked={
+                                tasksOfFocusTier.length > 0 &&
+                                tasksOfFocusTier.every((t) => updTaskBulkSelectedIds.has(t.task_id))
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setUpdTaskBulkSelectedIds(new Set(tasksOfFocusTier.map((t) => t.task_id)));
+                                } else {
+                                  setUpdTaskBulkSelectedIds(new Set());
+                                }
+                              }}
+                              disabled={!!updTaskEditId || updTaskBulkBusy || tasksOfFocusTier.length === 0}
+                            />
+                          </th>
                           <th style={th}>Id</th>
                           <th style={th}>Name</th>
+                          <th style={th}>SOURCE</th>
+                          <th style={th}>Hours</th>
                           <th style={th} />
                         </tr>
                       </thead>
                       <tbody>
                         {tasksOfFocusTier.map((k) => (
                           <tr key={k.task_id}>
+                            <td style={td}>
+                              <input
+                                type="checkbox"
+                                checked={updTaskBulkSelectedIds.has(k.task_id)}
+                                onChange={() => {
+                                  setUpdTaskBulkSelectedIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(k.task_id)) next.delete(k.task_id);
+                                    else next.add(k.task_id);
+                                    return next;
+                                  });
+                                }}
+                                disabled={!!updTaskEditId || updTaskBulkBusy}
+                              />
+                            </td>
                             <td style={td}>{k.task_id}</td>
                             <td style={td}>{k.task_name}</td>
+                            <td style={td}>{sourceLabelForTask(k)}</td>
+                            <td style={td}>
+                              {k.task_time == null || !Number.isFinite(Number(k.task_time)) ? "—" : String(k.task_time)}
+                            </td>
                             <td style={td}>
                               <button type="button" style={btnSm} onClick={() => startEditTask(k)}>
                                 Edit
@@ -2869,8 +3139,26 @@ export function SolutionsBuilderPanel({
                             </td>
                           </tr>
                         ))}
+                        <tr>
+                          <td style={td} />
+                          <td style={td} />
+                          <td style={td} />
+                          <td style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                          <td style={{ ...td, fontWeight: 700 }}>{updTierTotalTaskHours}</td>
+                          <td style={td} />
+                        </tr>
                       </tbody>
                     </table>
+                  </div>
+                  <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      style={btnDangerSm}
+                      disabled={updTaskBulkSelectedIds.size === 0 || !!updTaskEditId || updTaskBulkBusy}
+                      onClick={() => void bulkDeleteSelectedUpdateTasks()}
+                    >
+                      Bulk delete selected tasks
+                    </button>
                   </div>
                   {updTaskEditId ? (
                     <>

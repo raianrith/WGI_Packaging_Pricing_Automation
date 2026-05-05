@@ -39,6 +39,7 @@ import type {
   Solution,
   SolutionTier,
   SolutionTierPricing,
+  SolutionTierTaskGroupApplied,
   TaskGroupLineRow,
   TaskGroupRow,
   TaskRow,
@@ -49,7 +50,6 @@ type AdminTab =
   | "solutions_builder"
   | "task_group_builder"
   | "pricing_calculator"
-  | "bulk"
   | "glossary"
   | "implementer_mapping"
   | "audit";
@@ -93,6 +93,7 @@ export function AdminView() {
   const [implementerMappingLoadNote, setImplementerMappingLoadNote] = useState<string | null>(null);
   const [taskGroups, setTaskGroups] = useState<TaskGroupRow[]>([]);
   const [taskGroupLines, setTaskGroupLines] = useState<TaskGroupLineRow[]>([]);
+  const [taskGroupApplied, setTaskGroupApplied] = useState<SolutionTierTaskGroupApplied[]>([]);
   const [taskGroupDataLoadNote, setTaskGroupDataLoadNote] = useState<string | null>(null);
   const [tierPricingMathConfig, setTierPricingMathConfig] = useState<TierPricingMathConfig>(() =>
     loadTierPricingMathConfigFromStorage()
@@ -217,6 +218,13 @@ export function AdminView() {
       setTaskGroupDataLoadNote(null);
       setTaskGroups((tgr.data ?? []) as TaskGroupRow[]);
       setTaskGroupLines((tglr.data ?? []) as TaskGroupLineRow[]);
+    }
+
+    const tga = await client.from("solution_tier_task_group_applied").select("*");
+    if (tga.error) {
+      setTaskGroupApplied([]);
+    } else {
+      setTaskGroupApplied((tga.data ?? []) as SolutionTierTaskGroupApplied[]);
     }
 
     setLoading(false);
@@ -397,10 +405,9 @@ export function AdminView() {
                 ["solutions_builder", "Solutions Builder"],
                 ["task_group_builder", "Task-Group Builder"],
                 ["implementer_mapping", "Implementer-Pricing Mapping"],
-                ["pricing_calculator", "Pricing calculator"],
+                ["pricing_calculator", "Pricing Calculator"],
                 ["glossary", "Data Glossary"],
-                ["bulk", "Bulk Import"],
-                ["audit", "Change history"],
+                ["audit", "Change History"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -422,7 +429,6 @@ export function AdminView() {
           </div>
 
           {tab !== "audit" &&
-            tab !== "bulk" &&
             tab !== "glossary" &&
             tab !== "implementer_mapping" &&
             tab !== "pricing_calculator" &&
@@ -540,8 +546,11 @@ export function AdminView() {
               tiers={tiers}
               solutions={solutions}
               implementerHourGroups={implementerHourGroups}
+              tierPricing={tierPricing}
+              tierPricingMathConfig={tierPricingMathConfig}
               taskGroups={taskGroups}
               taskGroupLines={taskGroupLines}
+              taskGroupApplied={taskGroupApplied}
               loadNote={taskGroupDataLoadNote}
               onRefresh={refreshAfterSave}
               setOpErr={setOpErr}
@@ -578,20 +587,6 @@ export function AdminView() {
               onRecalculateAllSavedPricing={recalculateAllSavedTierPricing}
               savedPricingRowCount={tierPricing.length}
               recalculateAllSavedPricingBusy={recalculateAllSavedPricingBusy}
-            />
-          )}
-          {tab === "bulk" && (
-            <BulkImportPanel
-              packages={packages}
-              solutions={solutions}
-              tiers={tiers}
-              tasks={tasks}
-              pricing={tierPricing}
-              packageTiers={packageTiers}
-              tierPricingMathConfig={tierPricingMathConfig}
-              onSaved={refreshAfterSave}
-              setOpErr={setOpErr}
-              setOpOk={setOpOk}
             />
           )}
           {tab === "glossary" && <DataGlossaryPanel />}
@@ -1751,7 +1746,7 @@ const BULK_GLOSSARY: Record<
   },
 };
 
-function BulkImportPanel({
+export function BulkImportPanel({
   packages,
   solutions,
   tiers,

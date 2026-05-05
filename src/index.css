@@ -2191,6 +2191,14 @@ button {
   letter-spacing: 0.02em;
 }
 
+.admin-task-group-builder .admin-tg-task-picker__id--template {
+  font-family: inherit;
+  display: block;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .admin-task-group-builder .admin-tg-task-picker__status {
   font-size: 0.64rem;
   font-weight: 700;
@@ -2238,6 +2246,111 @@ button {
   color: var(--muted, #5c5a55);
   background: rgba(250, 248, 244, 0.5);
   cursor: default;
+}
+
+.admin-task-group-builder .admin-tg-tier-count-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #0d5c4d;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.admin-task-group-builder .admin-tg-tier-count-btn:hover {
+  color: #063d32;
+}
+
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.admin-modal {
+  background: var(--card, #fffdf8);
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(214, 206, 194, 0.9));
+  max-width: min(28rem, 100%);
+  max-height: min(75vh, 100%);
+  overflow: auto;
+  padding: 1.15rem 1.35rem 1.25rem;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.18);
+}
+
+.admin-modal--sync-tiers {
+  max-width: min(38rem, 100%);
+}
+
+.admin-modal__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+}
+
+.admin-modal__list--tier-usage {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  line-height: 1.55;
+  font-size: 0.9rem;
+}
+
+.admin-modal__list--tier-usage .admin-modal__list-item {
+  margin-bottom: 0.35rem;
+}
+
+.admin-modal__checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(50vh, 24rem);
+  overflow: auto;
+  border: 1px solid rgba(214, 206, 194, 0.85);
+  border-radius: 10px;
+  background: rgba(255, 252, 247, 0.65);
+}
+
+.admin-modal__checklist > li {
+  margin: 0;
+  padding: 0;
+}
+
+.admin-modal__check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(214, 206, 194, 0.4);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  cursor: pointer;
+  margin: 0;
+}
+
+.admin-modal__check-item:last-of-type {
+  border-bottom: none;
+}
+
+.admin-modal__check-item:hover {
+  background: rgba(13, 92, 77, 0.04);
+}
+
+.admin-modal__check-item input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 /* Draft list: compact, not a full data table */

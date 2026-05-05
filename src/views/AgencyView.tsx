@@ -474,21 +474,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return data.pricing.find((p) => p.solution_tier_id === tierId) ?? null;
   }, [data, tierId]);
 
-  const selectedPricingDisplay = useMemo(() => {
-    if (!data || !tierId) return null;
-    const vault = data.pricing.find((p) => p.solution_tier_id === tierId) ?? null;
-    if (!packageWorkspaceLinkByTierId) return vault;
-    const link = packageWorkspaceLinkByTierId.get(tierId);
-    return mergePricingWithPackageOverrides(vault, tierId, parsePricingOverrides(link?.pricing_overrides));
-  }, [data, tierId, packageWorkspaceLinkByTierId]);
-
-  const showPricingSection = useMemo(() => {
-    if (!tierId || !data) return false;
-    if (data.pricing.some((p) => p.solution_tier_id === tierId)) return true;
-    const link = packageWorkspaceLinkByTierId?.get(tierId);
-    return Object.keys(parsePricingOverrides(link?.pricing_overrides)).length > 0;
-  }, [tierId, data, packageWorkspaceLinkByTierId]);
-
   const tasksForTierDisplay = useMemo(() => {
     if (!data || !tierId) return [];
     const vaultSorted = data.tasks
@@ -1331,44 +1316,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     )}
                   </header>
 
-                  {showPricingSection && selectedPricingDisplay ? (
-                    <section className="agency-pricing" style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Pricing
-                      </h3>
-                      {selectedPricingDisplay.scope ? (
-                        <div className="agency-pricing__scope-wrap">
-                          <p className="agency-pricing__scope pre-wrap">
-                            {selectedPricingDisplay.scope}
-                          </p>
-                        </div>
-                      ) : null}
-                      {selectedPricingDisplay.tags ? (
-                        <p className="agency-pricing__tags">
-                          <span className="agency-pricing__tags-label">Tags</span>
-                          {selectedPricingDisplay.tags}
-                        </p>
-                      ) : null}
-                      {selectedPricingDisplay.notes ? (
-                        <div className="agency-pricing__notes">
-                          <h4 className="agency-pricing__notes-title">Pricing notes</h4>
-                          <div className="agency-pricing__notes-body pre-wrap">
-                            {selectedPricingDisplay.notes}
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-                  ) : (
-                    <section style={block}>
-                      <h3 className="agency-block-title" style={blockTitle}>
-                        Pricing
-                      </h3>
-                      <p style={emptyHint}>
-                        No pricing row for this tier yet. Add one in Admin → Pricing.
-                      </p>
-                    </section>
-                  )}
-
                   {(() => {
                     const t = selectedTierDisplay;
                     const first = firstTierCategory(t);
@@ -1765,12 +1712,6 @@ const metaLine: CSSProperties = {
   margin: "0.35rem 0 0",
   fontSize: "0.85rem",
   color: "var(--muted)",
-};
-
-const block: CSSProperties = {
-  marginTop: "1.1rem",
-  paddingTop: "1rem",
-  borderTop: "1px solid var(--border)",
 };
 
 const blockTitle: CSSProperties = {

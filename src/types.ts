@@ -70,6 +70,9 @@ export type TaskRow = {
   task_notes: string | null;
   task_create_date: string;
   task_modified_date: string;
+  /** Set when this row was created by applying a task-group template to a tier. */
+  task_group_application_id?: string | null;
+  spawned_from_task_group_line_id?: string | null;
 };
 
 /** Reusable task group template (library). Lines are in `task_group_lines`. */

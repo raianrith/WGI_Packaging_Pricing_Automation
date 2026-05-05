@@ -1,20 +1,35 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { getSupabase } from "../lib/supabase";
+import { normalizeTierPricingMathConfig, type TierPricingMathConfig } from "../lib/tierPricingMath";
+import { buildSolutionTierPricingMathUpdate } from "../lib/recomputeStoredTierPricing";
+import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
+import {
+  buildTemplateLinePickerMeta,
+  TASK_GROUP_TEMPLATE_LINE_PREFIX,
+  type TemplateLinePickerMeta,
+} from "../lib/taskGroupTemplatePicker";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
+import { syncTaskGroupTemplateToAppliedTiers } from "../lib/syncTaskGroupTemplateToAppliedTiers";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import type {
   ImplementerHourGroupRow,
   Solution,
   SolutionTier,
+  SolutionTierTaskGroupApplied,
+  SolutionTierPricing,
   TaskGroupLineRow,
   TaskGroupLineType,
   TaskGroupRow,
   TaskRow,
 } from "../types";
+
+function sortTierIdKey(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
 
 function rowJson(row: object): Record<string, unknown> {
   return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
@@ -32,8 +47,12 @@ type Props = {
   tiers: SolutionTier[];
   solutions: Solution[];
   implementerHourGroups: ImplementerHourGroupRow[];
+  tierPricing: SolutionTierPricing[];
+  tierPricingMathConfig: TierPricingMathConfig;
   taskGroups: TaskGroupRow[];
   taskGroupLines: TaskGroupLineRow[];
+  /** Rows from `solution_tier_task_group_applied` (template applied to tier). */
+  taskGroupApplied: SolutionTierTaskGroupApplied[];
   loadNote: string | null;
   onRefresh: () => Promise<void>;
   setOpErr: (s: string | null) => void;
@@ -91,6 +110,7 @@ type TaskLinkPickerProps = {
   disabled: boolean;
   inputStyle: CSSProperties;
   mutedStyle: CSSProperties;
+  templateLineMeta?: Map<string, TemplateLinePickerMeta>;
 };
 
 function TaskLinkPicker({
@@ -105,6 +125,7 @@ function TaskLinkPicker({
   disabled,
   inputStyle,
   mutedStyle,
+  templateLineMeta,
 }: TaskLinkPickerProps) {
   return (
     <div className="admin-tg-task-picker">
@@ -128,7 +149,13 @@ function TaskLinkPicker({
           filteredTasks.map((k) => {
             const isDis = isRowDisabled(k) || disabled;
             const isSel = selectedTaskId === k.task_id;
-            const { label: tierLabel, title: tierTitle } = tierContextLabel(k, tierList, solutionList);
+            const tmpl = templateLineMeta?.get(k.task_id);
+            const ctx = tmpl
+              ? { label: tmpl.groupName, title: `Template line from task group “${tmpl.groupName}”` }
+              : tierContextLabel(k, tierList, solutionList);
+            const tierLabel = ctx.label;
+            const tierTitle = ctx.title;
+            const idLabel = tmpl?.headline ?? k.task_id;
             return (
               <li key={k.task_id} className="admin-tg-task-picker__li">
                 <button
@@ -146,7 +173,11 @@ function TaskLinkPicker({
                   disabled={isDis}
                 >
                   <div className="admin-tg-task-picker__row-top">
-                    <code className="admin-tg-task-picker__id">{k.task_id}</code>
+                    {tmpl ? (
+                      <span className="admin-tg-task-picker__id admin-tg-task-picker__id--template">{idLabel}</span>
+                    ) : (
+                      <code className="admin-tg-task-picker__id">{idLabel}</code>
+                    )}
                   </div>
                   <div className="admin-tg-task-picker__row-bottom">
                     <span className="admin-tg-task-picker__name">{k.task_name}</span>
@@ -188,8 +219,11 @@ export function TaskGroupBuilderPanel({
   tiers,
   solutions,
   implementerHourGroups,
+  tierPricing,
+  tierPricingMathConfig,
   taskGroups,
   taskGroupLines,
+  taskGroupApplied,
   loadNote,
   onRefresh,
   setOpErr,
@@ -231,10 +265,54 @@ export function TaskGroupBuilderPanel({
   const [editGroupId, setEditGroupId] = useState<string | null>(null);
   const [editGroupName, setEditGroupName] = useState("");
   const [editGroupDesc, setEditGroupDesc] = useState("");
+  const [tierUsageModalGroupId, setTierUsageModalGroupId] = useState<string | null>(null);
+  const [syncTemplateModalGroup, setSyncTemplateModalGroup] = useState<TaskGroupRow | null>(null);
+  const [syncTemplateSelectedTierIds, setSyncTemplateSelectedTierIds] = useState<string[]>([]);
 
-  const sortedTasks = useMemo(
-    () => [...tasks].sort((a, b) => a.task_id.localeCompare(b.task_id, undefined, { numeric: true })),
-    [tasks]
+  const sortedTasks = useMemo(() => {
+    const byId = new Map<string, TaskRow>();
+    for (const t of tasks) byId.set(t.task_id, t);
+    // Include source tasks already referenced by templates even if missing from current vault rows.
+    for (const line of taskGroupLines) {
+      const sid = line.source_task_id?.trim();
+      if (sid && !byId.has(sid)) {
+        byId.set(sid, {
+          task_id: sid,
+          solution_tier_id: "task-group-template",
+          task_name: line.task_name?.trim() || sid,
+          task_implementer: line.task_implementer ?? null,
+          task_time: line.hours ?? null,
+          task_duration: null,
+          task_dependencies: null,
+          task_notes: null,
+          task_create_date: "1970-01-01",
+          task_modified_date: "1970-01-01",
+        });
+      }
+      // Archetype lines have no source task id; expose them as selectable picker options.
+      if (!sid && line.task_name.trim()) {
+        const syntheticId = `${TASK_GROUP_TEMPLATE_LINE_PREFIX}${line.id}`;
+        if (byId.has(syntheticId)) continue;
+        byId.set(syntheticId, {
+          task_id: syntheticId,
+          solution_tier_id: "task-group-template",
+          task_name: line.task_name.trim(),
+          task_implementer: line.task_implementer ?? null,
+          task_time: line.hours ?? null,
+          task_duration: null,
+          task_dependencies: null,
+          task_notes: null,
+          task_create_date: "1970-01-01",
+          task_modified_date: "1970-01-01",
+        });
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.task_id.localeCompare(b.task_id, undefined, { numeric: true }));
+  }, [tasks, taskGroupLines]);
+
+  const templateLinePickerMeta = useMemo(
+    () => buildTemplateLinePickerMeta(taskGroups, taskGroupLines),
+    [taskGroups, taskGroupLines]
   );
 
   /** Match Implementer–Pricing mapping only (not every label ever used on tasks). */
@@ -247,25 +325,105 @@ export function TaskGroupBuilderPanel({
     return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [implementerHourGroups]);
 
+  const implementerToGroup = useMemo(
+    () => buildImplementerToGroupMap(implementerHourGroups),
+    [implementerHourGroups]
+  );
+
+  const recalcPricingForTiers = useCallback(
+    async (tierIds: string[]) => {
+      const client = getSupabase();
+      if (!client) return { ok: false as const, message: "Supabase client not available." };
+      if (tierIds.length === 0) return { ok: true as const, updated: 0, skipped: 0 };
+
+      // Pull fresh tasks after template sync so rollups are accurate.
+      const { data: freshTasks, error: tErr } = await client
+        .from("tasks")
+        .select("*")
+        .in("solution_tier_id", tierIds);
+      if (tErr) return { ok: false as const, message: friendlyMutationMessage(tErr.message) };
+
+      const byTier = new Map<string, TaskRow[]>();
+      for (const raw of freshTasks ?? []) {
+        const t = raw as TaskRow;
+        const arr = byTier.get(t.solution_tier_id) ?? [];
+        arr.push(t);
+        byTier.set(t.solution_tier_id, arr);
+      }
+
+      const math = normalizeTierPricingMathConfig(tierPricingMathConfig);
+      let updated = 0;
+      let skipped = 0;
+
+      for (const tid of tierIds) {
+        const prev = tierPricing.find((p) => p.solution_tier_id === tid) ?? null;
+        if (!prev) {
+          skipped += 1;
+          continue;
+        }
+        const list = byTier.get(tid) ?? [];
+        const roll = rollUpTaskTimesByPricingGroup(list, implementerToGroup);
+        const nextRow: SolutionTierPricing = {
+          ...prev,
+          hours_client_services: roll.client_services,
+          hours_copy: roll.copy,
+          hours_design: roll.design,
+          hours_web_dev: roll.web_dev,
+          hours_video: roll.video,
+          hours_data: roll.data,
+          hours_paid_media: roll.paid_media,
+          hours_hubspot: roll.hubspot,
+          hours_other: roll.other,
+        };
+        const mathUpdate = buildSolutionTierPricingMathUpdate(nextRow, math);
+        const { solution_tier_id: _ignore, ...payload } = {
+          ...nextRow,
+          ...mathUpdate,
+        } as Record<string, unknown>;
+
+        const { error: upErr } = await client.from("solution_tier_pricing").update(payload).eq("solution_tier_id", tid);
+        if (upErr) return { ok: false as const, message: friendlyMutationMessage(upErr.message) };
+
+        await logAudit(client, {
+          entityType: "solution_tier_pricing",
+          entityId: tid,
+          action: "update",
+          before: rowJson(prev),
+          after: rowJson({ ...prev, ...payload }),
+        });
+        updated += 1;
+      }
+
+      return { ok: true as const, updated, skipped };
+    },
+    [implementerToGroup, logAudit, tierPricing, tierPricingMathConfig]
+  );
+
   const filteredForLink = useMemo(() => {
     const q = linkSearch.trim().toLowerCase();
     if (!q) return sortedTasks;
     return sortedTasks.filter((k) => {
+      const tmpl = templateLinePickerMeta.get(k.task_id);
+      const metaHay = tmpl ? `${tmpl.headline} ${tmpl.groupName}` : "";
       const { label: tierL } = tierContextLabel(k, tiers, solutions);
-      const hay = `${k.task_id} ${k.task_name} ${k.solution_tier_id} ${tierL} ${k.task_implementer ?? ""}`.toLowerCase();
+      const hay =
+        `${k.task_id} ${k.task_name} ${k.solution_tier_id} ${tierL} ${k.task_implementer ?? ""} ${metaHay}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [sortedTasks, linkSearch, solutions, tiers]);
+  }, [sortedTasks, linkSearch, solutions, tiers, templateLinePickerMeta]);
 
   const filterAdd = useMemo(() => {
     const q = taskFilter.trim().toLowerCase();
     if (!q) return sortedTasks;
     return sortedTasks.filter((k) => {
+      const tmpl = templateLinePickerMeta.get(k.task_id);
+      const metaHay = tmpl ? `${tmpl.headline} ${tmpl.groupName}` : "";
       const { label: tierL } = tierContextLabel(k, tiers, solutions);
-      const hay = `${k.task_id} ${k.task_name} ${k.solution_tier_id} ${tierL} ${k.task_implementer ?? ""}`.toLowerCase();
+      const hay =
+        `${k.task_id} ${k.task_name} ${k.solution_tier_id} ${tierL} ${k.task_implementer ?? ""} ${metaHay}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [sortedTasks, taskFilter, solutions, tiers]);
+  }, [sortedTasks, taskFilter, solutions, tiers, templateLinePickerMeta]);
 
   const linesByGroup = useMemo(() => {
     const m = new Map<string, TaskGroupLineRow[]>();
@@ -276,6 +434,81 @@ export function TaskGroupBuilderPanel({
     for (const arr of m.values()) arr.sort((a, b) => a.sort_order - b.sort_order);
     return m;
   }, [taskGroupLines]);
+
+  /**
+   * Distinct solution tiers that currently have tasks linked to this template.
+   *
+   * Important: we *do not* count tiers solely from `solution_tier_task_group_applied`, because those rows
+   * represent history and can remain after users delete tasks from the tier.
+   */
+  const tierUsageByTaskGroup = useMemo(() => {
+    const tierById = new Map(tiers.map((t) => [t.solution_tier_id, t]));
+    const solById = new Map(solutions.map((s) => [s.solution_id, s]));
+    const lineIdsByGroup = new Map<string, Set<string>>();
+    for (const line of taskGroupLines) {
+      if (!lineIdsByGroup.has(line.task_group_id)) lineIdsByGroup.set(line.task_group_id, new Set());
+      lineIdsByGroup.get(line.task_group_id)!.add(line.id);
+    }
+
+    const tierIdsByGroup = new Map<string, Set<string>>();
+    for (const row of taskGroupApplied) {
+      const lineIds = lineIdsByGroup.get(row.task_group_id);
+      if (!lineIds || lineIds.size === 0) continue;
+      // Count this tier only if at least one task in that tier is still linked to this template.
+      const hasLinkedTask = tasks.some(
+        (t) =>
+          t.solution_tier_id === row.solution_tier_id &&
+          ((t.task_group_application_id && t.task_group_application_id === row.id) ||
+            (t.spawned_from_task_group_line_id && lineIds.has(t.spawned_from_task_group_line_id)))
+      );
+      if (!hasLinkedTask) continue;
+      if (!tierIdsByGroup.has(row.task_group_id)) tierIdsByGroup.set(row.task_group_id, new Set());
+      tierIdsByGroup.get(row.task_group_id)!.add(row.solution_tier_id);
+    }
+    const out = new Map<string, { count: number; items: { id: string; label: string }[] }>();
+    for (const [groupId, idSet] of tierIdsByGroup) {
+      const ids = [...idSet].sort(sortTierIdKey);
+      const items = ids.map((tid) => {
+        const t = tierById.get(tid);
+        if (!t) return { id: tid, label: `Unknown tier (${tid})` };
+        const sol = solById.get(t.solution_id);
+        const solPart = sol?.solution_name?.trim() || t.solution_id;
+        return {
+          id: tid,
+          label: `${solPart} — ${t.solution_tier_name}`.trim(),
+        };
+      });
+      out.set(groupId, { count: items.length, items });
+    }
+    return out;
+  }, [taskGroupApplied, taskGroupLines, tasks, tiers, solutions]);
+
+  const syncModalApplyCountByTier = useMemo(() => {
+    if (!syncTemplateModalGroup) return new Map<string, number>();
+    const m = new Map<string, number>();
+    for (const r of taskGroupApplied) {
+      if (r.task_group_id !== syncTemplateModalGroup.id) continue;
+      m.set(r.solution_tier_id, (m.get(r.solution_tier_id) ?? 0) + 1);
+    }
+    return m;
+  }, [syncTemplateModalGroup, taskGroupApplied]);
+
+  const syncModalTierItems = useMemo(() => {
+    if (!syncTemplateModalGroup) return [];
+    return tierUsageByTaskGroup.get(syncTemplateModalGroup.id)?.items ?? [];
+  }, [syncTemplateModalGroup, tierUsageByTaskGroup]);
+
+  useEffect(() => {
+    if (!tierUsageModalGroupId && !syncTemplateModalGroup) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTierUsageModalGroupId(null);
+        setSyncTemplateModalGroup(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tierUsageModalGroupId, syncTemplateModalGroup]);
 
   const selectedGroup = useMemo(
     () => (selectedGroupId ? taskGroups.find((g) => g.id === selectedGroupId) ?? null : null),
@@ -303,6 +536,11 @@ export function TaskGroupBuilderPanel({
   const pushError = (msg: string) => {
     setOpErr(friendlyMutationMessage(msg));
   };
+
+  const findPickerTask = useCallback(
+    (taskId: string) => sortedTasks.find((t) => t.task_id === taskId),
+    [sortedTasks]
+  );
 
   const addDraftToCreate = useCallback(() => {
     setOpErr(null);
@@ -336,13 +574,30 @@ export function TaskGroupBuilderPanel({
       setOpErr("That task is already in the draft.");
       return;
     }
-    setCreateLineDraft((d) => [
-      ...d,
-      { key: crypto.randomUUID(), line_type: "copy_from_task", taskId: linkPick },
-    ]);
+    if (linkPick.startsWith(TASK_GROUP_TEMPLATE_LINE_PREFIX)) {
+      const src = findPickerTask(linkPick);
+      if (!src) {
+        setOpErr("Selected template task was not found.");
+        return;
+      }
+      setCreateLineDraft((d) => [
+        ...d,
+        {
+          key: crypto.randomUUID(),
+          line_type: "archetype",
+          name: src.task_name.trim() || "Task",
+          implementer: src.task_implementer ?? "",
+          hours: src.task_time == null ? "" : String(src.task_time),
+        },
+      ]);
+      setLinkPick("");
+      setOpOk("Added task-group line as an archetype draft row.");
+      return;
+    }
+    setCreateLineDraft((d) => [...d, { key: crypto.randomUUID(), line_type: "copy_from_task", taskId: linkPick }]);
     setLinkPick("");
     setOpOk("Added to new-group draft.");
-  }, [addMode, archHours, archImpl, archName, createLineDraft, linkPick, setOpErr, setOpOk]);
+  }, [addMode, archHours, archImpl, archName, createLineDraft, findPickerTask, linkPick, setOpErr, setOpOk]);
 
   const createGroupWithDraft = useCallback(async () => {
     const n = newGroupName.trim();
@@ -410,7 +665,7 @@ export function TaskGroupBuilderPanel({
             after: { task_group_id: gid, line_type: "archetype" },
           });
         } else {
-          const src = tasks.find((t) => t.task_id === d.taskId);
+          const src = findPickerTask(d.taskId);
           if (!src) {
             pushError(`Source task ${d.taskId} not found.`);
             return;
@@ -453,6 +708,7 @@ export function TaskGroupBuilderPanel({
     }
   }, [
     createLineDraft,
+    findPickerTask,
     logAudit,
     newGroupDescription,
     newGroupName,
@@ -460,7 +716,6 @@ export function TaskGroupBuilderPanel({
     setOpErr,
     setOpOk,
     taskGroups,
-    tasks,
   ]);
 
   const addLineToSelected = useCallback(async () => {
@@ -510,7 +765,43 @@ export function TaskGroupBuilderPanel({
         setArchImpl("");
         setArchHours("");
       } else {
-        const src = tasks.find((t) => t.task_id === linkPickAdd);
+        if (linkPickAdd.startsWith(TASK_GROUP_TEMPLATE_LINE_PREFIX)) {
+          const src = findPickerTask(linkPickAdd);
+          if (!src) {
+            pushError("Selected template task was not found.");
+            return;
+          }
+          const { data, error } = await client
+            .from("task_group_lines")
+            .insert({
+              task_group_id: selectedGroupId,
+              sort_order: ord,
+              line_type: "archetype",
+              source_task_id: null,
+              task_name: src.task_name.trim() || "Task",
+              task_implementer: src.task_implementer?.trim() || null,
+              hours: src.task_time ?? null,
+            })
+            .select("id")
+            .single();
+          if (error) {
+            pushError(error.message);
+            return;
+          }
+          setLinkPickAdd("");
+          await logAudit(client, {
+            entityType: "task_group_lines",
+            entityId: String(data?.id ?? ""),
+            action: "insert",
+            before: null,
+            after: { task_group_id: selectedGroupId, line_type: "archetype" },
+          });
+          setOpOk("Added archetype line from template task.");
+          notifyPackagingDataChanged();
+          await onRefresh();
+          return;
+        }
+        const src = findPickerTask(linkPickAdd);
         if (!src) {
           pushError("Source task not found.");
           return;
@@ -552,12 +843,12 @@ export function TaskGroupBuilderPanel({
     archHours,
     archImpl,
     archName,
+    findPickerTask,
     linkPickAdd,
     logAudit,
     nextSortOrder,
     onRefresh,
     selectedGroupId,
-    tasks,
   ]);
 
   const deleteGroup = useCallback(
@@ -591,6 +882,88 @@ export function TaskGroupBuilderPanel({
     },
     [logAudit, onRefresh, selectedGroupId]
   );
+
+  const openSyncTemplateModal = useCallback(
+    (g: TaskGroupRow) => {
+      const lines = linesByGroup.get(g.id) ?? [];
+      if (lines.length === 0) {
+        setOpErr("This task group has no template lines.");
+        return;
+      }
+      const items = tierUsageByTaskGroup.get(g.id)?.items ?? [];
+      if (items.length === 0) {
+        setOpErr(null);
+        setOpOk("No solution tiers have this template applied yet — nothing to update.");
+        return;
+      }
+      setOpErr(null);
+      setOpOk(null);
+      setSyncTemplateModalGroup(g);
+      setSyncTemplateSelectedTierIds(items.map((it) => it.id));
+    },
+    [linesByGroup, tierUsageByTaskGroup, setOpErr, setOpOk]
+  );
+
+  const confirmSyncTemplateToSelectedTiers = useCallback(async () => {
+    const g = syncTemplateModalGroup;
+    if (!g) return;
+    const lines = linesByGroup.get(g.id) ?? [];
+    if (lines.length === 0) {
+      setOpErr("This task group has no template lines.");
+      return;
+    }
+    if (syncTemplateSelectedTierIds.length === 0) {
+      setOpErr("Select at least one solution tier.");
+      return;
+    }
+    setSaving(true);
+    setOpErr(null);
+    setOpOk(null);
+    try {
+      const res = await syncTaskGroupTemplateToAppliedTiers({
+        task_group_id: g.id,
+        lines,
+        allTasks: tasks,
+        logAudit,
+        solutionTierIds: syncTemplateSelectedTierIds,
+      });
+      if (!res.ok) {
+        setOpErr(res.message);
+        return;
+      }
+      const pr = await recalcPricingForTiers(syncTemplateSelectedTierIds);
+      if (!pr.ok) {
+        setOpErr(`${pr.message} (Tasks were synced; pricing could not be recalculated.)`);
+        return;
+      }
+      let okMsg = `Synced ${res.updated} task row(s) to match the current template.`;
+      if (res.skippedSlots > 0) {
+        okMsg += ` Skipped ${res.skippedSlots} template slot(s) with no linked task (often applies from before lineage tracking — run supabase/tasks_task_group_lineage.sql in Supabase, or re-apply the group to those tiers).`;
+      }
+      if (pr.updated > 0) {
+        okMsg += ` Recalculated pricing for ${pr.updated} tier(s).`;
+      }
+      if (pr.skipped > 0) {
+        okMsg += ` Skipped pricing for ${pr.skipped} tier(s) with no pricing row yet.`;
+      }
+      setOpOk(okMsg);
+      setSyncTemplateModalGroup(null);
+      notifyPackagingDataChanged();
+      await onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    syncTemplateModalGroup,
+    syncTemplateSelectedTierIds,
+    linesByGroup,
+    tasks,
+    logAudit,
+    recalcPricingForTiers,
+    onRefresh,
+    setOpErr,
+    setOpOk,
+  ]);
 
   const removeLine = useCallback(
     async (r: TaskGroupLineRow) => {
@@ -788,49 +1161,77 @@ export function TaskGroupBuilderPanel({
                 <tr>
                   <th style={th}>Name</th>
                   <th style={th}>Lines</th>
+                  <th style={th}>Tiers using</th>
                   <th style={th} />
                 </tr>
               </thead>
               <tbody>
                 {taskGroups.length === 0 && !loadNote ? (
                   <tr>
-                    <td colSpan={3} style={td}>
+                    <td colSpan={4} style={td}>
                       No task groups. Create one below.
                     </td>
                   </tr>
                 ) : null}
-                {taskGroups.map((g) => (
-                  <tr key={g.id} style={selectedGroupId === g.id ? { background: "rgba(13, 92, 77, 0.06)" } : undefined}>
-                    <td style={td}>
-                      <strong>{g.name}</strong>
-                      {g.description ? (
-                        <span style={{ ...muted, display: "block", fontSize: "0.82rem", fontWeight: 400 }}>{g.description}</span>
-                      ) : null}
-                    </td>
-                    <td style={td}>{linesByGroup.get(g.id)?.length ?? 0}</td>
-                    <td style={td}>
-                      <button
-                        type="button"
-                        style={btn}
-                        onClick={() => {
-                          setSelectedGroupId(g.id);
-                          setEditLineId(null);
-                          setOpErr(null);
-                          setOpOk(null);
-                        }}
-                        disabled={saving}
-                      >
-                        {selectedGroupId === g.id ? "Preview Below" : "Manage"}
-                      </button>{" "}
-                      <button type="button" style={btn} onClick={() => startEditGroup(g)} disabled={saving}>
-                        Edit name
-                      </button>{" "}
-                      <button type="button" style={btnDangerSm} onClick={() => void deleteGroup(g)} disabled={saving}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {taskGroups.map((g) => {
+                  const tiersUsingCount = tierUsageByTaskGroup.get(g.id)?.count ?? 0;
+                  return (
+                    <tr key={g.id} style={selectedGroupId === g.id ? { background: "rgba(13, 92, 77, 0.06)" } : undefined}>
+                      <td style={td}>
+                        <strong>{g.name}</strong>
+                        {g.description ? (
+                          <span style={{ ...muted, display: "block", fontSize: "0.82rem", fontWeight: 400 }}>
+                            {g.description}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td style={td}>{linesByGroup.get(g.id)?.length ?? 0}</td>
+                      <td style={td}>
+                        {tiersUsingCount === 0 ? (
+                          <span style={muted}>0</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="admin-tg-tier-count-btn"
+                            onClick={() => setTierUsageModalGroupId(g.id)}
+                          >
+                            {tiersUsingCount}
+                          </button>
+                        )}
+                      </td>
+                      <td style={td}>
+                        <button
+                          type="button"
+                          style={btn}
+                          onClick={() => {
+                            setSelectedGroupId(g.id);
+                            setEditLineId(null);
+                            setOpErr(null);
+                            setOpOk(null);
+                          }}
+                          disabled={saving}
+                        >
+                          {selectedGroupId === g.id ? "Preview Below" : "Manage"}
+                        </button>{" "}
+                        <button type="button" style={btn} onClick={() => startEditGroup(g)} disabled={saving}>
+                          Edit name
+                        </button>{" "}
+                        <button
+                          type="button"
+                          style={btn}
+                          onClick={() => openSyncTemplateModal(g)}
+                          disabled={saving || (linesByGroup.get(g.id)?.length ?? 0) === 0}
+                          title="Choose which tiers that use this template should receive the latest definitions"
+                        >
+                          Sync template to selected tiers
+                        </button>{" "}
+                        <button type="button" style={btnDangerSm} onClick={() => void deleteGroup(g)} disabled={saving}>
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -928,6 +1329,7 @@ export function TaskGroupBuilderPanel({
                   disabled={saving}
                   inputStyle={input}
                   mutedStyle={muted}
+                  templateLineMeta={templateLinePickerMeta}
                 />
               </div>
             )}
@@ -1115,6 +1517,7 @@ export function TaskGroupBuilderPanel({
                   disabled={saving}
                   inputStyle={input}
                   mutedStyle={muted}
+                  templateLineMeta={templateLinePickerMeta}
                 />
               </div>
             )}
@@ -1145,6 +1548,139 @@ export function TaskGroupBuilderPanel({
           </p>
         )}
       </div>
+
+      {syncTemplateModalGroup ? (
+        <div
+          className="admin-modal-backdrop"
+          onClick={() => !saving && setSyncTemplateModalGroup(null)}
+          role="presentation"
+        >
+          <div
+            className="admin-modal admin-modal--sync-tiers"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-tg-sync-template-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="admin-tg-sync-template-title" className="admin-modal__title">
+              Sync template to tiers — “{syncTemplateModalGroup.name}”
+            </h3>
+            <p className="admin-modal__lead" style={{ ...muted, marginTop: "0.35rem", fontSize: "0.86rem" }}>
+              Choose which solution tiers should be updated to match the <strong>current</strong> template
+              (task name, implementer, hours, etc.). Copy-from-task lines use the latest source task data. Only tasks
+              with template lineage can be updated.
+            </p>
+            <div className="admin-modal__checklist-tools" style={{ marginTop: "0.65rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={btn}
+                disabled={saving || syncModalTierItems.length === 0}
+                onClick={() => setSyncTemplateSelectedTierIds(syncModalTierItems.map((it) => it.id))}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                style={btn}
+                disabled={saving}
+                onClick={() => setSyncTemplateSelectedTierIds([])}
+              >
+                Clear
+              </button>
+            </div>
+            <ul className="admin-modal__checklist" style={{ marginTop: "0.5rem" }}>
+              {syncModalTierItems.map((it) => {
+                const checked = syncTemplateSelectedTierIds.includes(it.id);
+                const nApply = syncModalApplyCountByTier.get(it.id) ?? 0;
+                return (
+                  <li key={it.id}>
+                    <label className="admin-modal__check-item">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={saving}
+                        onChange={() => {
+                          setSyncTemplateSelectedTierIds((prev) =>
+                            prev.includes(it.id)
+                              ? prev.filter((x) => x !== it.id)
+                              : [...prev, it.id].sort(sortTierIdKey)
+                          );
+                        }}
+                      />
+                      <span>
+                        <span style={{ fontWeight: 600 }}>{it.label}</span>
+                        <span style={{ ...muted, display: "block", fontSize: "0.8rem", marginTop: 2 }}>
+                          Tier id <code style={{ fontSize: "0.85em" }}>{it.id}</code>
+                          {nApply > 1 ? ` · ${nApply} apply records` : nApply === 1 ? " · 1 apply" : null}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="admin-modal__actions" style={{ marginTop: "1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              <button
+                type="button"
+                className="admin-btn-primary"
+                style={btnPrimary}
+                disabled={saving || syncTemplateSelectedTierIds.length === 0}
+                onClick={() => void confirmSyncTemplateToSelectedTiers()}
+              >
+                Update selected tiers
+              </button>
+              <button type="button" style={btn} disabled={saving} onClick={() => setSyncTemplateModalGroup(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tierUsageModalGroupId ? (
+        <div
+          className="admin-modal-backdrop"
+          onClick={() => setTierUsageModalGroupId(null)}
+          role="presentation"
+        >
+          <div
+            className="admin-modal admin-modal--tier-usage"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-tg-tier-usage-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="admin-tg-tier-usage-title" className="admin-modal__title">
+              Solution tiers using “
+              {taskGroups.find((x) => x.id === tierUsageModalGroupId)?.name ?? "this template"}”
+            </h3>
+            <p className="admin-modal__lead" style={{ ...muted, marginTop: "0.35rem", fontSize: "0.86rem" }}>
+              Tiers that still contain at least one task linked to this template. If you applied a template long ago (before
+              lineage fields were enabled) or you deleted the spawned tasks, it will not appear here.
+            </p>
+            <ul className="admin-modal__list admin-modal__list--tier-usage">
+              {(tierUsageByTaskGroup.get(tierUsageModalGroupId)?.items ?? []).map((it) => (
+                <li key={it.id} className="admin-modal__list-item" title={it.id}>
+                  {it.label}
+                </li>
+              ))}
+            </ul>
+            {(tierUsageByTaskGroup.get(tierUsageModalGroupId)?.items ?? []).length === 0 ? (
+              <p style={{ ...muted, marginBottom: 0 }}>No application records in the database for this template.</p>
+            ) : null}
+            <div className="admin-modal__actions" style={{ marginTop: "1rem" }}>
+              <button
+                type="button"
+                className="admin-btn-primary"
+                style={btnPrimary}
+                onClick={() => setTierUsageModalGroupId(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

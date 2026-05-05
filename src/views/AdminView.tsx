@@ -1347,6 +1347,9 @@ type GlossaryTableId =
   | "tasks"
   | "pricing"
   | "package_solution_tiers"
+  | "task_groups"
+  | "task_group_lines"
+  | "solution_tier_task_group_applied"
   | "audit_log"
   | "profiles"
   | "implementer_pricing_hour_groups";
@@ -1449,6 +1452,16 @@ const BULK_GLOSSARY: Record<
       { name: "task_duration", description: "Optional duration number." },
       { name: "task_dependencies", description: "Dependencies or prerequisites." },
       { name: "task_notes", description: "Extra notes for the team." },
+      {
+        name: "task_group_application_id",
+        description:
+          "Optional UUID FK to solution_tier_task_group_applied: apply batch when this row was created from a task group. Null for manually created tasks.",
+      },
+      {
+        name: "spawned_from_task_group_line_id",
+        description:
+          "Optional UUID FK to task_group_lines: template line that produced this task when applying a task group.",
+      },
       { name: "task_create_date", description: "Created date in YYYY-MM-DD format (optional)." },
       { name: "task_modified_date", description: "Last updated date in YYYY-MM-DD format (optional)." },
     ],
@@ -1588,7 +1601,7 @@ const BULK_GLOSSARY: Record<
       {
         name: "entity_type",
         description:
-          "Which table changed: packages, solutions, solution_tiers, tasks, solution_tier_pricing, or package_solution_tiers (and any values allowed by your database check constraint).",
+          "Which table changed. Allowed values (after migrations): packages, solutions, solution_tiers, tasks, solution_tier_pricing, package_solution_tiers, task_groups, task_group_lines, solution_tier_task_group_applied.",
       },
       { name: "entity_id", description: "Primary key of the row that changed (text id from that table)." },
       {
@@ -1651,6 +1664,78 @@ const BULK_GLOSSARY: Record<
       {
         name: "updated_at",
         description: "Last change (timestamptz; trigger can maintain this).",
+      },
+    ],
+  },
+  task_groups: {
+    label: "task_groups",
+    columns: [
+      { name: "id", description: "Primary key (UUID). Unique reusable task-group template." },
+      { name: "name", description: "Short name; must be unique (used when picking a group in Admin)." },
+      { name: "description", description: "Optional longer explanation of when to use this group." },
+      {
+        name: "created_at",
+        description: "Row creation time (timestamptz). Maintained by the database.",
+      },
+      {
+        name: "updated_at",
+        description: "Last update (timestamptz). Updated by DB trigger on change.",
+      },
+    ],
+  },
+  task_group_lines: {
+    label: "task_group_lines",
+    columns: [
+      { name: "id", description: "Primary key (UUID) for this definition line." },
+      {
+        name: "task_group_id",
+        description: "FK to task_groups (lines are deleted if the parent group is deleted).",
+      },
+      {
+        name: "sort_order",
+        description: "Integer order within the group (lower first). Used when applying to a tier.",
+      },
+      {
+        name: "line_type",
+        description:
+          "archetype = name/implementer/hours only (new task shape at apply time); copy_from_task = clone settings from source_task_id.",
+      },
+      {
+        name: "source_task_id",
+        description:
+          "Required when line_type is copy_from_task — FK to tasks.task_id (may be cleared if that task is deleted). Null for archetype lines.",
+      },
+      {
+        name: "task_name",
+        description: "Display name; required for archetype lines; can mirror the source task for copy lines.",
+      },
+      { name: "task_implementer", description: "Optional implementer label (maps to pricing hour buckets like vault tasks)." },
+      { name: "hours", description: "Optional numeric hours for archetype lines (pricing roll-up)." },
+      {
+        name: "created_at",
+        description: "Row creation time (timestamptz).",
+      },
+      {
+        name: "updated_at",
+        description: "Last update (timestamptz). Updated by DB trigger on change.",
+      },
+    ],
+  },
+  solution_tier_task_group_applied: {
+    label: "solution_tier_task_group_applied",
+    columns: [
+      { name: "id", description: "Primary key (UUID) for one apply batch to a tier." },
+      {
+        name: "solution_tier_id",
+        description: "FK to solution_tiers — tier that received the applied tasks.",
+      },
+      {
+        name: "task_group_id",
+        description: "FK to task_groups — template that was applied.",
+      },
+      {
+        name: "applied_at",
+        description: "When the apply ran (timestamptz). Tasks created from this link reference task_group_application_id.",
       },
     ],
   },
@@ -2197,9 +2282,10 @@ function DataGlossaryPanel() {
       <div className="admin-editor-layout admin-editor-layout--wide">
         <h2 style={h2}>Data Glossary</h2>
         <p className="admin-intro" style={muted}>
-          Select a table for column names and plain-language notes. Worksheets used in Bulk Import are listed with
-          their database table name where it differs. Audit, profiles, and implementer mapping are reference-only (not
-          import sheets).
+          Select a table for column names and plain-language notes. Bulk Import covers packages, solutions, tiers,
+          tasks, pricing, and package_solution_tiers. Task group tables (<code>task_groups</code>,{" "}
+          <code>task_group_lines</code>, <code>solution_tier_task_group_applied</code>) are maintained in Task Group
+          Builder, not Excel. Audit, profiles, and implementer mapping are reference-only.
         </p>
         <label style={{ ...lbl, maxWidth: 320 }}>
           <AdminFieldCaption>Table</AdminFieldCaption>
@@ -2214,6 +2300,9 @@ function DataGlossaryPanel() {
             <option value="tasks">tasks</option>
             <option value="pricing">pricing (solution_tier_pricing)</option>
             <option value="package_solution_tiers">package_solution_tiers</option>
+            <option value="task_groups">task_groups</option>
+            <option value="task_group_lines">task_group_lines</option>
+            <option value="solution_tier_task_group_applied">solution_tier_task_group_applied</option>
             <option value="audit_log">audit_log</option>
             <option value="implementer_pricing_hour_groups">implementer_pricing_hour_groups</option>
             <option value="profiles">profiles</option>

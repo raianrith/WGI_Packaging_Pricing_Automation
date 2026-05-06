@@ -6,6 +6,7 @@ import { friendlyMutationMessage } from "./supabaseErrors";
 import { nextAutoTaskId } from "./taskIds";
 import { resolveTemplateLineToTaskFields } from "./taskGroupTemplateTaskFields";
 import type { TaskGroupLineRow, TaskRow } from "../types";
+import { tierMaxSortOrder } from "./taskOrder";
 
 function rowJson(row: object): Record<string, unknown> {
   return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
@@ -54,6 +55,7 @@ export async function applyTaskGroupToTier(params: {
   const today = todayISODate();
   let localTasks = [...params.allTasks];
   const insertedTaskIds: string[] = [];
+  let baseSort = tierMaxSortOrder(params.allTasks, params.solution_tier_id);
 
   const rollbackPartial = async () => {
     if (insertedTaskIds.length > 0) {
@@ -63,7 +65,9 @@ export async function applyTaskGroupToTier(params: {
   };
 
   try {
-    for (const line of sorted) {
+    for (let lineIdx = 0; lineIdx < sorted.length; lineIdx++) {
+      const line = sorted[lineIdx]!;
+      baseSort += 1;
       const id = nextAutoTaskId(localTasks);
       const resolved = resolveTemplateLineToTaskFields(line, localTasks);
       if ("error" in resolved) {
@@ -75,6 +79,7 @@ export async function applyTaskGroupToTier(params: {
         task_id: id,
         solution_tier_id: params.solution_tier_id,
         ...resolved,
+        sort_order: baseSort,
         task_create_date: today,
         task_modified_date: today,
         task_group_application_id: applicationId,
@@ -84,6 +89,7 @@ export async function applyTaskGroupToTier(params: {
       const insertPayload = {
         task_id: row.task_id,
         solution_tier_id: row.solution_tier_id,
+        sort_order: baseSort,
         task_name: row.task_name,
         task_implementer: row.task_implementer,
         task_time: row.task_time,

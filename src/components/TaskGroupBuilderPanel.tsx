@@ -1111,12 +1111,6 @@ export function TaskGroupBuilderPanel({
           <strong>Implementer</strong> fields are dropdowns: names come from <strong>Implementer–Pricing Mapping</strong>{" "}
           plus any labels already used on tasks.
         </p>
-        {loadNote ? (
-          <p className="admin-hint" style={{ ...muted, color: "#92400e", marginTop: 8 }}>
-            {loadNote}
-          </p>
-        ) : null}
-
         {editGroupId ? (
           <div className="admin-tg-edit">
             <p className="admin-tg-edit-title">Edit task group</p>

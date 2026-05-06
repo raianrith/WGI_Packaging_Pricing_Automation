@@ -15,15 +15,27 @@ import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
 import type {
   ImplementerHourGroupRow,
+  PricingHourGroupKey,
   Solution,
   SolutionTier,
   SolutionTierPricing,
   TaskGroupLineRow,
   TaskGroupRow,
   TaskRow,
+  TierResourceExampleRow,
 } from "../types";
 import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
+import {
+  draftFieldsFromTierVaultTasks,
+  insertCopiedVaultTasksFromTier,
+  sourceTierMeta,
+  tierCopySourceLabelFromNotes,
+} from "../lib/tierTaskCopy";
+import { nextAutoSolutionId, nextAutoTierId } from "../lib/entityIdSequences";
 import { nextAutoTaskId } from "../lib/taskIds";
+import { persistTaskSortOrdersForTier } from "../lib/persistTaskSortOrdersForTier";
+import { compareTasksByOrder, tierMaxSortOrder } from "../lib/taskOrder";
+import { pricingHourGroupLabel } from "../lib/pricingHourGroups";
 import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
   ACCOUNT_MGMT_HOURS_ADDON_RATE,
@@ -38,10 +50,31 @@ import {
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import { MarkdownTextarea } from "./MarkdownTextarea";
+import TierResourcesEditor from "./TierResourcesEditor";
+import {
+  emptyResourceExampleRow,
+  hydrateTierResourceEditorState,
+  resourceStructuredFieldsForSave,
+} from "../lib/tierResourceFields";
+import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback";
 import { PricingPanel } from "./PricingPanel";
+import type { UniqueIdentifier } from "@dnd-kit/core";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
+import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 
-export { nextAutoTaskId };
+export { nextAutoSolutionId, nextAutoTierId, nextAutoTaskId };
+
+/** Zones for footer-free feedback beside task/template/copy buttons in Solutions Builder */
+type SBInlineZone =
+  | "fs_apply_tg"
+  | "fs_copy_tier"
+  | "fs_add_row"
+  | "to_apply_tg"
+  | "to_copy_tier"
+  | "to_add_row"
+  | "upd_apply_tg"
+  | "upd_copy_db"
+  | "upd_copy_draft";
 
 function fmtDerivedHours(n: number): string {
   return Number.isFinite(n)
@@ -78,28 +111,6 @@ function sortId(a: string, b: string): number {
     if (na !== nb) return na - nb;
   }
   return a.localeCompare(b);
-}
-
-/** Next id in the `2-n` sequence for solutions. */
-export function nextAutoSolutionId(solutions: Solution[]): string {
-  let max = 0;
-  const re = /^2-(\d+)$/i;
-  for (const s of solutions) {
-    const m = s.solution_id.trim().match(re);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `2-${max + 1}`;
-}
-
-/** Next id in the `3-n` sequence for solution tiers (global across all solutions). */
-export function nextAutoTierId(tiers: SolutionTier[]): string {
-  let max = 0;
-  const re = /^3-(\d+)$/i;
-  for (const t of tiers) {
-    const m = t.solution_tier_id.trim().match(re);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `3-${max + 1}`;
 }
 
 function rowJson(row: object): Record<string, unknown> {
@@ -388,6 +399,21 @@ export function SolutionsBuilderPanel({
 }) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnSm, btnDangerSm, tbl, th, td, h2, muted } = s;
 
+  const [sbInlineFb, setSbInlineFb] = useState<{
+    zone: SBInlineZone;
+    message: string;
+    variant: "ok" | "err";
+  } | null>(null);
+
+  const showSbInline = useCallback(
+    (zone: SBInlineZone, message: string, variant: "ok" | "err" = "ok") => {
+      setOpOk(null);
+      setOpErr(null);
+      setSbInlineFb({ zone, message, variant });
+    },
+    [setOpOk, setOpErr]
+  );
+
   // —— Create wizard ——
   const [createBranch, setCreateBranch] = useState<CreateBranch>(null);
   const [createPhase, setCreatePhase] = useState<CreatePhase>("choose");
@@ -409,7 +435,9 @@ export function SolutionsBuilderPanel({
   const [tFinalDeliverable, setTFinalDeliverable] = useState("");
   const [tHowWorkDone, setTHowWorkDone] = useState("");
   const [tDescribedToClient, setTDescribedToClient] = useState("");
-  const [tRes, setTRes] = useState("");
+  const [tResTpl, setTResTpl] = useState("");
+  const [tResTools, setTResTools] = useState("");
+  const [tResExamples, setTResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
 
   /** When set, new tier inserts also copy hidden legacy fields (overview, link, direction) from this row. */
   const [createAutofillFrom, setCreateAutofillFrom] = useState<SolutionTier | null>(null);
@@ -459,7 +487,9 @@ export function SolutionsBuilderPanel({
     setTFinalDeliverable("");
     setTHowWorkDone("");
     setTDescribedToClient("");
-    setTRes("");
+    setTResTpl("");
+    setTResTools("");
+    setTResExamples([emptyResourceExampleRow()]);
     setCreateAutofillFrom(null);
     setDraftTasks([newDraftTaskRow()]);
     setDraftTaskBulkSelectedKeys(new Set());
@@ -558,7 +588,12 @@ export function SolutionsBuilderPanel({
     setTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
     setTDescribedToClient(t.solution_tier_described_to_client ?? "");
-    setTRes(t.solution_tier_resources ?? "");
+    {
+      const h = hydrateTierResourceEditorState(t);
+      setTResTpl(h.templates);
+      setTResTools(h.tools);
+      setTResExamples(h.examples);
+    }
   };
 
   const fullPricingHours = useMemo(
@@ -618,8 +653,18 @@ export function SolutionsBuilderPanel({
     }
 
     const today = todayISODate();
-    const solId = nextAutoSolutionId(solutions);
-    const tierId = nextAutoTierId(tiers);
+    const [solRes, tierRes, taskRes] = await Promise.all([
+      client.from("solutions").select("solution_id"),
+      client.from("solution_tiers").select("solution_tier_id"),
+      client.from("tasks").select("task_id"),
+    ]);
+    const prefetchErr = solRes.error ?? tierRes.error ?? taskRes.error;
+    if (prefetchErr) {
+      setOpErr(friendlyMutationMessage(prefetchErr.message));
+      return;
+    }
+    const solId = nextAutoSolutionId(solRes.data ?? []);
+    const tierId = nextAutoTierId(tierRes.data ?? []);
     const d = fullPricingDerived;
 
     const solRow: Solution = {
@@ -642,6 +687,7 @@ export function SolutionsBuilderPanel({
     });
 
     const leg = createAutofillFrom;
+    const resSave = resourceStructuredFieldsForSave(tResTpl, tResTools, tResExamples);
     const tierRow: SolutionTier = {
       solution_tier_id: tierId,
       solution_id: solId,
@@ -651,7 +697,7 @@ export function SolutionsBuilderPanel({
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
       solution_tier_direction: leg ? leg.solution_tier_direction : null,
       solution_tier_sop: blankToNull(tSop),
-      solution_tier_resources: blankToNull(tRes),
+      ...resSave,
       solution_tier_what_is_it: blankToNull(tWhatIsIt),
       solution_tier_why_is_it_valuable: blankToNull(tWhyValuable),
       solution_tier_when_should_it_be_used: blankToNull(tWhenUsed),
@@ -680,12 +726,14 @@ export function SolutionsBuilderPanel({
       after: rowJson(tierRow),
     });
 
-    let localTasks = [...tasks];
-    for (const rowDraft of rowsToSave) {
+    let localTasks: Pick<TaskRow, "task_id">[] = [...(taskRes.data ?? [])];
+    for (let i = 0; i < rowsToSave.length; i++) {
+      const rowDraft = rowsToSave[i]!;
       const taskId = nextAutoTaskId(localTasks);
       const taskRow: TaskRow = {
         task_id: taskId,
         solution_tier_id: tierId,
+        sort_order: i + 1,
         task_name: rowDraft.name.trim(),
         task_implementer: blankToNull(rowDraft.impl),
         task_time: optNum(rowDraft.time),
@@ -789,8 +837,16 @@ export function SolutionsBuilderPanel({
       return;
     }
     const today = todayISODate();
-    const id = nextAutoTierId(tiers);
+    const { data: tierIdRows, error: tierPrefetchErr } = await client
+      .from("solution_tiers")
+      .select("solution_tier_id");
+    if (tierPrefetchErr) {
+      setOpErr(friendlyMutationMessage(tierPrefetchErr.message));
+      return;
+    }
+    const id = nextAutoTierId(tierIdRows ?? []);
     const leg = createAutofillFrom;
+    const resInsert = resourceStructuredFieldsForSave(tResTpl, tResTools, tResExamples);
     const row: SolutionTier = {
       solution_tier_id: id,
       solution_id: solId,
@@ -800,7 +856,7 @@ export function SolutionsBuilderPanel({
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
       solution_tier_direction: leg ? leg.solution_tier_direction : null,
       solution_tier_sop: blankToNull(tSop),
-      solution_tier_resources: blankToNull(tRes),
+      ...resInsert,
       solution_tier_what_is_it: blankToNull(tWhatIsIt),
       solution_tier_why_is_it_valuable: blankToNull(tWhyValuable),
       solution_tier_when_should_it_be_used: blankToNull(tWhenUsed),
@@ -841,7 +897,9 @@ export function SolutionsBuilderPanel({
     setTFinalDeliverable("");
     setTHowWorkDone("");
     setTDescribedToClient("");
-    setTRes("");
+    setTResTpl("");
+    setTResTools("");
+    setTResExamples([emptyResourceExampleRow()]);
     setCreateAutofillFrom(null);
     setOpOk(`Tier created as ${id}. Add every task for this tier, then save and continue to pricing.`);
     await onSaved();
@@ -864,12 +922,20 @@ export function SolutionsBuilderPanel({
       return;
     }
     const today = todayISODate();
-    let localTasks = [...tasks];
-    for (const d of rowsToSave) {
+    const { data: tierOnlyTaskSeed, error: tierOnlyTaskPrefetchErr } = await client.from("tasks").select("task_id");
+    if (tierOnlyTaskPrefetchErr) {
+      setOpErr(friendlyMutationMessage(tierOnlyTaskPrefetchErr.message));
+      return;
+    }
+    let localTasks: Pick<TaskRow, "task_id">[] = [...(tierOnlyTaskSeed ?? [])];
+    const baseMaxSort = tierMaxSortOrder(tasks, tierId);
+    for (let i = 0; i < rowsToSave.length; i++) {
+      const d = rowsToSave[i]!;
       const id = nextAutoTaskId(localTasks);
       const row: TaskRow = {
         task_id: id,
         solution_tier_id: tierId,
+        sort_order: baseMaxSort + i + 1,
         task_name: d.name.trim(),
         task_implementer: blankToNull(d.impl),
         task_time: optNum(d.time),
@@ -919,11 +985,20 @@ export function SolutionsBuilderPanel({
 
   const addDraftTaskRow = () => {
     setDraftTasks((list) => [...list, newDraftTaskRow()]);
+    if (createBranch === "full") showSbInline("fs_add_row", "Blank row added.", "ok");
+    else if (createBranch === "tier_only") showSbInline("to_add_row", "Blank row added.", "ok");
   };
 
   const removeDraftTaskRow = (key: string) => {
     setDraftTasks((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
   };
+
+  const reorderDraftTasksByKeys = useCallback((nextKeys: UniqueIdentifier[]) => {
+    setDraftTasks((prev) => {
+      const m = new Map(prev.map((r) => [r.key, r]));
+      return nextKeys.map((k) => m.get(String(k))).filter((r): r is DraftTaskRow => r != null);
+    });
+  }, []);
 
   const draftTaskTotalHours = useMemo(() => {
     let sum = 0;
@@ -939,6 +1014,9 @@ export function SolutionsBuilderPanel({
 
   // —— Update workspace ——
   const [updSolutionId, setUpdSolutionId] = useState("");
+  /** Inline rename: `solution_id` being edited in the Solutions table (update tab). */
+  const [solutionRenameId, setSolutionRenameId] = useState<string | null>(null);
+  const [solutionRenameDraft, setSolutionRenameDraft] = useState("");
   /** Keep update page concise until user chooses to edit a solution. */
   const [showUpdateDetails, setShowUpdateDetails] = useState(false);
 
@@ -949,6 +1027,11 @@ export function SolutionsBuilderPanel({
   const [createApplyTemplateGroupId, setCreateApplyTemplateGroupId] = useState("");
   /** Task group template for one-page "new solution" — appends rows to draft tasks. */
   const [fullStackApplyGroupId, setFullStackApplyGroupId] = useState("");
+  /** Copy vault tasks from another tier (distinct from templates). */
+  const [fullStackCopyTierId, setFullStackCopyTierId] = useState("");
+  const [tierOnlyCopyTierId, setTierOnlyCopyTierId] = useState("");
+  /** Update tab: source tier for “copy from tier” insert + bulk draft fill. */
+  const [updCopyTierPick, setUpdCopyTierPick] = useState("");
   const [updTierEditId, setUpdTierEditId] = useState<string | null>(null);
   const [updTName, setUpdTName] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
@@ -962,7 +1045,9 @@ export function SolutionsBuilderPanel({
   const [updTFinalDeliverable, setUpdTFinalDeliverable] = useState("");
   const [updTHowWorkDone, setUpdTHowWorkDone] = useState("");
   const [updTDescribedToClient, setUpdTDescribedToClient] = useState("");
-  const [updTRes, setUpdTRes] = useState("");
+  const [updResTpl, setUpdResTpl] = useState("");
+  const [updResTools, setUpdResTools] = useState("");
+  const [updResExamples, setUpdResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
   /** When set, tier save uses legacy fields (overview, link, direction) from this source. */
   const [updAutofillFrom, setUpdAutofillFrom] = useState<SolutionTier | null>(null);
 
@@ -985,9 +1070,7 @@ export function SolutionsBuilderPanel({
 
   const tasksOfFocusTier = useMemo(() => {
     if (!updTierFocus) return [];
-    return tasks
-      .filter((k) => k.solution_tier_id === updTierFocus)
-      .sort((a, b) => sortId(a.task_id, b.task_id));
+    return tasks.filter((k) => k.solution_tier_id === updTierFocus).sort(compareTasksByOrder);
   }, [tasks, updTierFocus]);
 
   const updTierTotalTaskHours = useMemo(() => {
@@ -1002,10 +1085,15 @@ export function SolutionsBuilderPanel({
 
   const [updTaskBulkSelectedIds, setUpdTaskBulkSelectedIds] = useState<Set<string>>(new Set());
   const [updTaskBulkBusy, setUpdTaskBulkBusy] = useState(false);
+  const [updTaskReorderBusy, setUpdTaskReorderBusy] = useState(false);
 
   useEffect(() => {
     setUpdTaskBulkSelectedIds(new Set());
   }, [updTierFocus]);
+
+  useEffect(() => {
+    setSbInlineFb(null);
+  }, [subTab, updTierFocus]);
 
   const taskGroupById = useMemo(() => new Map(taskGroups.map((g) => [g.id, g])), [taskGroups]);
   const taskGroupLineById = useMemo(
@@ -1014,6 +1102,8 @@ export function SolutionsBuilderPanel({
   );
 
   const sourceLabelForTask = (t: TaskRow): string => {
+    const tierCopy = tierCopySourceLabelFromNotes(t.task_notes);
+    if (tierCopy) return tierCopy;
     const lineId = t.spawned_from_task_group_line_id ?? null;
     if (lineId) {
       const line = taskGroupLineById.get(lineId);
@@ -1145,7 +1235,12 @@ export function SolutionsBuilderPanel({
     setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
     setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
-    setUpdTRes(t.solution_tier_resources ?? "");
+    {
+      const h = hydrateTierResourceEditorState(t);
+      setUpdResTpl(h.templates);
+      setUpdResTools(h.tools);
+      setUpdResExamples(h.examples);
+    }
   };
 
   useEffect(() => {
@@ -1180,7 +1275,9 @@ export function SolutionsBuilderPanel({
     setUpdTFinalDeliverable("");
     setUpdTHowWorkDone("");
     setUpdTDescribedToClient("");
-    setUpdTRes("");
+    setUpdResTpl("");
+    setUpdResTools("");
+    setUpdResExamples([emptyResourceExampleRow()]);
     setUpdAutofillFrom(null);
   };
 
@@ -1205,6 +1302,18 @@ export function SolutionsBuilderPanel({
     setShowUpdateDetails(false);
   }, [subTab]);
 
+  useEffect(() => {
+    if (subTab !== "update") {
+      setSolutionRenameId(null);
+      setSolutionRenameDraft("");
+    }
+  }, [subTab]);
+
+  const cancelSolutionRename = useCallback(() => {
+    setSolutionRenameId(null);
+    setSolutionRenameDraft("");
+  }, []);
+
   const jumpTo = useCallback((id: string) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1225,13 +1334,58 @@ export function SolutionsBuilderPanel({
     setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
     setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
-    setUpdTRes(t.solution_tier_resources ?? "");
+    {
+      const h = hydrateTierResourceEditorState(t);
+      setUpdResTpl(h.templates);
+      setUpdResTools(h.tools);
+      setUpdResExamples(h.examples);
+    }
     setUpdAutofillFrom(null);
+  };
+
+  const saveSolutionRename = async () => {
+    const client = getSupabase();
+    if (!client || !solutionRenameId) return;
+    const name = solutionRenameDraft.trim();
+    if (!name) {
+      setOpErr("Solution name is required.");
+      return;
+    }
+    const prev = solutions.find((x) => x.solution_id === solutionRenameId);
+    if (!prev) {
+      cancelSolutionRename();
+      return;
+    }
+    if (name === prev.solution_name) {
+      cancelSolutionRename();
+      return;
+    }
+    setOpErr(null);
+    setOpOk(null);
+    const today = todayISODate();
+    const patch = { solution_name: name, solution_modified_date: today };
+    const { error } = await client.from("solutions").update(patch).eq("solution_id", solutionRenameId);
+    if (error) {
+      setOpErr(friendlyMutationMessage(error.message));
+      return;
+    }
+    const next: Solution = { ...prev, ...patch };
+    await logAudit(client, {
+      entityType: "solutions",
+      entityId: solutionRenameId,
+      action: "update",
+      before: rowJson(prev),
+      after: rowJson(next),
+    });
+    setOpOk(`Solution renamed to "${name}".`);
+    cancelSolutionRename();
+    await onSaved();
   };
 
   const deleteSolutionById = async (solutionId: string) => {
     const client = getSupabase();
     if (!client || !solutionId) return;
+    if (solutionRenameId === solutionId) cancelSolutionRename();
     setOpErr(null);
     setOpOk(null);
     const prev = solutions.find((x) => x.solution_id === solutionId);
@@ -1302,6 +1456,7 @@ export function SolutionsBuilderPanel({
     const today = todayISODate();
     const prevTier = updTierEditId ? tiers.find((x) => x.solution_tier_id === updTierEditId) : null;
     const legU = updAutofillFrom;
+    const resUpd = resourceStructuredFieldsForSave(updResTpl, updResTools, updResExamples);
     const payload = {
       solution_id: updSolutionId,
       solution_tier_name: updTName.trim(),
@@ -1312,7 +1467,7 @@ export function SolutionsBuilderPanel({
         : (prevTier?.solution_tier_overview_link ?? null),
       solution_tier_direction: legU ? legU.solution_tier_direction : (prevTier?.solution_tier_direction ?? null),
       solution_tier_sop: blankToNull(updTSop),
-      solution_tier_resources: blankToNull(updTRes),
+      ...resUpd,
       solution_tier_what_is_it: blankToNull(updTWhatIsIt),
       solution_tier_why_is_it_valuable: blankToNull(updTWhyValuable),
       solution_tier_when_should_it_be_used: blankToNull(updTWhenUsed),
@@ -1351,7 +1506,14 @@ export function SolutionsBuilderPanel({
       return;
     }
 
-    const id = nextAutoTierId(tiers);
+    const { data: newTierRows, error: newTierPrefetchErr } = await client
+      .from("solution_tiers")
+      .select("solution_tier_id");
+    if (newTierPrefetchErr) {
+      setOpErr(friendlyMutationMessage(newTierPrefetchErr.message));
+      return;
+    }
+    const id = nextAutoTierId(newTierRows ?? []);
     const row: SolutionTier = {
       solution_tier_id: id,
       solution_id: updSolutionId,
@@ -1361,7 +1523,10 @@ export function SolutionsBuilderPanel({
       solution_tier_overview_link: payload.solution_tier_overview_link,
       solution_tier_direction: payload.solution_tier_direction,
       solution_tier_sop: payload.solution_tier_sop,
-      solution_tier_resources: payload.solution_tier_resources,
+      solution_tier_resources: payload.solution_tier_resources ?? null,
+      solution_tier_resource_templates: payload.solution_tier_resource_templates ?? null,
+      solution_tier_resource_tools: payload.solution_tier_resource_tools ?? null,
+      solution_tier_resource_examples: payload.solution_tier_resource_examples ?? null,
       solution_tier_what_is_it: payload.solution_tier_what_is_it,
       solution_tier_why_is_it_valuable: payload.solution_tier_why_is_it_valuable,
       solution_tier_when_should_it_be_used: payload.solution_tier_when_should_it_be_used,
@@ -1430,12 +1595,20 @@ export function SolutionsBuilderPanel({
       return;
     }
     const today = todayISODate();
-    let localTasks = [...tasks];
-    for (const d of rowsToSave) {
+    const { data: updTaskSeedRows, error: updTaskPrefetchErr } = await client.from("tasks").select("task_id");
+    if (updTaskPrefetchErr) {
+      setOpErr(friendlyMutationMessage(updTaskPrefetchErr.message));
+      return;
+    }
+    let localTasks: Pick<TaskRow, "task_id">[] = [...(updTaskSeedRows ?? [])];
+    const baseMaxSort = tierMaxSortOrder(tasks, updTierFocus);
+    for (let i = 0; i < rowsToSave.length; i++) {
+      const d = rowsToSave[i]!;
       const id = nextAutoTaskId(localTasks);
       const row: TaskRow = {
         task_id: id,
         solution_tier_id: updTierFocus,
+        sort_order: baseMaxSort + i + 1,
         task_name: d.name.trim(),
         task_implementer: blankToNull(d.impl),
         task_time: optNum(d.time),
@@ -1599,9 +1772,32 @@ export function SolutionsBuilderPanel({
     updTaskEditId,
   ]);
 
+  const applyFocusTierTaskOrder = useCallback(
+    async (orderedIds: UniqueIdentifier[]) => {
+      const client = getSupabase();
+      if (!client || !updTierFocus) return;
+      const ids = orderedIds.map(String);
+      setUpdTaskReorderBusy(true);
+      setOpErr(null);
+      setOpOk(null);
+      try {
+        const res = await persistTaskSortOrdersForTier(client, updTierFocus, ids);
+        if (!res.ok) {
+          setOpErr(res.message);
+          return;
+        }
+        await onSaved();
+        setOpOk("Task order updated.");
+      } finally {
+        setUpdTaskReorderBusy(false);
+      }
+    },
+    [onSaved, updTierFocus]
+  );
+
   const applyTaskGroupTemplateToTier = useCallback(async () => {
     if (!updTierFocus || !applyTemplateGroupId) {
-      setOpErr("Select a tier and a task group template.");
+      showSbInline("upd_apply_tg", "Select a tier and a task group template.", "err");
       return;
     }
     const lines = (taskGroupLines ?? [])
@@ -1615,17 +1811,29 @@ export function SolutionsBuilderPanel({
       logAudit,
     });
     if (!res.ok) {
-      setOpErr(res.message);
+      showSbInline("upd_apply_tg", res.message, "err");
       return;
     }
-    setOpOk(`Added ${res.created} task(s) from the template.`);
+    showSbInline("upd_apply_tg", `Added ${res.created} task(s) from the template.`, "ok");
     setApplyTemplateGroupId("");
     await onSaved();
-  }, [applyTemplateGroupId, logAudit, onSaved, setOpErr, setOpOk, taskGroupLines, tasks, updTierFocus]);
+  }, [
+    applyTemplateGroupId,
+    logAudit,
+    onSaved,
+    showSbInline,
+    taskGroupLines,
+    tasks,
+    updTierFocus,
+  ]);
 
   const applyTaskGroupTemplateToCreateTier = useCallback(async () => {
     if (!ctxTierId.trim() || !createApplyTemplateGroupId) {
-      setOpErr("Select a task group template to apply (tier is already set from the previous step).");
+      showSbInline(
+        "to_apply_tg",
+        "Select a task group template to apply (tier is already set from the previous step).",
+        "err"
+      );
       return;
     }
     const lines = (taskGroupLines ?? [])
@@ -1639,40 +1847,178 @@ export function SolutionsBuilderPanel({
       logAudit,
     });
     if (!res.ok) {
-      setOpErr(res.message);
+      showSbInline("to_apply_tg", res.message, "err");
       return;
     }
-    setOpOk(`Added ${res.created} task(s) from the template. You can add more rows below, then continue to pricing.`);
+    showSbInline(
+      "to_apply_tg",
+      `Added ${res.created} task(s) from the template. You can add more rows below, then continue to pricing.`,
+      "ok"
+    );
     setCreateApplyTemplateGroupId("");
     await onSaved();
-  }, [createApplyTemplateGroupId, ctxTierId, logAudit, onSaved, setOpErr, setOpOk, taskGroupLines, tasks]);
+  }, [createApplyTemplateGroupId, ctxTierId, logAudit, onSaved, showSbInline, taskGroupLines, tasks]);
 
   const appendTaskGroupToFullSolutionDraft = useCallback(() => {
     if (!fullStackApplyGroupId) {
-      setOpErr("Select a task group template.");
+      showSbInline("fs_apply_tg", "Select a task group template.", "err");
       return;
     }
     const lines = (taskGroupLines ?? [])
       .filter((l) => l.task_group_id === fullStackApplyGroupId)
       .sort((a, b) => a.sort_order - b.sort_order);
     if (lines.length === 0) {
-      setOpErr("This task group has no lines.");
+      showSbInline("fs_apply_tg", "This task group has no lines.", "err");
       return;
     }
     const sourceTaskGroupName =
       taskGroups.find((g) => g.id === fullStackApplyGroupId)?.name ?? fullStackApplyGroupId;
     const newRows = draftRowsFromTaskGroupLines(lines, tasks, sourceTaskGroupName);
     if (newRows.length === 0) {
-      setOpErr("No rows could be built from that template.");
+      showSbInline("fs_apply_tg", "No rows could be built from that template.", "err");
       return;
     }
     setDraftTasks((prev) => [...prev, ...newRows]);
-    setOpOk(
-      `Added ${newRows.length} row(s) from the template. They save with the new tier when you click Create entire solution. You can still edit the table.`
+    showSbInline(
+      "fs_apply_tg",
+      `Added ${newRows.length} row(s) from the template — edit below, then Create entire solution when ready.`,
+      "ok"
     );
-    setOpErr(null);
     setFullStackApplyGroupId("");
-  }, [fullStackApplyGroupId, setOpErr, setOpOk, taskGroupLines, tasks]);
+  }, [fullStackApplyGroupId, showSbInline, taskGroupLines, tasks]);
+
+  const appendTierTasksToFullStackDraft = useCallback(() => {
+    if (!fullStackCopyTierId.trim()) {
+      showSbInline("fs_copy_tier", "Select a tier to copy tasks from.", "err");
+      return;
+    }
+    const srcId = fullStackCopyTierId.trim();
+    const { name } = sourceTierMeta(tiers, srcId);
+    const seeds = draftFieldsFromTierVaultTasks(tasks, srcId, name);
+    if (seeds.length === 0) {
+      showSbInline("fs_copy_tier", "That tier has no vault tasks to copy.", "err");
+      return;
+    }
+    const added: DraftTaskRow[] = seeds.map((s) => ({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: s.name,
+      impl: s.impl,
+      time: s.time,
+      dur: s.dur,
+      dep: s.dep,
+      notes: s.notes,
+      source: s.source,
+    }));
+    setDraftTasks((prev) => [...prev, ...added]);
+    showSbInline(
+      "fs_copy_tier",
+      `Added ${added.length} draft row(s) from tier ${srcId}. Saves with Create entire solution.`,
+      "ok"
+    );
+    setFullStackCopyTierId("");
+  }, [fullStackCopyTierId, showSbInline, tasks, tiers]);
+
+  const applyCopiedTierTasksToTierOnlyTier = useCallback(async () => {
+    if (!ctxTierId.trim() || !tierOnlyCopyTierId.trim()) {
+      showSbInline(
+        "to_copy_tier",
+        tierOnlyCopyTierId.trim()
+          ? "Tier context is missing — create the tier in Section 1 first."
+          : "Select which tier's tasks to clone into this wizard.",
+        "err"
+      );
+      return;
+    }
+    const res = await insertCopiedVaultTasksFromTier({
+      targetTierId: ctxTierId.trim(),
+      sourceTierId: tierOnlyCopyTierId.trim(),
+      allTasks: tasks,
+      tiers,
+      logAudit,
+    });
+    if (!res.ok) {
+      showSbInline("to_copy_tier", res.message, "err");
+      return;
+    }
+    showSbInline(
+      "to_copy_tier",
+      `Added ${res.created} vault task(s) from tier ${tierOnlyCopyTierId.trim()} into ${ctxTierId.trim()}.`,
+      "ok"
+    );
+    setTierOnlyCopyTierId("");
+    await onSaved();
+  }, [ctxTierId, tierOnlyCopyTierId, tiers, tasks, logAudit, onSaved, showSbInline]);
+
+  const applyCopiedTierTasksToUpdateFocusedTier = useCallback(async () => {
+    if (!updTierFocus.trim() || !updCopyTierPick.trim()) {
+      showSbInline(
+        "upd_copy_db",
+        "Select both the working tier above and a source tier whose vault tasks should be copied.",
+        "err"
+      );
+      return;
+    }
+    const res = await insertCopiedVaultTasksFromTier({
+      targetTierId: updTierFocus.trim(),
+      sourceTierId: updCopyTierPick.trim(),
+      allTasks: tasks,
+      tiers,
+      logAudit,
+    });
+    if (!res.ok) {
+      showSbInline("upd_copy_db", res.message, "err");
+      return;
+    }
+    showSbInline(
+      "upd_copy_db",
+      `Copied ${res.created} vault task(s) onto ${updTierFocus.trim()} from ${updCopyTierPick.trim()}.`,
+      "ok"
+    );
+    setUpdCopyTierPick("");
+    await onSaved();
+  }, [updTierFocus, updCopyTierPick, tiers, tasks, logAudit, onSaved, showSbInline]);
+
+  const appendTierTasksToUpdateNewDrafts = useCallback(() => {
+    if (!updCopyTierPick.trim()) {
+      showSbInline(
+        "upd_copy_draft",
+        "Select a tier whose tasks should populate the draft table.",
+        "err"
+      );
+      return;
+    }
+    const srcId = updCopyTierPick.trim();
+    if (srcId === updTierFocus.trim()) {
+      showSbInline(
+        "upd_copy_draft",
+        "Pick a different tier than the one you're adding tasks for.",
+        "err"
+      );
+      return;
+    }
+    const { name } = sourceTierMeta(tiers, srcId);
+    const seeds = draftFieldsFromTierVaultTasks(tasks, srcId, name);
+    if (seeds.length === 0) {
+      showSbInline("upd_copy_draft", "That tier has no vault tasks to copy.", "err");
+      return;
+    }
+    const added: DraftTaskRow[] = seeds.map((s) => ({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: s.name,
+      impl: s.impl,
+      time: s.time,
+      dur: s.dur,
+      dep: s.dep,
+      notes: s.notes,
+      source: s.source,
+    }));
+    setUpdNewTaskDrafts((prev) => [...prev, ...added]);
+    showSbInline(
+      "upd_copy_draft",
+      `Appended ${added.length} row(s) to the draft table (tier ${srcId}). Save all new tasks when ready.`,
+      "ok"
+    );
+  }, [updCopyTierPick, updTierFocus, showSbInline, tiers, tasks]);
 
   const startEditTask = (k: TaskRow) => {
     setUpdTaskBulkSelectedIds(new Set());
@@ -1812,10 +2158,17 @@ export function SolutionsBuilderPanel({
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Resources</AdminFieldCaption>
-        <MarkdownTextarea value={tRes} onChange={setTRes} textareaStyle={textarea} />
-      </label>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <TierResourcesEditor
+          templates={tResTpl}
+          tools={tResTools}
+          examples={tResExamples}
+          textareaStyle={textarea}
+          onTemplates={setTResTpl}
+          onTools={setTResTools}
+          onExamplesChange={setTResExamples}
+        />
+      </div>
     </>
   );
 
@@ -1890,10 +2243,17 @@ export function SolutionsBuilderPanel({
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Resources</AdminFieldCaption>
-        <MarkdownTextarea value={updTRes} onChange={setUpdTRes} textareaStyle={textarea} />
-      </label>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <TierResourcesEditor
+          templates={updResTpl}
+          tools={updResTools}
+          examples={updResExamples}
+          textareaStyle={textarea}
+          onTemplates={setUpdResTpl}
+          onTools={setUpdResTools}
+          onExamplesChange={setUpdResExamples}
+        />
+      </div>
     </div>
   );
 
@@ -1930,6 +2290,13 @@ export function SolutionsBuilderPanel({
   const removeUpdNewDraftRow = (key: string) => {
     setUpdNewTaskDrafts((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
   };
+
+  const reorderUpdNewDraftsByKeys = useCallback((nextKeys: UniqueIdentifier[]) => {
+    setUpdNewTaskDrafts((prev) => {
+      const m = new Map(prev.map((r) => [r.key, r]));
+      return nextKeys.map((k) => m.get(String(k))).filter((r): r is DraftTaskRow => r != null);
+    });
+  }, []);
 
   const taskFormUpdateEditFields = (
     <div className="admin-form-stack" style={formGrid}>
@@ -2163,10 +2530,17 @@ export function SolutionsBuilderPanel({
                   </label>
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Resources</AdminFieldCaption>
-                    <MarkdownTextarea value={tRes} onChange={setTRes} textareaStyle={textarea} />
-                  </label>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <TierResourcesEditor
+                      templates={tResTpl}
+                      tools={tResTools}
+                      examples={tResExamples}
+                      textareaStyle={textarea}
+                      onTemplates={setTResTpl}
+                      onTools={setTResTools}
+                      onExamplesChange={setTResExamples}
+                    />
+                  </div>
                   </div>
                 </div>
 
@@ -2175,9 +2549,10 @@ export function SolutionsBuilderPanel({
                     Section 2 — Tasks
                   </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.75rem" }}>
-                    Add rows by hand, or <strong>load a task-group template</strong> to fill the table (same templates as{" "}
-                    <strong>Admin → Task-Group templates</strong>). On save, each row with a name becomes a task (id{" "}
-                    <code>4-…</code>) for the new tier. At least one task name is required.
+                    Add rows by hand, load a <strong>task-group template</strong> (templates in{" "}
+                    <strong>Admin → Task-Group templates</strong>), or <strong>copy vault tasks</strong> from an existing
+                    tier below. On save, each named row becomes a vault task (id <code>4-…</code>) for the new tier — at least
+                    one task name is required.
                   </p>
                 {taskGroups.length > 0 ? (
                   <div style={{ ...formSectionBox, marginTop: 0, marginBottom: 12, background: "rgba(13, 92, 77, 0.04)" }}>
@@ -2211,6 +2586,47 @@ export function SolutionsBuilderPanel({
                       >
                         Add to task list
                       </button>
+                      <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "fs_apply_tg")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
+                    </div>
+                  </div>
+                ) : null}
+                {tiers.length > 0 ? (
+                  <div style={{ ...formSectionBox, marginTop: 0, marginBottom: 12, background: "rgba(13, 92, 77, 0.04)" }}>
+                    <p style={formSectionHeading}>Copy vault tasks from another tier</p>
+                    <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "56ch" }}>
+                      Appends a snapshot of vault tasks onto the draft table below (names, fields, attribution in notes).
+                      You can still edit rows before clicking Create entire solution.
+                    </p>
+                    <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
+                      <AdminFieldCaption>Source tier</AdminFieldCaption>
+                      <select
+                        style={input}
+                        value={fullStackCopyTierId}
+                        onChange={(e) => setFullStackCopyTierId(e.target.value)}
+                      >
+                        <option value="">— Select a tier —</option>
+                        {sortedTiersForAutofill.map((t) => {
+                          const n = tasks.filter((k) => k.solution_tier_id === t.solution_tier_id).length;
+                          return (
+                            <option key={t.solution_tier_id} value={t.solution_tier_id} disabled={n === 0}>
+                              {t.solution_tier_id} — {t.solution_tier_name} ({solutionNameForTier(t.solution_id)}) [{n}{" "}
+                              task(s)]
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                    <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="admin-btn-primary"
+                        style={btnPrimary}
+                        onClick={() => void appendTierTasksToFullStackDraft()}
+                        disabled={!fullStackCopyTierId.trim()}
+                      >
+                        Add to task list
+                      </button>
+                      <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "fs_copy_tier")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                     </div>
                   </div>
                 ) : null}
@@ -2218,6 +2634,7 @@ export function SolutionsBuilderPanel({
                   <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
                     Add task row
                   </button>
+                  <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "fs_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                 </div>
                 <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                   <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
@@ -2226,6 +2643,7 @@ export function SolutionsBuilderPanel({
                         <th style={th}>
                           <span style={{ opacity: 0.6 }}>#</span>
                         </th>
+                        <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                         <th style={th}>Task name</th>
                         <th style={th}>SOURCE</th>
                         <th style={th}>Implementer</th>
@@ -2236,76 +2654,90 @@ export function SolutionsBuilderPanel({
                         <th style={{ ...th, width: 90 }} />
                       </tr>
                     </thead>
+                    <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
+                      <tbody>
+                        {draftTasks.map((d) => (
+                          <SortableTableRowTr
+                            key={d.key}
+                            id={d.key}
+                            renderCells={(dragHandle) => [
+                              <td style={td} key="chk">
+                                <input
+                                  type="checkbox"
+                                  checked={draftTaskBulkSelectedKeys.has(d.key)}
+                                  onChange={() => {
+                                    setDraftTaskBulkSelectedKeys((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(d.key)) next.delete(d.key);
+                                      else next.add(d.key);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </td>,
+                              <td style={td} key="drag">
+                                {dragHandle}
+                              </td>,
+                              <td style={td} key="name">
+                                <input
+                                  style={input}
+                                  list={taskNameDatalistId}
+                                  value={d.name}
+                                  onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
+                                />
+                              </td>,
+                              <td style={td} key="src">
+                                {d.source}
+                              </td>,
+                              <td style={td} key="impl">
+                                <TaskImplementerSelect
+                                  value={d.impl}
+                                  options={distinctImplementerOptions}
+                                  inputStyle={input}
+                                  onChange={(v) => updateDraftRow(d.key, { impl: v })}
+                                />
+                              </td>,
+                              <td style={td} key="time">
+                                <input
+                                  style={input}
+                                  value={d.time}
+                                  onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
+                                />
+                              </td>,
+                              <td style={td} key="dur">
+                                <input
+                                  style={input}
+                                  value={d.dur}
+                                  onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
+                                />
+                              </td>,
+                              <td style={td} key="dep">
+                                <input
+                                  style={input}
+                                  value={d.dep}
+                                  onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
+                                />
+                              </td>,
+                              <td style={td} key="notes">
+                                <input
+                                  style={input}
+                                  value={d.notes}
+                                  onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
+                                />
+                              </td>,
+                              <td style={td} key="rm">
+                                <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
+                                  Remove
+                                </button>
+                              </td>,
+                            ]}
+                          />
+                        ))}
+                      </tbody>
+                    </TaskSortableList>
                     <tbody>
-                      {draftTasks.map((d) => (
-                        <tr key={d.key}>
-                          <td style={td}>
-                            <input
-                              type="checkbox"
-                              checked={draftTaskBulkSelectedKeys.has(d.key)}
-                              onChange={() => {
-                                setDraftTaskBulkSelectedKeys((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(d.key)) next.delete(d.key);
-                                  else next.add(d.key);
-                                  return next;
-                                });
-                              }}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              list={taskNameDatalistId}
-                              value={d.name}
-                              onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
-                            />
-                          </td>
-                          <td style={td}>{d.source}</td>
-                          <td style={td}>
-                            <TaskImplementerSelect
-                              value={d.impl}
-                              options={distinctImplementerOptions}
-                              inputStyle={input}
-                              onChange={(v) => updateDraftRow(d.key, { impl: v })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.time}
-                              onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.dur}
-                              onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.dep}
-                              onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <input
-                              style={input}
-                              value={d.notes}
-                              onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
-                            />
-                          </td>
-                          <td style={td}>
-                            <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
                       <tr>
+                        <td style={td} />
                         <td style={td} />
                         <td style={td} />
                         <td style={td} />
@@ -2374,24 +2806,26 @@ export function SolutionsBuilderPanel({
                     These fields stay in sync with <strong>Section 2</strong> task rows: each row&apos;s <strong>Time</strong> and{" "}
                     <strong>Implementer</strong> roll into a bucket (Client services, Design, &hellip;) using the same{" "}
                     <strong>Implementer&ndash;Pricing mapping</strong> as elsewhere. Unmapped or blank implementer goes to
-                    &quot;Other&quot;. You can still edit a bucket if you need a manual adjustment; another change in the
+                    {" "}
+                    <strong>{pricingHourGroupLabel("other")}</strong>. You can still edit a bucket if you need a manual
+                    adjustment; another change in the
                     task table will refresh the split.
                   </p>
                   {(
                     [
-                      ["Client services", prHCs, setPrHCs],
-                      ["Copy", prHCp, setPrHCp],
-                      ["Design", prHDs, setPrHDs],
-                      ["Web dev", prHWd, setPrHWd],
-                      ["Video", prHVi, setPrHVi],
-                      ["Data", prHDa, setPrHDa],
-                      ["Paid media", prHPm, setPrHPm],
-                      ["HubSpot", prHHb, setPrHHb],
-                      ["Other", prHOt, setPrHOt],
-                    ] as const
-                  ).map(([lab, val, set]) => (
-                    <label key={lab} style={lbl}>
-                      <AdminFieldCaption>{lab} (hours)</AdminFieldCaption>
+                      ["client_services", prHCs, setPrHCs],
+                      ["copy", prHCp, setPrHCp],
+                      ["design", prHDs, setPrHDs],
+                      ["web_dev", prHWd, setPrHWd],
+                      ["video", prHVi, setPrHVi],
+                      ["data", prHDa, setPrHDa],
+                      ["paid_media", prHPm, setPrHPm],
+                      ["hubspot", prHHb, setPrHHb],
+                      ["other", prHOt, setPrHOt],
+                    ] as const satisfies ReadonlyArray<readonly [PricingHourGroupKey, string, (v: string) => void]>
+                  ).map(([k, val, set]) => (
+                    <label key={k} style={lbl}>
+                      <AdminFieldCaption>{pricingHourGroupLabel(k)} (hours)</AdminFieldCaption>
                       <input style={input} value={val} onChange={(e) => set(e.target.value)} />
                     </label>
                   ))}
@@ -2601,8 +3035,8 @@ export function SolutionsBuilderPanel({
                     <>
                       <p style={{ ...muted, marginTop: 0 }}>
                         Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Add tasks with the table
-                        below, or apply a task group from <strong>Admin → Task-Group templates</strong>. Ids for manual
-                        rows are assigned on save.
+                        below, apply a task group from <strong>Admin → Task-Group templates</strong>, or copy vault tasks
+                        from another tier into this tier. Manual rows receive ids when you save the task batch.
                       </p>
                       {taskGroups.length > 0 ? (
                         <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
@@ -2637,6 +3071,49 @@ export function SolutionsBuilderPanel({
                             >
                               Apply to tier
                             </button>
+                            <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_apply_tg")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
+                          </div>
+                        </div>
+                      ) : null}
+                      {sortedTiersForAutofill.some((x) => x.solution_tier_id !== ctxTierId) ? (
+                        <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
+                          <p style={formSectionHeading}>Copy vault tasks from another tier</p>
+                          <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
+                            Inserts new <code>4-…</code> vault tasks cloned from another tier&apos;s checklist (excluding
+                            this tier). The first note line records attribution.
+                          </p>
+                          <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
+                            <AdminFieldCaption>Source tier</AdminFieldCaption>
+                            <select
+                              style={input}
+                              value={tierOnlyCopyTierId}
+                              onChange={(e) => setTierOnlyCopyTierId(e.target.value)}
+                            >
+                              <option value="">— Select a tier —</option>
+                              {sortedTiersForAutofill
+                                .filter((t) => t.solution_tier_id !== ctxTierId)
+                                .map((t) => {
+                                  const n = tasks.filter((k) => k.solution_tier_id === t.solution_tier_id).length;
+                                  return (
+                                    <option key={t.solution_tier_id} value={t.solution_tier_id} disabled={n === 0}>
+                                      {t.solution_tier_id} — {t.solution_tier_name} ({solutionNameForTier(t.solution_id)})
+                                      [{n} task(s)]
+                                    </option>
+                                  );
+                                })}
+                            </select>
+                          </label>
+                          <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              className="admin-btn-primary"
+                              style={btnPrimary}
+                              onClick={() => void applyCopiedTierTasksToTierOnlyTier()}
+                              disabled={!ctxTierId.trim() || !tierOnlyCopyTierId.trim()}
+                            >
+                              Copy vault tasks into this tier
+                            </button>
+                            <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_copy_tier")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                           </div>
                         </div>
                       ) : null}
@@ -2644,6 +3121,7 @@ export function SolutionsBuilderPanel({
                         <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
                           Add task row
                         </button>
+                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                       </div>
                       <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
@@ -2652,6 +3130,7 @@ export function SolutionsBuilderPanel({
                           <th style={th}>
                             <span style={{ opacity: 0.6 }}>#</span>
                           </th>
+                          <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                           <th style={th}>Task name</th>
                           <th style={th}>SOURCE</th>
                           <th style={th}>Implementer</th>
@@ -2662,76 +3141,87 @@ export function SolutionsBuilderPanel({
                           <th style={{ ...th, width: 90 }} />
                             </tr>
                           </thead>
-                          <tbody>
-                            {draftTasks.map((d) => (
-                              <tr key={d.key}>
-                            <td style={td}>
-                              <input
-                                type="checkbox"
-                                checked={draftTaskBulkSelectedKeys.has(d.key)}
-                                onChange={() => {
-                                  setDraftTaskBulkSelectedKeys((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(d.key)) next.delete(d.key);
-                                    else next.add(d.key);
-                                    return next;
-                                  });
-                                }}
-                              />
-                            </td>
-                            <td style={td}>
-                                  <input
-                                    style={input}
-                                    list={taskNameDatalistId}
-                                    value={d.name}
-                                    onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
-                                  />
-                                </td>
-                            <td style={td}>{d.source}</td>
-                            <td style={td}>
-                                  <TaskImplementerSelect
-                                    value={d.impl}
-                                    options={distinctImplementerOptions}
-                                    inputStyle={input}
-                                    onChange={(v) => updateDraftRow(d.key, { impl: v })}
-                                  />
-                                </td>
-                            <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.time}
-                                    onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
-                                  />
-                                </td>
-                            <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dur}
-                                    onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
-                                  />
-                                </td>
-                            <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dep}
-                                    onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
-                                  />
-                                </td>
-                            <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.notes}
-                                    onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
+                          <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
+                            <tbody>
+                              {draftTasks.map((d) => (
+                                <SortableTableRowTr
+                                  key={d.key}
+                                  id={d.key}
+                                  renderCells={(dragHandle) => [
+                                    <td style={td} key="chk">
+                                      <input
+                                        type="checkbox"
+                                        checked={draftTaskBulkSelectedKeys.has(d.key)}
+                                        onChange={() => {
+                                          setDraftTaskBulkSelectedKeys((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(d.key)) next.delete(d.key);
+                                            else next.add(d.key);
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                    </td>,
+                                    <td style={td} key="drag">
+                                      {dragHandle}
+                                    </td>,
+                                    <td style={td} key="name">
+                                      <input
+                                        style={input}
+                                        list={taskNameDatalistId}
+                                        value={d.name}
+                                        onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
+                                      />
+                                    </td>,
+                                    <td style={td} key="src">
+                                      {d.source}
+                                    </td>,
+                                    <td style={td} key="impl">
+                                      <TaskImplementerSelect
+                                        value={d.impl}
+                                        options={distinctImplementerOptions}
+                                        inputStyle={input}
+                                        onChange={(v) => updateDraftRow(d.key, { impl: v })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="time">
+                                      <input
+                                        style={input}
+                                        value={d.time}
+                                        onChange={(e) => updateDraftRow(d.key, { time: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="dur">
+                                      <input
+                                        style={input}
+                                        value={d.dur}
+                                        onChange={(e) => updateDraftRow(d.key, { dur: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="dep">
+                                      <input
+                                        style={input}
+                                        value={d.dep}
+                                        onChange={(e) => updateDraftRow(d.key, { dep: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="notes">
+                                      <input
+                                        style={input}
+                                        value={d.notes}
+                                        onChange={(e) => updateDraftRow(d.key, { notes: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="rm">
+                                      <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
+                                        Remove
+                                      </button>
+                                    </td>,
+                                  ]}
+                                />
+                              ))}
+                            </tbody>
+                          </TaskSortableList>
                         </table>
                       </div>
                   <div className="admin-actions-row" style={{ marginTop: 10 }}>
@@ -2875,29 +3365,84 @@ export function SolutionsBuilderPanel({
                             key={sol.solution_id}
                             className={updSolutionId === sol.solution_id ? "admin-sb-solution-row--active" : undefined}
                           >
-                            <td style={td}>{sol.solution_name}</td>
+                            <td style={td}>
+                              {solutionRenameId === sol.solution_id ? (
+                                <input
+                                  type="text"
+                                  className="admin-field"
+                                  style={{ ...input, width: "100%", maxWidth: "28rem", marginTop: 0 }}
+                                  value={solutionRenameDraft}
+                                  onChange={(e) => setSolutionRenameDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      cancelSolutionRename();
+                                    }
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void saveSolutionRename();
+                                    }
+                                  }}
+                                  aria-label={`Rename solution ${sol.solution_id}`}
+                                  autoComplete="off"
+                                  autoFocus
+                                />
+                              ) : (
+                                sol.solution_name
+                              )}
+                            </td>
                             <td style={td}>
                               <code>{sol.solution_id}</code>
                             </td>
                             <td style={td}>
                               <div className="admin-actions-row" style={{ marginTop: 0 }}>
-                                <button
-                                  type="button"
-                                  style={btnSm}
-                                  onClick={() => {
-                                    setUpdSolutionId(sol.solution_id);
-                                    setShowUpdateDetails(false);
-                                  }}
-                                >
-                                  View all tiers
-                                </button>
-                                <button
-                                  type="button"
-                                  style={btnDangerSm}
-                                  onClick={() => void deleteSolutionById(sol.solution_id)}
-                                >
-                                  Delete
-                                </button>
+                                {solutionRenameId === sol.solution_id ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      style={btnPrimary}
+                                      className="admin-btn-primary"
+                                      onClick={() => void saveSolutionRename()}
+                                    >
+                                      Save name
+                                    </button>
+                                    <button type="button" style={btnSm} onClick={cancelSolutionRename}>
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      style={btnSm}
+                                      onClick={() => {
+                                        cancelSolutionRename();
+                                        setUpdSolutionId(sol.solution_id);
+                                        setShowUpdateDetails(false);
+                                      }}
+                                    >
+                                      View all tiers
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={btnSm}
+                                      onClick={() => {
+                                        setOpErr(null);
+                                        setSolutionRenameId(sol.solution_id);
+                                        setSolutionRenameDraft(sol.solution_name);
+                                      }}
+                                    >
+                                      Rename
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={btnDangerSm}
+                                      onClick={() => void deleteSolutionById(sol.solution_id)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -3016,7 +3561,7 @@ export function SolutionsBuilderPanel({
               <UpdateSectionHead
                 badge="2"
                 title="Tasks & pricing for a tier"
-                hint="Select a tier, then add tasks (manually, from a task-group template, or both) and set pricing. Templates are configured in Admin → Task-Group templates."
+                hint="Select a tier, then add tasks manually, from a task-group template, or by copying vault tasks from another tier. Templates live in Admin → Task-Group templates."
                 muted={muted}
               />
               <label style={{ ...lbl, maxWidth: 420 }}>
@@ -3027,6 +3572,7 @@ export function SolutionsBuilderPanel({
                   onChange={(e) => {
                     setUpdTierFocus(e.target.value);
                     setApplyTemplateGroupId("");
+                    setUpdCopyTierPick("");
                   }}
                 >
                   {tiersOfUpdateSol.map((t) => (
@@ -3073,6 +3619,60 @@ export function SolutionsBuilderPanel({
                         >
                           Apply to tier
                         </button>
+                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "upd_apply_tg")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
+                      </div>
+                    </div>
+                  ) : null}
+                  {sortedTiersForAutofill.filter((x) => x.solution_tier_id !== updTierFocus).length > 0 &&
+                  updTierFocus ? (
+                    <div style={{ ...formSectionBox, marginTop: 12 }}>
+                      <p style={formSectionHeading}>Copy vault tasks from another tier</p>
+                      <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "56ch" }}>
+                        Clones <strong>vault</strong> checklist items (names, fields, notes) from a different tier. Notes
+                        begin with a short &quot;Copied from tier…&quot; line (also shown in SOURCE). Or append the same snapshot
+                        to the bulk new-task draft table lower on this page.
+                      </p>
+                      <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
+                        <AdminFieldCaption>Source tier</AdminFieldCaption>
+                        <select
+                          style={input}
+                          value={updCopyTierPick}
+                          onChange={(e) => setUpdCopyTierPick(e.target.value)}
+                        >
+                          <option value="">— Select a tier —</option>
+                          {sortedTiersForAutofill
+                            .filter((t) => t.solution_tier_id !== updTierFocus)
+                            .map((t) => {
+                              const n = tasks.filter((k) => k.solution_tier_id === t.solution_tier_id).length;
+                              return (
+                                <option key={t.solution_tier_id} value={t.solution_tier_id} disabled={n === 0}>
+                                  {t.solution_tier_id} — {t.solution_tier_name} ({solutionNameForTier(t.solution_id)}) [
+                                  {n} task(s)]
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </label>
+                      <div className="admin-actions-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+                        <button
+                          type="button"
+                          className="admin-btn-primary"
+                          style={btnPrimary}
+                          onClick={() => void applyCopiedTierTasksToUpdateFocusedTier()}
+                          disabled={!updTierFocus || !updCopyTierPick.trim()}
+                        >
+                          Copy into this tier now
+                        </button>
+                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "upd_copy_db")} style={{ flex: "1 1 12rem", marginTop: 0 }} />
+                        <button
+                          type="button"
+                          style={btnSm}
+                          onClick={() => appendTierTasksToUpdateNewDrafts()}
+                          disabled={!updTierFocus || !updCopyTierPick.trim()}
+                        >
+                          Append to new-task draft table
+                        </button>
+                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "upd_copy_draft")} style={{ flex: "1 1 12rem", marginTop: 0 }} />
                       </div>
                     </div>
                   ) : null}
@@ -3095,9 +3695,15 @@ export function SolutionsBuilderPanel({
                                   setUpdTaskBulkSelectedIds(new Set());
                                 }
                               }}
-                              disabled={!!updTaskEditId || updTaskBulkBusy || tasksOfFocusTier.length === 0}
+                              disabled={
+                                !!updTaskEditId ||
+                                updTaskBulkBusy ||
+                                updTaskReorderBusy ||
+                                tasksOfFocusTier.length === 0
+                              }
                             />
                           </th>
+                          <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                           <th style={th}>Id</th>
                           <th style={th}>Name</th>
                           <th style={th}>SOURCE</th>
@@ -3105,41 +3711,68 @@ export function SolutionsBuilderPanel({
                           <th style={th} />
                         </tr>
                       </thead>
+                      <TaskSortableList
+                        itemIds={tasksOfFocusTier.map((t) => t.task_id)}
+                        disabled={!!updTaskEditId || updTaskBulkBusy || updTaskReorderBusy}
+                        onReorder={applyFocusTierTaskOrder}
+                      >
+                        <tbody>
+                          {tasksOfFocusTier.map((k) => (
+                            <SortableTableRowTr
+                              key={k.task_id}
+                              id={k.task_id}
+                              disabled={!!updTaskEditId || updTaskBulkBusy || updTaskReorderBusy}
+                              renderCells={(dragHandle) => [
+                                <td style={td} key="chk">
+                                  <input
+                                    type="checkbox"
+                                    checked={updTaskBulkSelectedIds.has(k.task_id)}
+                                    onChange={() => {
+                                      setUpdTaskBulkSelectedIds((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(k.task_id)) next.delete(k.task_id);
+                                        else next.add(k.task_id);
+                                        return next;
+                                      });
+                                    }}
+                                    disabled={
+                                      !!updTaskEditId || updTaskBulkBusy || updTaskReorderBusy
+                                    }
+                                  />
+                                </td>,
+                                <td style={td} key="drag">
+                                  {dragHandle}
+                                </td>,
+                                <td style={td} key="tid">
+                                  {k.task_id}
+                                </td>,
+                                <td style={td} key="nm">
+                                  {k.task_name}
+                                </td>,
+                                <td style={td} key="src">
+                                  {sourceLabelForTask(k)}
+                                </td>,
+                                <td style={td} key="hrs">
+                                  {k.task_time == null || !Number.isFinite(Number(k.task_time))
+                                    ? "—"
+                                    : String(k.task_time)}
+                                </td>,
+                                <td style={td} key="act">
+                                  <button type="button" style={btnSm} onClick={() => startEditTask(k)}>
+                                    Edit
+                                  </button>{" "}
+                                  <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTask(k)}>
+                                    Delete
+                                  </button>
+                                </td>,
+                              ]}
+                            />
+                          ))}
+                        </tbody>
+                      </TaskSortableList>
                       <tbody>
-                        {tasksOfFocusTier.map((k) => (
-                          <tr key={k.task_id}>
-                            <td style={td}>
-                              <input
-                                type="checkbox"
-                                checked={updTaskBulkSelectedIds.has(k.task_id)}
-                                onChange={() => {
-                                  setUpdTaskBulkSelectedIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (next.has(k.task_id)) next.delete(k.task_id);
-                                    else next.add(k.task_id);
-                                    return next;
-                                  });
-                                }}
-                                disabled={!!updTaskEditId || updTaskBulkBusy}
-                              />
-                            </td>
-                            <td style={td}>{k.task_id}</td>
-                            <td style={td}>{k.task_name}</td>
-                            <td style={td}>{sourceLabelForTask(k)}</td>
-                            <td style={td}>
-                              {k.task_time == null || !Number.isFinite(Number(k.task_time)) ? "—" : String(k.task_time)}
-                            </td>
-                            <td style={td}>
-                              <button type="button" style={btnSm} onClick={() => startEditTask(k)}>
-                                Edit
-                              </button>{" "}
-                              <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTask(k)}>
-                                Delete
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
                         <tr>
+                          <td style={td} />
                           <td style={td} />
                           <td style={td} />
                           <td style={td} />
@@ -3154,7 +3787,12 @@ export function SolutionsBuilderPanel({
                     <button
                       type="button"
                       style={btnDangerSm}
-                      disabled={updTaskBulkSelectedIds.size === 0 || !!updTaskEditId || updTaskBulkBusy}
+                      disabled={
+                        updTaskBulkSelectedIds.size === 0 ||
+                        !!updTaskEditId ||
+                        updTaskBulkBusy ||
+                        updTaskReorderBusy
+                      }
                       onClick={() => void bulkDeleteSelectedUpdateTasks()}
                     >
                       Bulk delete selected tasks
@@ -3191,7 +3829,9 @@ export function SolutionsBuilderPanel({
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
                             <tr>
+                              <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                               <th style={th}>Task name</th>
+                              <th style={th}>SOURCE</th>
                               <th style={th}>Implementer</th>
                               <th style={th}>Time</th>
                               <th style={th}>Duration</th>
@@ -3200,61 +3840,83 @@ export function SolutionsBuilderPanel({
                               <th style={{ ...th, width: 90 }} />
                             </tr>
                           </thead>
-                          <tbody>
-                            {updNewTaskDrafts.map((d) => (
-                              <tr key={d.key}>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    list={taskNameDatalistId}
-                                    value={d.name}
-                                    onChange={(e) => onUpdNewTaskNameChange(d.key, e.target.value)}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <TaskImplementerSelect
-                                    value={d.impl}
-                                    options={distinctImplementerOptions}
-                                    inputStyle={input}
-                                    onChange={(v) => updateUpdNewDraft(d.key, { impl: v })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.time}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { time: e.target.value })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dur}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { dur: e.target.value })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dep}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { dep: e.target.value })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.notes}
-                                    onChange={(e) => updateUpdNewDraft(d.key, { notes: e.target.value })}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <button type="button" style={btnDangerSm} onClick={() => removeUpdNewDraftRow(d.key)}>
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
+                          <TaskSortableList
+                            itemIds={updNewTaskDrafts.map((d) => d.key)}
+                            onReorder={reorderUpdNewDraftsByKeys}
+                          >
+                            <tbody>
+                              {updNewTaskDrafts.map((d) => (
+                                <SortableTableRowTr
+                                  key={d.key}
+                                  id={d.key}
+                                  renderCells={(dragHandle) => [
+                                    <td style={td} key="drag">
+                                      {dragHandle}
+                                    </td>,
+                                    <td style={td} key="name">
+                                      <input
+                                        style={input}
+                                        list={taskNameDatalistId}
+                                        value={d.name}
+                                        onChange={(e) => onUpdNewTaskNameChange(d.key, e.target.value)}
+                                      />
+                                    </td>,
+                                    <td
+                                      style={{ ...td, fontSize: "0.78rem", color: "var(--muted)" }}
+                                      key="src"
+                                    >
+                                      {d.source}
+                                    </td>,
+                                    <td style={td} key="impl">
+                                      <TaskImplementerSelect
+                                        value={d.impl}
+                                        options={distinctImplementerOptions}
+                                        inputStyle={input}
+                                        onChange={(v) => updateUpdNewDraft(d.key, { impl: v })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="time">
+                                      <input
+                                        style={input}
+                                        value={d.time}
+                                        onChange={(e) => updateUpdNewDraft(d.key, { time: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="dur">
+                                      <input
+                                        style={input}
+                                        value={d.dur}
+                                        onChange={(e) => updateUpdNewDraft(d.key, { dur: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="dep">
+                                      <input
+                                        style={input}
+                                        value={d.dep}
+                                        onChange={(e) => updateUpdNewDraft(d.key, { dep: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="notes">
+                                      <input
+                                        style={input}
+                                        value={d.notes}
+                                        onChange={(e) => updateUpdNewDraft(d.key, { notes: e.target.value })}
+                                      />
+                                    </td>,
+                                    <td style={td} key="rm">
+                                      <button
+                                        type="button"
+                                        style={btnDangerSm}
+                                        onClick={() => removeUpdNewDraftRow(d.key)}
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>,
+                                  ]}
+                                />
+                              ))}
+                            </tbody>
+                          </TaskSortableList>
                         </table>
                       </div>
                       <div className="admin-actions-row" style={{ marginTop: 10 }}>

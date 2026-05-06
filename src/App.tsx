@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { ToastProvider } from "./context/ToastContext";
 import { ProtectedLayout } from "./components/ProtectedLayout";
 import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
 import { AgencyTabsShell } from "./views/AgencyTabsShell";
@@ -12,6 +13,7 @@ import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
 export default function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route element={<ProtectedLayout />}>
@@ -34,6 +36,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      </ToastProvider>
     </AuthProvider>
   );
 }

@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -24,12 +25,22 @@ import {
 } from "../lib/packageTierOverrides";
 import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
+import {
+  effectiveResourceExamples,
+  effectiveResourceTools,
+  stripRedundantResourceMarkdownHeading,
+  tierHasAnyResourceSectionContent,
+  tierTemplatesForProposalDisplay,
+} from "../lib/tierResourceFields";
+import { compareTasksByOrder } from "../lib/taskOrder";
 import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "../lib/tierPricingMath";
 import {
   browserKeyConfigurationError,
   envConfigured,
   getSupabase,
 } from "../lib/supabase";
+import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
+import { useToast } from "../context/ToastContext";
 import type {
   Package,
   PackageSolutionTier,
@@ -177,7 +188,7 @@ function firstTierCategory(
   if (t.solution_tier_how_do_we_get_this_work_done || t.solution_tier_direction || t.solution_tier_sop)
     return "process";
   if (t.solution_tier_described_to_client) return "selling";
-  if (t.solution_tier_resources) return "res";
+  if (tierHasAnyResourceSectionContent(t)) return "res";
   return null;
 }
 
@@ -201,6 +212,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const pkgSearchFieldId = useId();
   const tierSearchFieldId = useId();
   const navigate = useNavigate();
+  const { toastError, toastNote } = useToast();
+
+  const prevErrMsg = useRef<string | null>(null);
+  const emptyVaultNotified = useRef(false);
+  const routeInvalidNotified = useRef(false);
 
   const load = useCallback(async () => {
     const keyErr = browserKeyConfigurationError();
@@ -261,7 +277,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
     packages.sort((a, b) => sortId(a.package_id, b.package_id));
     solutions.sort((a, b) => sortId(a.solution_id, b.solution_id));
     tiers.sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    tasks.sort((a, b) => sortId(a.task_id, b.task_id));
+    tasks.sort((a, b) => {
+      const tc = sortId(a.solution_tier_id, b.solution_tier_id);
+      if (tc !== 0) return tc;
+      return compareTasksByOrder(a, b);
+    });
 
     setState({ status: "ok", packages, solutions, tiers, packageTiers, tasks, pricing });
 
@@ -312,6 +332,17 @@ export function AgencyView({ mode }: AgencyViewProps) {
   }, [load]);
 
   const data = state.status === "ok" ? state : null;
+  const agencyErrMsg = state.status === "error" ? state.message : null;
+
+  useEffect(() => {
+    if (agencyErrMsg === null) {
+      prevErrMsg.current = null;
+      return;
+    }
+    if (prevErrMsg.current === agencyErrMsg) return;
+    prevErrMsg.current = agencyErrMsg;
+    toastError(agencyErrMsg);
+  }, [agencyErrMsg, toastError]);
 
   const packageRouteInvalid = useMemo(() => {
     if (!data || mode !== "package" || !packageIdParam) return false;
@@ -323,6 +354,31 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     return !data.packages.some((p) => p.package_id === next);
   }, [data, mode, packageIdParam]);
+
+  const pkgLen = state.status === "ok" ? state.packages.length : -1;
+
+  useEffect(() => {
+    if (pkgLen !== 0) {
+      emptyVaultNotified.current = false;
+      return;
+    }
+    if (state.status !== "ok") return;
+    if (emptyVaultNotified.current) return;
+    emptyVaultNotified.current = true;
+    toastNote(
+      "Vault returned zero packages — seed tables or check RLS. See Packages / Admin if data should already exist."
+    );
+  }, [pkgLen, state.status, toastNote]);
+
+  useEffect(() => {
+    if (!packageRouteInvalid) {
+      routeInvalidNotified.current = false;
+      return;
+    }
+    if (routeInvalidNotified.current) return;
+    routeInvalidNotified.current = true;
+    toastNote("This package link is not valid. Use the Packages tab to open a workspace.");
+  }, [packageRouteInvalid, toastNote]);
 
   useEffect(() => {
     if (!data || mode !== "package" || !packageIdParam) return;
@@ -478,7 +534,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     if (!data || !tierId) return [];
     const vaultSorted = data.tasks
       .filter((t) => t.solution_tier_id === tierId)
-      .sort((a, b) => sortId(a.task_id, b.task_id));
+      .sort(compareTasksByOrder);
     if (!packageWorkspaceLinkByTierId) return vaultSorted;
     const link = packageWorkspaceLinkByTierId.get(tierId);
     if (!link) return vaultSorted;
@@ -515,9 +571,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const tasksForKpi = useMemo(() => {
     if (!data) return [];
     if (tierId) {
-      return data.tasks
-        .filter((t) => t.solution_tier_id === tierId)
-        .sort((a, b) => sortId(a.task_id, b.task_id));
+      return data.tasks.filter((t) => t.solution_tier_id === tierId).sort(compareTasksByOrder);
     }
     return data.tasks
       .filter((task) => {
@@ -532,7 +586,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
           matchesQuery(tier.solution_tier_id, filterTier);
         return solOk && tierOk;
       })
-      .sort((a, b) => sortId(a.task_id, b.task_id));
+      .sort((a, b) => {
+        const tc = sortId(a.solution_tier_id, b.solution_tier_id);
+        if (tc !== 0) return tc;
+        return compareTasksByOrder(a, b);
+      });
   }, [data, tierId, filterSol, filterTier]);
 
   const taskKpis = useMemo(() => {
@@ -655,7 +713,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           })
         : data.tasks
             .filter((tk) => tk.solution_tier_id === t.solution_tier_id)
-            .sort((a, b) => sortId(a.task_id, b.task_id));
+            .sort(compareTasksByOrder);
       for (const m of mergedList) {
         if (m.task_time != null && Number.isFinite(Number(m.task_time))) {
           sumTime += Number(m.task_time);
@@ -812,50 +870,18 @@ export function AgencyView({ mode }: AgencyViewProps) {
         </p>
       </header>
 
-      {state.status === "error" && (
-        <div style={bannerError} role="alert">
-          {state.message}
-        </div>
-      )}
-
       {state.status === "loading" && (
         <div style={loadingBox}>Loading from Supabase…</div>
       )}
 
-      {data && data.packages.length === 0 && (
-        <div style={bannerInfo} role="status">
-          <strong>No rows returned from Supabase.</strong> The API call succeeded, but{" "}
-          <code style={codeInline}>packages</code> is empty. Typical causes:
-          <ol style={infoList}>
-            <li>
-              Tables have not been seeded — open{" "}
-              <strong>Table Editor</strong> and confirm rows exist in{" "}
-              <code style={codeInline}>packages</code>,{" "}
-              <code style={codeInline}>solutions</code>,{" "}
-              <code style={codeInline}>solution_tiers</code>,{" "}
-              <code style={codeInline}>tasks</code>. Run your INSERT SQL from the SQL
-              Editor if needed.
-            </li>
-            <li>
-              <strong>Row Level Security</strong> is on without a SELECT policy for
-              the role your key uses — run the policies script in{" "}
-              <code style={codeInline}>supabase/read_policies_for_dashboard.sql</code>{" "}
-              (or add equivalent SELECT policies), then refresh.
-            </li>
-            <li>
-              Table names in the dashboard differ (must be lowercase{" "}
-              <code style={codeInline}>packages</code>,{" "}
-              <code style={codeInline}>solutions</code>, etc.).
-            </li>
-          </ol>
-        </div>
+      {state.status === "error" && (
+        <p style={loadHintMuted} role="status">
+          Unable to load this view. Details are shown in the notification stack (bottom corner).
+        </p>
       )}
 
       {data && mode === "package" && packageRouteInvalid && (
-        <div className="agency-route-error" role="alert">
-          <p className="agency-route-error__text">
-            This package link is not valid. Use the Packages tab to load a workspace.
-          </p>
+        <div className="agency-route-error" role="status">
           <Link className="agency-hub__link" to="/packages">
             ← Packages
           </Link>
@@ -1336,7 +1362,14 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         t.solution_tier_sop
                     );
                     const hasSelling = Boolean(t.solution_tier_described_to_client);
-                    const hasRes = Boolean(t.solution_tier_resources);
+                    const hasRes = tierHasAnyResourceSectionContent(t);
+                    const resTemplatesRaw = tierTemplatesForProposalDisplay(t).trim();
+                    const resTemplates = stripRedundantResourceMarkdownHeading(resTemplatesRaw, "templates");
+                    const resToolsRaw = effectiveResourceTools(t).trim();
+                    const resTools = stripRedundantResourceMarkdownHeading(resToolsRaw, "tools");
+                    const resExampleRows = effectiveResourceExamples(t).filter(
+                      (r) => r.example.trim() || r.date.trim()
+                    );
                     return (
                       <>
                         {hasDesc ? (
@@ -1469,9 +1502,20 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             }
                           >
                             <h3 className="agency-tier-category__title">Resources</h3>
-                            <div className="agency-tier-sub">
-                              <AgencyTierProse text={t.solution_tier_resources ?? ""} />
-                            </div>
+                            {resTemplates ? (
+                              <AgencyTierSubsection title="Templates" text={resTemplates} blockTitle={blockTitle} />
+                            ) : null}
+                            {resExampleRows.length > 0 ? (
+                              <div className="agency-tier-sub">
+                                <h4 className="agency-block-title" style={blockTitle}>
+                                  Examples with dates
+                                </h4>
+                                <TierResourceExamplesDisplay rows={resExampleRows} />
+                              </div>
+                            ) : null}
+                            {resTools ? (
+                              <AgencyTierSubsection title="Tools" text={resTools} blockTitle={blockTitle} />
+                            ) : null}
                           </section>
                         ) : null}
                       </>
@@ -1631,38 +1675,10 @@ const emptyHint: CSSProperties = {
   color: "var(--muted)",
 };
 
-const bannerError: CSSProperties = {
-  padding: "0.85rem 1rem",
-  borderRadius: "var(--radius)",
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "var(--danger)",
-  marginBottom: "1rem",
+const loadHintMuted: CSSProperties = {
+  margin: "0.75rem 0 0",
   fontSize: "0.9rem",
-};
-
-const bannerInfo: CSSProperties = {
-  padding: "1rem 1.1rem",
-  borderRadius: "var(--radius)",
-  background: "#f0f9ff",
-  border: "1px solid #bae6fd",
-  color: "#0c4a6e",
-  marginBottom: "1rem",
-  fontSize: "0.9rem",
-  lineHeight: 1.55,
-};
-
-const infoList: CSSProperties = {
-  margin: "0.65rem 0 0",
-  paddingLeft: "1.25rem",
-};
-
-const codeInline: CSSProperties = {
-  fontSize: "0.85em",
-  background: "rgba(0,0,0,0.06)",
-  padding: "0.1em 0.35em",
-  borderRadius: 4,
-  fontFamily: "ui-monospace, monospace",
+  color: "var(--muted)",
 };
 
 const kpiSectionWrap: CSSProperties = {

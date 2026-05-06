@@ -2,10 +2,13 @@ import type {
   PackageExtraTaskRow,
   PackageTaskExtensions,
   PackageTaskOverridesMap,
+  SolutionTier,
   TaskGroupLineRow,
   TaskRow,
 } from "../types";
 import { mergeTaskWithPackageOverride } from "./packagePricingTaskOverrides";
+import { compareTasksByOrder } from "./taskOrder";
+import { mergeTaskNotesWithTierAttribution, sourceTierMeta, tasksOnTierSorted } from "./tierTaskCopy";
 
 export function newPackageTaskId(): string {
   const c = globalThis.crypto;
@@ -104,10 +107,33 @@ export function buildMergedTaskRowsForPackageTier(args: {
   const ov = args.taskOverrides ?? {};
   const base = args.vaultTasks
     .filter((t) => t.solution_tier_id === args.tierId && !hidden.has(t.task_id))
-    .sort((a, b) => a.task_id.localeCompare(b.task_id, undefined, { numeric: true }))
+    .sort(compareTasksByOrder)
     .map((t) => mergeTaskWithPackageOverride(t, ov[t.task_id]));
   const extras = (args.taskExtensions?.extra_tasks ?? []).map((e) => extraTaskToTaskRow(args.tierId, e));
   return [...base, ...extras];
+}
+
+/** Package-only extras built from vault tasks on another tier (copy for overlay). */
+export function materializeTierVaultTasksToPackageExtraTasks(
+  allTasks: TaskRow[],
+  sourceTierId: string,
+  tiers: SolutionTier[]
+): PackageExtraTaskRow[] {
+  const { name } = sourceTierMeta(tiers, sourceTierId);
+  const vault = tasksOnTierSorted(allTasks, sourceTierId);
+  const out: PackageExtraTaskRow[] = [];
+  for (const t of vault) {
+    out.push({
+      package_task_id: newPackageTaskId(),
+      task_name: t.task_name,
+      task_implementer: t.task_implementer,
+      task_time: t.task_time,
+      task_duration: t.task_duration,
+      task_dependencies: t.task_dependencies,
+      task_notes: mergeTaskNotesWithTierAttribution(t.task_notes, sourceTierId, name),
+    });
+  }
+  return out;
 }
 
 export function materializeTaskGroupToPackageExtraTasks(

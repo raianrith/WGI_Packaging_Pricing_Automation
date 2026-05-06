@@ -12,6 +12,9 @@ export type Solution = {
   solution_modified_date: string;
 };
 
+/** One dated example pair for structured tier resources (`solution_tier_resource_examples`). */
+export type TierResourceExampleRow = { example: string; date: string };
+
 export type SolutionTier = {
   solution_tier_id: string;
   solution_id: string;
@@ -21,7 +24,11 @@ export type SolutionTier = {
   solution_tier_overview_link: string | null;
   solution_tier_direction: string | null;
   solution_tier_sop: string | null;
+  /** Legacy combined resources block; prefer structured fields below when editing. */
   solution_tier_resources: string | null;
+  solution_tier_resource_templates: string | null;
+  solution_tier_resource_tools: string | null;
+  solution_tier_resource_examples: TierResourceExampleRow[] | null;
   solution_tier_what_is_it: string | null;
   solution_tier_why_is_it_valuable: string | null;
   solution_tier_when_should_it_be_used: string | null;
@@ -62,6 +69,8 @@ export type PackageTierOverrides = Partial<
 export type TaskRow = {
   task_id: string;
   solution_tier_id: string;
+  /** Display order within the tier (1-based recommended). Omitted / null sorts after set values in UI. */
+  sort_order?: number | null;
   task_name: string;
   task_implementer: string | null;
   task_time: number | null;

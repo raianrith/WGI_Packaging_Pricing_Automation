@@ -5,9 +5,10 @@ export type MarkdownTextareaProps = {
   onChange: (next: string) => void;
   textareaStyle: CSSProperties;
   rows?: number;
+  disabled?: boolean;
 };
 
-export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2 }: MarkdownTextareaProps) {
+export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2, disabled }: MarkdownTextareaProps) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   const setNext = useCallback(
@@ -64,24 +65,42 @@ export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2 }: M
   return (
     <div className="admin-md-field">
       <div className="admin-md-toolbar" role="toolbar" aria-label="Formatting">
-        <button type="button" className="admin-md-toolbar__btn" onClick={() => wrapSelection("**", "**", "bold text")}>
+        <button
+          type="button"
+          className="admin-md-toolbar__btn"
+          disabled={disabled}
+          onClick={() => wrapSelection("**", "**", "bold text")}
+        >
           Bold
         </button>
-        <button type="button" className="admin-md-toolbar__btn" onClick={() => wrapSelection("*", "*", "italic text")}>
+        <button
+          type="button"
+          className="admin-md-toolbar__btn"
+          disabled={disabled}
+          onClick={() => wrapSelection("*", "*", "italic text")}
+        >
           Italic
         </button>
-        <button type="button" className="admin-md-toolbar__btn" onClick={() => prefixSelectedLines("- ")}>
+        <button type="button" className="admin-md-toolbar__btn" disabled={disabled} onClick={() => prefixSelectedLines("- ")}>
           Bullet list
         </button>
         <button
           type="button"
           className="admin-md-toolbar__btn"
+          disabled={disabled}
           onClick={() => wrapSelection("[", "](https://example.com)", "link text")}
         >
           Link
         </button>
       </div>
-      <textarea ref={ref} style={textareaStyle} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+      <textarea
+        ref={ref}
+        style={textareaStyle}
+        rows={rows}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }

@@ -143,12 +143,6 @@ export function ImplementerMappingPanel({
           <strong>hour group</strong>. This will be used to roll up task time into the tier&apos;s
           hours by column (Client services, Copy, Web dev, and so on).
         </p>
-        {loadNote ? (
-          <p className="admin-hint" style={{ ...muted, color: "#92400e", marginTop: 8 }}>
-            {loadNote}
-          </p>
-        ) : null}
-
         <div
           className="admin-form-stack"
           style={{ ...formGrid, maxWidth: 520, marginTop: "0.75rem" }}

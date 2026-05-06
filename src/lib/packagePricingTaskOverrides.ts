@@ -390,7 +390,7 @@ export const PACKAGE_PRICING_FORM_FIELDS: {
   { key: "hours_data", label: "Hours — data", kind: "number" },
   { key: "hours_paid_media", label: "Hours — paid media", kind: "number" },
   { key: "hours_hubspot", label: "Hours — HubSpot", kind: "number" },
-  { key: "hours_other", label: "Hours — other", kind: "number" },
+  { key: "hours_other", label: "Hours — Ops", kind: "number" },
   { key: "total_hours", label: "Total hours", kind: "number" },
   { key: "expected_effort_base_price", label: "Expected effort base price", kind: "number" },
   { key: "scope_risk", label: "Scope risk", kind: "number" },

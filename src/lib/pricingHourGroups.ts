@@ -21,7 +21,7 @@ const LABELS: Record<PricingHourGroupKey, string> = {
   data: "Data",
   paid_media: "Paid media",
   hubspot: "HubSpot",
-  other: "Other",
+  other: "Ops",
 };
 
 export function pricingHourGroupLabel(k: PricingHourGroupKey): string {

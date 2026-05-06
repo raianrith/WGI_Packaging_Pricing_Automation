@@ -18,6 +18,14 @@ import {
   tryParseRoadmapHours,
   tryParseUsdRough,
 } from "../lib/roadmapModel";
+import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
+import { useToast } from "../context/ToastContext";
+import {
+  effectiveResourceExamples,
+  effectiveResourceTools,
+  stripRedundantResourceMarkdownHeading,
+  tierTemplatesForProposalDisplay,
+} from "../lib/tierResourceFields";
 import type {
   Package,
   PackageSolutionTier,
@@ -773,7 +781,23 @@ function tierCatalogDetailBlocks(t: SolutionTier, pr: SolutionTierPricing | null
         {prose("Owner", t.solution_tier_owner)}
         {prose("Direction", t.solution_tier_direction)}
         {prose("SOP", t.solution_tier_sop)}
-        {prose("Resources", t.solution_tier_resources)}
+        {prose(
+          "Templates",
+          stripRedundantResourceMarkdownHeading(tierTemplatesForProposalDisplay(t), "templates")
+        )}
+        {(() => {
+          const rows = effectiveResourceExamples(t).filter((r) => r.example.trim() || r.date.trim());
+          if (rows.length === 0) return null;
+          return (
+            <Fragment key="tier-res-examples">
+              <dt className="roadmap-details-dt">Examples with dates</dt>
+              <dd className="roadmap-details-dd roadmap-details-dd--prose">
+                <TierResourceExamplesDisplay rows={rows} />
+              </dd>
+            </Fragment>
+          );
+        })()}
+        {prose("Tools", stripRedundantResourceMarkdownHeading(effectiveResourceTools(t), "tools"))}
         {t.solution_tier_overview_link?.trim() ? (
           <>
             <dt className="roadmap-details-dt">Overview link</dt>
@@ -965,8 +989,10 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
 }
 
 export function RoadmapPlanningView() {
+  const { toastError } = useToast();
   const searchId = useId();
   const [state, setState] = useState<LoadState>({ status: "idle" });
+  const roadmapLoadErrSeen = useRef<string | null>(null);
   const [clientLabel, setClientLabel] = useState("");
   const [roadmapTitle, setRoadmapTitle] = useState("");
   const [horizon, setHorizon] = useState<"3" | "4" | "6" | "12" | "custom">("6");
@@ -1052,6 +1078,17 @@ export function RoadmapPlanningView() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const errMsg = state.status === "error" ? state.message : null;
+  useEffect(() => {
+    if (errMsg === null) {
+      roadmapLoadErrSeen.current = null;
+      return;
+    }
+    if (roadmapLoadErrSeen.current === errMsg) return;
+    roadmapLoadErrSeen.current = errMsg;
+    toastError(errMsg);
+  }, [errMsg, toastError]);
 
   const data = state.status === "ok" ? state : null;
   const catalogCtx = useMemo((): CatalogCtx | null => {
@@ -1473,9 +1510,9 @@ export function RoadmapPlanningView() {
     return (
       <div className="roadmap-page">
         <div className="roadmap-page__inner">
-          <div className="roadmap-banner roadmap-banner--err" role="alert">
-            {state.message}
-          </div>
+          <p className="roadmap-muted">
+            Unable to load the catalog. Details are shown in the notification stack (bottom corner).
+          </p>
           <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={() => void load()}>
             Try again
           </button>

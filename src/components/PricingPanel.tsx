@@ -27,6 +27,7 @@ import {
   type RiskStrategicScore,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
+import { pricingHourGroupLabel } from "../lib/pricingHourGroups";
 import type { PricingHourGroupKey, SolutionTier, SolutionTierPricing } from "../types";
 
 function rowJson(row: object): Record<string, unknown> {
@@ -754,19 +755,19 @@ export function PricingPanel({
         <div className="admin-form-stack" style={formGrid}>
           {(
             [
-              ["Client services", hCs, setHCs],
-              ["Copy", hCp, setHCp],
-              ["Design", hDs, setHDs],
-              ["Web dev", hWd, setHWd],
-              ["Video", hVi, setHVi],
-              ["Data", hDa, setHDa],
-              ["Paid media", hPm, setHPm],
-              ["HubSpot", hHb, setHHb],
-              ["Other", hOt, setHOt],
-            ] as const
-          ).map(([lab, val, set]) => (
-            <label key={lab} style={lbl}>
-              <AdminFieldCaption>{lab}</AdminFieldCaption>
+              ["client_services", hCs, setHCs],
+              ["copy", hCp, setHCp],
+              ["design", hDs, setHDs],
+              ["web_dev", hWd, setHWd],
+              ["video", hVi, setHVi],
+              ["data", hDa, setHDa],
+              ["paid_media", hPm, setHPm],
+              ["hubspot", hHb, setHHb],
+              ["other", hOt, setHOt],
+            ] as const satisfies ReadonlyArray<readonly [PricingHourGroupKey, string, (v: string) => void]>
+          ).map(([k, val, set]) => (
+            <label key={k} style={lbl}>
+              <AdminFieldCaption>{pricingHourGroupLabel(k)}</AdminFieldCaption>
               <input
                 style={taskDrivenHours ? { ...input, ...readonlyInput } : input}
                 className={taskDrivenHours ? "admin-pricing-readonly" : undefined}

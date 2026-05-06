@@ -33,7 +33,7 @@ function resolveGroup(
 
 /**
  * Sum each task’s `task_time` into pricing hour buckets using the implementer → group map.
- * Unmapped or empty implementers count toward **other**.
+ * Unmapped or empty implementers count toward the **`other`** bucket (`hours_other`, labeled **Ops** in the UI).
  */
 export function rollUpTaskTimesByPricingGroup(
   taskList: TaskRow[],

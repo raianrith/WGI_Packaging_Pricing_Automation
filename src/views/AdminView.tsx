@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -15,6 +15,7 @@ import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
+import { parseTierResourceExamplesImportCell } from "../lib/tierResourceFields";
 import {
   computeTierPricing,
   loadTierPricingMathConfigFromStorage,
@@ -25,6 +26,7 @@ import {
   buildSolutionTierPricingMathUpdate,
   storedTierPricingMathDiffersFromCompute,
 } from "../lib/recomputeStoredTierPricing";
+import { compareTasksByOrder } from "../lib/taskOrder";
 import { PricingCalculatorPanel } from "../components/PricingCalculatorPanel";
 import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
@@ -32,6 +34,7 @@ import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
 import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
+import { useToast } from "../context/ToastContext";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
@@ -79,6 +82,7 @@ function rowJson(row: object): Record<string, unknown> {
 }
 
 export function AdminView() {
+  const { setOpErr, setOpOk, toastError, toastNote } = useToast();
   const [tab, setTab] = useState<AdminTab>("packages");
   const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>("create");
   const [packages, setPackages] = useState<Package[]>([]);
@@ -102,9 +106,12 @@ export function AdminView() {
   const [recalculateAllSavedPricingBusy, setRecalculateAllSavedPricingBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [opErr, setOpErr] = useState<string | null>(null);
-  const [opOk, setOpOk] = useState<string | null>(null);
-  const opFeedbackRef = useRef<HTMLDivElement | null>(null);
+
+  const prevLoadErr = useRef<string | null>(null);
+  const prevPricingNote = useRef<string | null>(null);
+  const prevAuditNote = useRef<string | null>(null);
+  const prevImplNote = useRef<string | null>(null);
+  const prevTgNote = useRef<string | null>(null);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
@@ -153,7 +160,11 @@ export function AdminView() {
     pkgs.sort((a, b) => sortId(a.package_id, b.package_id));
     sols.sort((a, b) => sortId(a.solution_id, b.solution_id));
     trs.sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    tks.sort((a, b) => sortId(a.task_id, b.task_id));
+    tks.sort((a, b) => {
+      const tc = sortId(a.solution_tier_id, b.solution_tier_id);
+      if (tc !== 0) return tc;
+      return compareTasksByOrder(a, b);
+    });
     setPackages(pkgs);
     setSolutions(sols);
     setTiers(trs);
@@ -238,10 +249,55 @@ export function AdminView() {
     setAdminSubTab(tab === "solutions_builder" ? "update" : "create");
   }, [tab]);
 
-  useLayoutEffect(() => {
-    if (!opErr && !opOk) return;
-    opFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [opErr, opOk]);
+  useEffect(() => {
+    if (!loadErr) {
+      prevLoadErr.current = null;
+      return;
+    }
+    if (prevLoadErr.current === loadErr) return;
+    prevLoadErr.current = loadErr;
+    toastError(loadErr);
+  }, [loadErr, toastError]);
+
+  useEffect(() => {
+    if (loadErr || !pricingLoadNote) {
+      if (!pricingLoadNote) prevPricingNote.current = null;
+      return;
+    }
+    if (prevPricingNote.current === pricingLoadNote) return;
+    prevPricingNote.current = pricingLoadNote;
+    toastNote(pricingLoadNote);
+  }, [loadErr, pricingLoadNote, toastNote]);
+
+  useEffect(() => {
+    if (loadErr || !auditLoadNote) {
+      if (!auditLoadNote) prevAuditNote.current = null;
+      return;
+    }
+    if (prevAuditNote.current === auditLoadNote) return;
+    prevAuditNote.current = auditLoadNote;
+    toastNote(auditLoadNote);
+  }, [loadErr, auditLoadNote, toastNote]);
+
+  useEffect(() => {
+    if (loadErr || !implementerMappingLoadNote) {
+      if (!implementerMappingLoadNote) prevImplNote.current = null;
+      return;
+    }
+    if (prevImplNote.current === implementerMappingLoadNote) return;
+    prevImplNote.current = implementerMappingLoadNote;
+    toastNote(implementerMappingLoadNote);
+  }, [implementerMappingLoadNote, loadErr, toastNote]);
+
+  useEffect(() => {
+    if (loadErr || !taskGroupDataLoadNote) {
+      if (!taskGroupDataLoadNote) prevTgNote.current = null;
+      return;
+    }
+    if (prevTgNote.current === taskGroupDataLoadNote) return;
+    prevTgNote.current = taskGroupDataLoadNote;
+    toastNote(taskGroupDataLoadNote);
+  }, [loadErr, taskGroupDataLoadNote, toastNote]);
 
   const logAudit = useCallback(
     async (
@@ -258,7 +314,7 @@ export function AdminView() {
         setOpErr(`Saved, but history was not recorded: ${error}.${hint}`);
       }
     },
-    []
+    [setOpErr]
   );
 
   const recalculateAllSavedTierPricing = useCallback(async () => {
@@ -352,25 +408,6 @@ export function AdminView() {
 
       <GlobalKpiStrip />
 
-      {loadErr && (
-        <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
-          {loadErr}
-        </div>
-      )}
-      {pricingLoadNote && !loadErr && (
-        <div className="admin-banner admin-banner--note" style={bannerNote} role="status">
-          {pricingLoadNote}
-        </div>
-      )}
-      {auditLoadNote && !loadErr && (
-        <div
-          className="admin-banner admin-banner--note"
-          style={bannerNote}
-          role="status"
-        >
-          {auditLoadNote}
-        </div>
-      )}
       {loading && (
         <div className="admin-loading">
           <p className="admin-loading__text">Loading from Supabase…</p>
@@ -607,20 +644,6 @@ export function AdminView() {
             />
           )}
 
-          {(opErr || opOk) && (
-            <div ref={opFeedbackRef} className="admin-workspace__op-messages" aria-live="polite" aria-atomic>
-              {opErr ? (
-                <div className="admin-banner admin-banner--err" style={bannerErr} role="alert">
-                  {opErr}
-                </div>
-              ) : null}
-              {opOk ? (
-                <div className="admin-banner admin-banner--ok" style={bannerOk} role="status">
-                  {opOk}
-                </div>
-              ) : null}
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -739,6 +762,11 @@ function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig)
         solution_tier_direction: normOptStr(r.solution_tier_direction),
         solution_tier_sop: normOptStr(r.solution_tier_sop),
         solution_tier_resources: normOptStr(r.solution_tier_resources),
+        solution_tier_resource_templates: normOptStr(r.solution_tier_resource_templates),
+        solution_tier_resource_tools: normOptStr(r.solution_tier_resource_tools),
+        solution_tier_resource_examples: parseTierResourceExamplesImportCell(
+          (r as Record<string, unknown>).solution_tier_resource_examples
+        ),
         solution_tier_what_is_it: normOptStr(r.solution_tier_what_is_it),
         solution_tier_why_is_it_valuable: normOptStr(r.solution_tier_why_is_it_valuable),
         solution_tier_when_should_it_be_used: normOptStr(r.solution_tier_when_should_it_be_used),
@@ -757,13 +785,14 @@ function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig)
     .filter((x): x is SolutionTier => x != null);
 
   const tasks: TaskRow[] = (doc.tasks ?? [])
-    .map((r) => {
+    .map((r): TaskRow | null => {
       const id = normStr(r.task_id);
       const tierId = normStr(r.solution_tier_id);
       if (!id || !tierId) return null;
       return {
         task_id: id,
         solution_tier_id: tierId,
+        sort_order: normOptNum(r.sort_order),
         task_name: normStr(r.task_name) || id,
         task_implementer: normOptStr(r.task_implementer),
         task_time: normOptNum(r.task_time),
@@ -1246,6 +1275,9 @@ async function downloadBulkTemplateWorkbook(data: {
       "solution_tier_direction",
       "solution_tier_sop",
       "solution_tier_resources",
+      "solution_tier_resource_templates",
+      "solution_tier_resource_tools",
+      "solution_tier_resource_examples",
       "solution_tier_what_is_it",
       "solution_tier_why_is_it_valuable",
       "solution_tier_when_should_it_be_used",
@@ -1258,7 +1290,12 @@ async function downloadBulkTemplateWorkbook(data: {
       "solution_tier_created_date",
       "solution_tier_modified_date",
     ],
-    data.tiers.map((t) => ({ ...t }))
+    data.tiers.map((t) => ({
+      ...t,
+      solution_tier_resource_examples: t.solution_tier_resource_examples?.length
+        ? JSON.stringify(t.solution_tier_resource_examples)
+        : "",
+    }))
   );
   xlsx.utils.book_append_sheet(wb, tiersWs, "tiers");
 
@@ -1267,6 +1304,7 @@ async function downloadBulkTemplateWorkbook(data: {
     [
       "task_id",
       "solution_tier_id",
+      "sort_order",
       "task_name",
       "task_implementer",
       "task_time",
@@ -1418,7 +1456,16 @@ const BULK_GLOSSARY: Record<
       { name: "solution_tier_overview_link", description: "Optional link label." },
       { name: "solution_tier_direction", description: "Direction text block." },
       { name: "solution_tier_sop", description: "SOP text block." },
-      { name: "solution_tier_resources", description: "Resources text block." },
+      {
+        name: "solution_tier_resources",
+        description: "Legacy combined resources text (optional; prefer templates / tools / examples columns).",
+      },
+      { name: "solution_tier_resource_templates", description: "Markdown: template links and names." },
+      { name: "solution_tier_resource_tools", description: "Markdown: tools list." },
+      {
+        name: "solution_tier_resource_examples",
+        description: 'JSON array of { "example": string, "date": string }, or empty.',
+      },
       { name: "solution_tier_what_is_it", description: "What this tier is (optional)." },
       { name: "solution_tier_why_is_it_valuable", description: "Why this tier is valuable (optional)." },
       { name: "solution_tier_when_should_it_be_used", description: "When to use this tier (optional)." },
@@ -1443,6 +1490,11 @@ const BULK_GLOSSARY: Record<
     columns: [
       { name: "task_id", description: "Task ID (for example: 4-21). Keep this value unique." },
       { name: "solution_tier_id", description: "Tier ID this task belongs to." },
+      {
+        name: "sort_order",
+        description:
+          "Display order within the tier (integer; lower values appear first). Optional; defaults in the database if omitted.",
+      },
       { name: "task_name", description: "Task name (for example: Conduct interviews)." },
       {
         name: "task_implementer",
@@ -1497,7 +1549,7 @@ const BULK_GLOSSARY: Record<
       { name: "hours_data", description: "Hours in the data / analytics bucket (numeric)." },
       { name: "hours_paid_media", description: "Hours in the paid media bucket (numeric)." },
       { name: "hours_hubspot", description: "Hours in the HubSpot / automation bucket (numeric)." },
-      { name: "hours_other", description: "Hours in the catch-all “other” bucket (numeric)." },
+      { name: "hours_other", description: "Hours in the Ops pricing bucket (stored as hours_other; numeric)." },
       {
         name: "total_hours",
         description:
@@ -1664,7 +1716,7 @@ const BULK_GLOSSARY: Record<
       {
         name: "hour_group",
         description:
-          "Which solution_tier_pricing hours_* column this implementer rolls into: client_services, copy, design, web_dev, video, data, paid_media, hubspot, or other.",
+          "Which solution_tier_pricing hours_* column this implementer rolls into: client_services, copy, design, web_dev, video, data, paid_media, hubspot, or other (displayed in the app as Ops).",
       },
       {
         name: "created_at",
@@ -2376,39 +2428,6 @@ const btnReload: CSSProperties = {
 const link: CSSProperties = { color: "var(--accent)", fontWeight: 600 };
 
 const muted: CSSProperties = { color: "var(--muted)", fontSize: "0.88rem" };
-
-const bannerErr: CSSProperties = {
-  padding: "0.85rem 1.05rem",
-  borderRadius: "var(--radius-lg)",
-  background: "#fef2f2",
-  border: "1px solid #fecaca",
-  color: "var(--danger)",
-  marginBottom: "0.85rem",
-  fontSize: "0.9rem",
-  lineHeight: 1.45,
-};
-
-const bannerOk: CSSProperties = {
-  padding: "0.85rem 1.05rem",
-  borderRadius: "var(--radius-lg)",
-  background: "#ecfdf5",
-  border: "1px solid #a7f3d0",
-  color: "#065f46",
-  marginBottom: "0.85rem",
-  fontSize: "0.9rem",
-  lineHeight: 1.45,
-};
-
-const bannerNote: CSSProperties = {
-  padding: "0.85rem 1.05rem",
-  borderRadius: "var(--radius-lg)",
-  background: "#fffbeb",
-  border: "1px solid #fde68a",
-  color: "#92400e",
-  marginBottom: "0.85rem",
-  fontSize: "0.88rem",
-  lineHeight: 1.45,
-};
 
 const panel: CSSProperties = {
   padding: "1.25rem 1.35rem",

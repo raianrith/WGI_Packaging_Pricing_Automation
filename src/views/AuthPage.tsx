@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   APP_BRAND_NAME,
@@ -6,6 +6,7 @@ import {
   AUTH_HERO_DESCRIPTION,
 } from "../branding";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { friendlyAuthMessage } from "../lib/authMessages";
 import {
   browserKeyConfigurationError,
@@ -18,6 +19,8 @@ type AuthMode = "signin" | "signup" | "forgot";
 const MIN_PASSWORD_LEN = 8;
 
 export function AuthPage() {
+  const { toastError, toastSuccess } = useToast();
+  const envWarnShown = useRef(false);
   const { session, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -29,8 +32,6 @@ export function AuthPage() {
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const keyErr = browserKeyConfigurationError();
@@ -42,18 +43,31 @@ export function AuthPage() {
     }
   }, [from, loading, session, navigate]);
 
+  useEffect(() => {
+    if (hasEnv) {
+      envWarnShown.current = false;
+      return;
+    }
+    if (envWarnShown.current) return;
+    envWarnShown.current = true;
+    toastError(
+      keyErr ??
+        "Add valid Supabase URL and anon/publishable key in `.env` (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY), then restart the dev server."
+    );
+  }, [hasEnv, keyErr, toastError]);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setError(null);
-    setInfo(null);
     const client = getSupabase();
     if (!client) {
-      setError("Supabase isn’t configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.");
+      toastError(
+        "Supabase isn’t configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file."
+      );
       return;
     }
     const em = email.trim();
     if (!em) {
-      setError("Enter your email.");
+      toastError("Enter your email.");
       return;
     }
     if (mode === "forgot") {
@@ -63,18 +77,18 @@ export function AuthPage() {
       });
       setBusy(false);
       if (err) {
-        setError(friendlyAuthMessage(err.message));
+        toastError(friendlyAuthMessage(err.message));
         return;
       }
-      setInfo("Check your email for a password reset link.");
+      toastSuccess("Check your email for a password reset link.");
       return;
     }
     if (!password) {
-      setError("Enter your password.");
+      toastError("Enter your password.");
       return;
     }
     if (mode === "signup" && password.length < MIN_PASSWORD_LEN) {
-      setError(`Use at least ${MIN_PASSWORD_LEN} characters for your password.`);
+      toastError(`Use at least ${MIN_PASSWORD_LEN} characters for your password.`);
       return;
     }
 
@@ -89,10 +103,10 @@ export function AuthPage() {
       });
       setBusy(false);
       if (err) {
-        setError(friendlyAuthMessage(err.message));
+        toastError(friendlyAuthMessage(err.message));
         return;
       }
-      setInfo(
+      toastSuccess(
         "Account created — if email confirmation is enabled in Supabase, check your inbox to verify before signing in."
       );
       setPassword("");
@@ -106,7 +120,7 @@ export function AuthPage() {
     });
     setBusy(false);
     if (err) {
-      setError(friendlyAuthMessage(err.message));
+      toastError(friendlyAuthMessage(err.message));
       return;
     }
     navigate(from, { replace: true });
@@ -165,8 +179,6 @@ export function AuthPage() {
                     className={`auth-tab${mode === "signin" ? " auth-tab--active" : ""}`}
                     onClick={() => {
                       setMode("signin");
-                      setError(null);
-                      setInfo(null);
                     }}
                   >
                     Sign in
@@ -178,8 +190,6 @@ export function AuthPage() {
                     className={`auth-tab${mode === "signup" ? " auth-tab--active" : ""}`}
                     onClick={() => {
                       setMode("signup");
-                      setError(null);
-                      setInfo(null);
                     }}
                   >
                     Sign up
@@ -189,13 +199,6 @@ export function AuthPage() {
                 <h2 className="auth-card__title">Reset password</h2>
               )}
             </header>
-
-            {!hasEnv && (
-              <div className="auth-banner auth-banner--err" role="alert">
-                {keyErr ??
-                  "Add valid Supabase URL and anon/publishable key in `.env` (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY), then restart the dev server."}
-              </div>
-            )}
 
             <form className="auth-form" onSubmit={onSubmit} noValidate>
               <label className="auth-field">
@@ -240,8 +243,6 @@ export function AuthPage() {
                   className="auth-linkish"
                   onClick={() => {
                     setMode("forgot");
-                    setError(null);
-                    setInfo(null);
                   }}
                 >
                   Forgot password?
@@ -254,25 +255,11 @@ export function AuthPage() {
                   className="auth-linkish"
                   onClick={() => {
                     setMode("signin");
-                    setError(null);
-                    setInfo(null);
                   }}
                 >
                   ← Back to sign in
                 </button>
               )}
-
-              {error ? (
-                <p className="auth-banner auth-banner--err" role="alert">
-                  {error}
-                </p>
-              ) : null}
-
-              {info ? (
-                <p className="auth-banner auth-banner--ok" role="status">
-                  {info}
-                </p>
-              ) : null}
 
               <button
                 type="submit"

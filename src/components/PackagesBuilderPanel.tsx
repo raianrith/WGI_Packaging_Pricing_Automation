@@ -1,3 +1,4 @@
+import type { UniqueIdentifier } from "@dnd-kit/core";
 import {
   useCallback,
   useEffect,
@@ -12,7 +13,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
 import { getSupabase } from "../lib/supabase";
+import { persistTaskSortOrdersForTier } from "../lib/persistTaskSortOrdersForTier";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
+import { compareTasksByOrder } from "../lib/taskOrder";
 import {
   computeSparseOverrides,
   mergeTierWithPackageOverrides,
@@ -40,13 +43,16 @@ import {
 } from "../lib/packagePricingTaskOverrides";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
 import type { TierPricingMathConfig } from "../lib/tierPricingMath";
+import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback";
 import { PricingPanel } from "./PricingPanel";
+import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 import { SolutionTierFormUpdateBlock } from "./SolutionTierFormUpdateBlock";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import {
   buildMergedTaskRowsForPackageTier,
   emptyTaskExtensions,
   materializeTaskGroupToPackageExtraTasks,
+  materializeTierVaultTasksToPackageExtraTasks,
   newPackageTaskId,
   parseTaskExtensions,
   pruneTaskOverridesForHidden,
@@ -254,6 +260,8 @@ export type PackagesBuilderPanelProps = {
   styles: PackagesBuilderPanelStyles;
 };
 
+type PkgInlineZone = "pkg_apply_tg" | "pkg_copy_tier";
+
 export function PackagesBuilderPanel({
   subTab,
   packages,
@@ -273,6 +281,21 @@ export function PackagesBuilderPanel({
   styles: s,
 }: PackagesBuilderPanelProps) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnDangerSm, btnSm, tbl, th, td, h2, muted } = s;
+
+  const [pkgInlineFb, setPkgInlineFb] = useState<{
+    zone: PkgInlineZone;
+    message: string;
+    variant: "ok" | "err";
+  } | null>(null);
+
+  const showPkgInline = useCallback(
+    (zone: PkgInlineZone, message: string, variant: "ok" | "err" = "ok") => {
+      setOpOk(null);
+      setOpErr(null);
+      setPkgInlineFb({ zone, message, variant });
+    },
+    [setOpOk, setOpErr]
+  );
 
   const [nameField, setNameField] = useState("");
   const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
@@ -300,6 +323,13 @@ export function PackagesBuilderPanel({
   const [taskForms, setTaskForms] = useState<Record<string, Record<string, TaskOverrideFormRow>>>({});
   const [taskExt, setTaskExt] = useState<Record<string, PackageTaskExtensions>>({});
   const [taskGroupPick, setTaskGroupPick] = useState("");
+  const [pkgCopyTierId, setPkgCopyTierId] = useState("");
+  const [pkgTaskReorderBusy, setPkgTaskReorderBusy] = useState(false);
+
+  useEffect(() => {
+    setPkgCopyTierId("");
+    setPkgInlineFb(null);
+  }, [pkgEditTierId]);
 
   const solutionById = useMemo(() => {
     const m = new Map<string, Solution>();
@@ -740,6 +770,79 @@ export function PackagesBuilderPanel({
     });
   }, [pkgEditTierId, subTab, tasks, taskForms, taskExt]);
 
+  const vaultTasksForEdit = useMemo(
+    () => (pkgEditTierId ? tasks.filter((t) => t.solution_tier_id === pkgEditTierId) : []),
+    [pkgEditTierId, tasks]
+  );
+  const vaultIdsEdit = useMemo(
+    () => new Set(vaultTasksForEdit.map((t) => t.task_id)),
+    [vaultTasksForEdit]
+  );
+
+  const packageVaultDisplayRows = useMemo(
+    () => displayMergedTasks.filter((tr) => vaultIdsEdit.has(tr.task_id)),
+    [displayMergedTasks, vaultIdsEdit]
+  );
+  const packageExtraDisplayRows = useMemo(
+    () => displayMergedTasks.filter((tr) => !vaultIdsEdit.has(tr.task_id)),
+    [displayMergedTasks, vaultIdsEdit]
+  );
+
+  const applyPackageVaultOrderFromIds = useCallback(
+    async (orderedIds: UniqueIdentifier[]) => {
+      const tid = pkgEditTierId;
+      if (!tid) return;
+      const swapped = orderedIds.map(String);
+      const hidden = new Set(taskExt[tid]?.hidden_task_ids ?? []);
+      const hiddenOrdered = tasks
+        .filter((t) => t.solution_tier_id === tid && hidden.has(t.task_id))
+        .sort(compareTasksByOrder)
+        .map((t) => t.task_id);
+      const finalIds = [...swapped, ...hiddenOrdered];
+      const client = getSupabase();
+      if (!client) return;
+      setPkgTaskReorderBusy(true);
+      setOpErr(null);
+      try {
+        const res = await persistTaskSortOrdersForTier(client, tid, finalIds);
+        if (!res.ok) {
+          setOpErr(res.message);
+          return;
+        }
+        await onSaved();
+        setOpOk("Vault task order updated for this tier.");
+      } finally {
+        setPkgTaskReorderBusy(false);
+      }
+    },
+    [onSaved, pkgEditTierId, setOpErr, setOpOk, taskExt, tasks]
+  );
+
+  const applyPackageExtraOrderFromIds = useCallback(
+    (orderedIds: UniqueIdentifier[]) => {
+      const tid = pkgEditTierId;
+      if (!tid) return;
+      const swapped = orderedIds.map(String);
+      setTaskExt((prev) => {
+        const cur = { ...(prev[tid] ?? emptyTaskExtensions()) };
+        const byId = new Map((cur.extra_tasks ?? []).map((e) => [e.package_task_id, e]));
+        cur.extra_tasks = swapped
+          .map((id) => byId.get(id))
+          .filter((e): e is PackageExtraTaskRow => e != null);
+        return { ...prev, [tid]: cur };
+      });
+      setOpOk("Package-only task order updated (save package to persist).");
+    },
+    [pkgEditTierId, setOpOk]
+  );
+
+  const reorderPkgNewDraftsByKeys = useCallback((nextKeys: UniqueIdentifier[]) => {
+    setPkgNewDrafts((prev) => {
+      const m = new Map(prev.map((r) => [r.key, r]));
+      return nextKeys.map((k) => m.get(String(k))).filter((r): r is PkgDraftTaskRow => r != null);
+    });
+  }, []);
+
   const distinctImplementerOptions = useMemo(() => {
     const s = new Set<string>();
     for (const t of tasks) {
@@ -1008,7 +1111,10 @@ export function PackagesBuilderPanel({
   const appendTaskGroup = (tid: string, groupId: string) => {
     const lines = linesByGroup.get(groupId) ?? [];
     const created = materializeTaskGroupToPackageExtraTasks(lines, tasks);
-    if (!created.length) return;
+    if (!created.length) {
+      showPkgInline("pkg_apply_tg", "This template produced no package lines.", "err");
+      return;
+    }
     setTaskExt((prev) => {
       const cur = { ...(prev[tid] ?? emptyTaskExtensions()) };
       cur.extra_tasks = [...(cur.extra_tasks ?? []), ...created];
@@ -1020,6 +1126,44 @@ export function PackagesBuilderPanel({
       return { ...prev, [tid]: tf };
     });
     setTaskGroupPick("");
+    showPkgInline("pkg_apply_tg", `Added ${created.length} line(s). Save package to persist.`, "ok");
+  };
+
+  const appendTierVaultFromOtherTier = (vaultTierId: string) => {
+    if (!pkgCopyTierId.trim()) {
+      showPkgInline("pkg_copy_tier", "Select a tier whose vault checklist you want to clone.", "err");
+      return;
+    }
+    const srcId = pkgCopyTierId.trim();
+    if (srcId === vaultTierId) {
+      showPkgInline(
+        "pkg_copy_tier",
+        "Pick a tier other than this package tier (you're overlaying another tier's vault checklist).",
+        "err"
+      );
+      return;
+    }
+    const created = materializeTierVaultTasksToPackageExtraTasks(tasks, srcId, tiers);
+    if (created.length === 0) {
+      showPkgInline("pkg_copy_tier", "That tier has no vault tasks to copy.", "err");
+      return;
+    }
+    setTaskExt((prev) => {
+      const cur = { ...(prev[vaultTierId] ?? emptyTaskExtensions()) };
+      cur.extra_tasks = [...(cur.extra_tasks ?? []), ...created];
+      return { ...prev, [vaultTierId]: cur };
+    });
+    setTaskForms((prev) => {
+      const tf = { ...(prev[vaultTierId] ?? {}) };
+      for (const e of created) tf[e.package_task_id] = taskToOverrideFormStrings(extraTaskToTaskRowLocal(vaultTierId, e));
+      return { ...prev, [vaultTierId]: tf };
+    });
+    setPkgCopyTierId("");
+    showPkgInline(
+      "pkg_copy_tier",
+      `Added ${created.length} package-only line(s) from tier ${srcId}. Save package to persist.`,
+      "ok"
+    );
   };
 
   function extraTaskToTaskRowLocal(tierId: string, e: PackageExtraTaskRow): TaskRow {
@@ -1116,11 +1260,6 @@ export function PackagesBuilderPanel({
     </>
   );
 
-  const vaultTasksForEdit = pkgEditTierId
-    ? tasks.filter((t) => t.solution_tier_id === pkgEditTierId)
-    : [];
-  const vaultIdsEdit = new Set(vaultTasksForEdit.map((t) => t.task_id));
-
   const origSell = pkgEditTierId ? vaultSellForTier(pkgEditTierId) : null;
   const nextSell = pkgEditTierId ? previewSellForTier(pkgEditTierId) : null;
   const delta =
@@ -1210,6 +1349,7 @@ export function PackagesBuilderPanel({
                   const v = e.target.value || null;
                   setPkgEditTierId(v);
                   setPkgAutofillFromId("");
+                  setPkgCopyTierId("");
                   clearPkgTaskEdit();
                   setPkgNewDrafts([newPkgDraftTaskRow()]);
                   if (v) refreshPackagePricingSeed(v);
@@ -1322,10 +1462,10 @@ export function PackagesBuilderPanel({
                     Section 2 — Tasks &amp; pricing (package overlay)
                   </h3>
                   <p style={{ ...muted, marginTop: 0, maxWidth: "62ch" }}>
-                    Same task and pricing workflow as Solutions Builder: pick a task to edit, add rows, then use{" "}
-                    <strong>Save package</strong> below to persist <code style={{ fontSize: "0.85em" }}>task_overrides</code>,{" "}
-                    <code style={{ fontSize: "0.85em" }}>task_extensions</code>, and{" "}
-                    <code style={{ fontSize: "0.85em" }}>pricing_overrides</code> on this link only.
+                    Same task and pricing workflow as Solutions Builder: pick a task to edit, add rows, clone another
+                    tier&apos;s vault checklist into package extras, then use <strong>Save package</strong> below to persist{" "}
+                    <code style={{ fontSize: "0.85em" }}>task_overrides</code>, <code style={{ fontSize: "0.85em" }}>task_extensions</code>
+                    , and <code style={{ fontSize: "0.85em" }}>pricing_overrides</code> on this link only.
                   </p>
 
                   {taskGroups.length > 0 ? (
@@ -1355,6 +1495,49 @@ export function PackagesBuilderPanel({
                         >
                           Apply to tier
                         </button>
+                        <InlineActionFeedback model={pickInlineFeedback(pkgInlineFb, "pkg_apply_tg")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {pkgEditTierId && tiers.some((t) => t.solution_tier_id !== pkgEditTierId) ? (
+                    <div style={{ ...tierSectionBox, marginTop: 12, marginBottom: 12 }}>
+                      <p style={{ ...sectionTitle, marginBottom: 6 }}>Add tasks from another tier&apos;s vault</p>
+                      <p style={{ ...muted, marginTop: 0, marginBottom: 8, maxWidth: "58ch", fontSize: "0.86rem" }}>
+                        Appends package-only extras that mirror vault tasks from the tier you choose (editable before save).
+                      </p>
+                      <label style={{ ...lbl, maxWidth: 440, display: "block" }}>
+                        <FieldCaption>Source tier (vault)</FieldCaption>
+                        <select
+                          style={input}
+                          value={pkgCopyTierId}
+                          onChange={(e) => setPkgCopyTierId(e.target.value)}
+                        >
+                          <option value="">— Select a tier —</option>
+                          {[...tiers]
+                            .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))
+                            .filter((t) => t.solution_tier_id !== pkgEditTierId)
+                            .map((t) => {
+                              const n = tasks.filter((k) => k.solution_tier_id === t.solution_tier_id).length;
+                              return (
+                                <option key={t.solution_tier_id} value={t.solution_tier_id} disabled={n === 0}>
+                                  {t.solution_tier_id} — {t.solution_tier_name} (
+                                  {solutionById.get(t.solution_id)?.solution_name ?? t.solution_id}) [{n} task(s)]
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </label>
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button
+                          type="button"
+                          style={btnSm}
+                          disabled={!pkgCopyTierId.trim() || !pkgEditTierId}
+                          onClick={() => pkgEditTierId && appendTierVaultFromOtherTier(pkgEditTierId)}
+                        >
+                          Add as package extras
+                        </button>
+                        <InlineActionFeedback model={pickInlineFeedback(pkgInlineFb, "pkg_copy_tier")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                       </div>
                     </div>
                   ) : null}
@@ -1364,51 +1547,109 @@ export function PackagesBuilderPanel({
                     <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
                       <thead>
                         <tr>
+                          <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                           <th style={th}>Id</th>
                           <th style={th}>Name</th>
                           <th style={th} />
                         </tr>
                       </thead>
-                      <tbody>
-                        {displayMergedTasks.map((tr) => {
-                          const isVault = vaultIdsEdit.has(tr.task_id);
-                          return (
-                            <tr key={tr.task_id}>
-                              <td style={td}>
-                                <code style={{ fontSize: "0.85em" }}>{tr.task_id}</code>
-                                {!isVault ? (
-                                  <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>package-only</div>
-                                ) : null}
-                              </td>
-                              <td style={td}>{tr.task_name}</td>
-                              <td style={td}>
-                                <div className="admin-actions-row" style={{ marginTop: 0 }}>
-                                  <button type="button" style={btnSm} onClick={() => startPkgEditTask(tr)}>
-                                    Edit
-                                  </button>
-                                  {isVault ? (
+                      <TaskSortableList
+                        itemIds={packageVaultDisplayRows.map((tr) => tr.task_id)}
+                        disabled={
+                          !!pkgTaskEditId || pkgTaskReorderBusy || packageVaultDisplayRows.length === 0
+                        }
+                        onReorder={applyPackageVaultOrderFromIds}
+                      >
+                        <tbody>
+                          {packageVaultDisplayRows.map((tr) => (
+                            <SortableTableRowTr
+                              key={tr.task_id}
+                              id={tr.task_id}
+                              disabled={!!pkgTaskEditId || pkgTaskReorderBusy}
+                              renderCells={(dragHandle) => [
+                                <td style={td} key="drag">
+                                  {dragHandle}
+                                </td>,
+                                <td style={td} key="id">
+                                  <code style={{ fontSize: "0.85em" }}>{tr.task_id}</code>
+                                </td>,
+                                <td style={td} key="nm">
+                                  {tr.task_name}
+                                </td>,
+                                <td style={td} key="act">
+                                  <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                                    <button
+                                      type="button"
+                                      style={btnSm}
+                                      onClick={() => startPkgEditTask(tr)}
+                                      disabled={!!pkgTaskReorderBusy}
+                                    >
+                                      Edit
+                                    </button>{" "}
                                     <button
                                       type="button"
                                       style={btnDangerSm}
-                                      onClick={() => hideVaultTask(pkgEditTierId, tr.task_id)}
+                                      onClick={() => hideVaultTask(pkgEditTierId!, tr.task_id)}
+                                      disabled={!!pkgTaskReorderBusy}
                                     >
                                       Hide
                                     </button>
-                                  ) : (
+                                  </div>
+                                </td>,
+                              ]}
+                            />
+                          ))}
+                        </tbody>
+                      </TaskSortableList>
+                      <TaskSortableList
+                        itemIds={packageExtraDisplayRows.map((tr) => tr.task_id)}
+                        disabled={
+                          !!pkgTaskEditId || pkgTaskReorderBusy || packageExtraDisplayRows.length === 0
+                        }
+                        onReorder={applyPackageExtraOrderFromIds}
+                      >
+                        <tbody>
+                          {packageExtraDisplayRows.map((tr) => (
+                            <SortableTableRowTr
+                              key={tr.task_id}
+                              id={tr.task_id}
+                              disabled={!!pkgTaskEditId || pkgTaskReorderBusy}
+                              renderCells={(dragHandle) => [
+                                <td style={td} key="drag">
+                                  {dragHandle}
+                                </td>,
+                                <td style={td} key="id">
+                                  <code style={{ fontSize: "0.85em" }}>{tr.task_id}</code>
+                                  <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>package-only</div>
+                                </td>,
+                                <td style={td} key="nm">
+                                  {tr.task_name}
+                                </td>,
+                                <td style={td} key="act">
+                                  <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                                    <button
+                                      type="button"
+                                      style={btnSm}
+                                      onClick={() => startPkgEditTask(tr)}
+                                      disabled={!!pkgTaskReorderBusy}
+                                    >
+                                      Edit
+                                    </button>{" "}
                                     <button
                                       type="button"
                                       style={btnDangerSm}
-                                      onClick={() => removeExtraTask(pkgEditTierId, tr.task_id)}
+                                      onClick={() => removeExtraTask(pkgEditTierId!, tr.task_id)}
+                                      disabled={!!pkgTaskReorderBusy}
                                     >
                                       Remove
                                     </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
+                                  </div>
+                                </td>,
+                              ]}
+                            />
+                          ))}
+                        </tbody>
+                      </TaskSortableList>
                     </table>
                   </div>
 
@@ -1484,6 +1725,7 @@ export function PackagesBuilderPanel({
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
                             <tr>
+                              <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                               <th style={th}>Task name</th>
                               <th style={th}>Implementer</th>
                               <th style={th}>Time</th>
@@ -1493,85 +1735,109 @@ export function PackagesBuilderPanel({
                               <th style={{ ...th, width: 90 }} />
                             </tr>
                           </thead>
-                          <tbody>
-                            {pkgNewDrafts.map((d) => (
-                              <tr key={d.key}>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    list={taskNameDatalistId}
-                                    value={d.name}
-                                    onChange={(e) => onPkgNewTaskNameChange(d.key, e.target.value)}
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <TaskImplementerSelect
-                                    value={d.impl}
-                                    options={distinctImplementerOptions}
-                                    inputStyle={input}
-                                    onChange={(v) =>
-                                      setPkgNewDrafts((list) => list.map((r) => (r.key === d.key ? { ...r, impl: v } : r)))
-                                    }
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.time}
-                                    onChange={(e) =>
-                                      setPkgNewDrafts((list) =>
-                                        list.map((r) => (r.key === d.key ? { ...r, time: e.target.value } : r))
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dur}
-                                    onChange={(e) =>
-                                      setPkgNewDrafts((list) =>
-                                        list.map((r) => (r.key === d.key ? { ...r, dur: e.target.value } : r))
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.dep}
-                                    onChange={(e) =>
-                                      setPkgNewDrafts((list) =>
-                                        list.map((r) => (r.key === d.key ? { ...r, dep: e.target.value } : r))
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <input
-                                    style={input}
-                                    value={d.notes}
-                                    onChange={(e) =>
-                                      setPkgNewDrafts((list) =>
-                                        list.map((r) => (r.key === d.key ? { ...r, notes: e.target.value } : r))
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td style={td}>
-                                  <button
-                                    type="button"
-                                    style={btnDangerSm}
-                                    onClick={() =>
-                                      setPkgNewDrafts((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== d.key)))
-                                    }
-                                  >
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
+                          <TaskSortableList
+                            itemIds={pkgNewDrafts.map((d) => d.key)}
+                            onReorder={reorderPkgNewDraftsByKeys}
+                          >
+                            <tbody>
+                              {pkgNewDrafts.map((d) => (
+                                <SortableTableRowTr
+                                  key={d.key}
+                                  id={d.key}
+                                  renderCells={(dragHandle) => [
+                                    <td style={td} key="drag">
+                                      {dragHandle}
+                                    </td>,
+                                    <td style={td} key="nm">
+                                      <input
+                                        style={input}
+                                        list={taskNameDatalistId}
+                                        value={d.name}
+                                        onChange={(e) => onPkgNewTaskNameChange(d.key, e.target.value)}
+                                      />
+                                    </td>,
+                                    <td style={td} key="impl">
+                                      <TaskImplementerSelect
+                                        value={d.impl}
+                                        options={distinctImplementerOptions}
+                                        inputStyle={input}
+                                        onChange={(v) =>
+                                          setPkgNewDrafts((list) =>
+                                            list.map((r) => (r.key === d.key ? { ...r, impl: v } : r))
+                                          )
+                                        }
+                                      />
+                                    </td>,
+                                    <td style={td} key="time">
+                                      <input
+                                        style={input}
+                                        value={d.time}
+                                        onChange={(e) =>
+                                          setPkgNewDrafts((list) =>
+                                            list.map((r) =>
+                                              r.key === d.key ? { ...r, time: e.target.value } : r
+                                            )
+                                          )
+                                        }
+                                      />
+                                    </td>,
+                                    <td style={td} key="dur">
+                                      <input
+                                        style={input}
+                                        value={d.dur}
+                                        onChange={(e) =>
+                                          setPkgNewDrafts((list) =>
+                                            list.map((r) =>
+                                              r.key === d.key ? { ...r, dur: e.target.value } : r
+                                            )
+                                          )
+                                        }
+                                      />
+                                    </td>,
+                                    <td style={td} key="dep">
+                                      <input
+                                        style={input}
+                                        value={d.dep}
+                                        onChange={(e) =>
+                                          setPkgNewDrafts((list) =>
+                                            list.map((r) =>
+                                              r.key === d.key ? { ...r, dep: e.target.value } : r
+                                            )
+                                          )
+                                        }
+                                      />
+                                    </td>,
+                                    <td style={td} key="notes">
+                                      <input
+                                        style={input}
+                                        value={d.notes}
+                                        onChange={(e) =>
+                                          setPkgNewDrafts((list) =>
+                                            list.map((r) =>
+                                              r.key === d.key ? { ...r, notes: e.target.value } : r
+                                            )
+                                          )
+                                        }
+                                      />
+                                    </td>,
+                                    <td style={td} key="rm">
+                                      <button
+                                        type="button"
+                                        style={btnDangerSm}
+                                        onClick={() =>
+                                          setPkgNewDrafts((list) =>
+                                            list.length <= 1 ? list : list.filter((r) => r.key !== d.key)
+                                          )
+                                        }
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>,
+                                  ]}
+                                />
+                              ))}
+                            </tbody>
+                          </TaskSortableList>
                         </table>
                       </div>
                       <div className="admin-actions-row" style={{ marginTop: 10 }}>

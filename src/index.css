@@ -4570,24 +4570,26 @@ button {
   outline-offset: -2px;
 }
 
-.agency-catalog-tier-sheet__pkg {
+.agency-catalog-tier-sheet__tier-title {
   font-weight: 650;
   color: var(--text);
+  line-height: 1.32;
 }
 
-.agency-catalog-tier-sheet__tiermeta {
+.agency-catalog-tier-sheet__submeta {
   margin-top: 0.28rem;
   font-size: 0.76rem;
   line-height: 1.38;
   color: var(--muted);
 }
 
-.agency-catalog-tier-sheet__soldot {
+.agency-catalog-tier-sheet__subdot {
   opacity: 0.72;
 }
 
-.agency-catalog-tier-sheet__sol {
-  font-weight: 500;
+.agency-catalog-tier-sheet__sol-name {
+  font-weight: 600;
+  color: rgba(28, 25, 23, 0.58);
 }
 
 .agency-catalog-tier-sheet__tags {

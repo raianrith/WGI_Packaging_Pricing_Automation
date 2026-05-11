@@ -214,9 +214,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const [catalogTierTableQuery, setCatalogTierTableQuery] = useState("");
   const catalogTierTableSearchId = useId();
   const [catalogTierSort, setCatalogTierSort] = useState<{
-    col: "pname" | "price" | "hours" | "taxable" | "tags";
+    col: "tier" | "price" | "hours" | "taxable" | "tags";
     dir: "asc" | "desc";
-  }>({ col: "pname", dir: "asc" });
+  }>({ col: "tier", dir: "asc" });
   const solSearchFieldId = useId();
   const pkgSearchFieldId = useId();
   const tierSearchFieldId = useId();
@@ -728,9 +728,14 @@ export function AgencyView({ mode }: AgencyViewProps) {
       const tieTier = sortId(a.tierId, b.tierId);
       let c = 0;
       switch (catalogTierSort.col) {
-        case "pname":
-          c = a.pname.localeCompare(b.pname, undefined, { sensitivity: "base" }) * dir;
+        case "tier": {
+          const byTier = a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" }) * dir;
+          c =
+            byTier !== 0
+              ? byTier
+              : a.solutionName.localeCompare(b.solutionName, undefined, { sensitivity: "base" }) * dir;
           break;
+        }
         case "price":
           c = cmpNum(a.priceNum, b.priceNum);
           break;
@@ -739,7 +744,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
           break;
         case "taxable": {
           const t = (a.taxableSort - b.taxableSort) * dir;
-          c = t !== 0 ? t : a.pname.localeCompare(b.pname, undefined, { sensitivity: "base" });
+          c =
+            t !== 0
+              ? t
+              : a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" });
           break;
         }
         case "tags":
@@ -756,7 +764,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return sorted;
   }, [catalogTierTableRows, catalogTierTableQuery, catalogTierSort]);
 
-  const toggleCatalogTierSort = (col: "pname" | "price" | "hours" | "taxable" | "tags") => {
+  const toggleCatalogTierSort = (col: "tier" | "price" | "hours" | "taxable" | "tags") => {
     setCatalogTierSort((prev) =>
       prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
     );
@@ -1474,7 +1482,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                       className="agency-catalog-tier-sheet__filter-input"
                       value={catalogTierTableQuery}
                       onChange={(e) => setCatalogTierTableQuery(e.target.value)}
-                      placeholder="Package, tier, solution, tags…"
+                      placeholder="Tier, solution, package, tags…"
                       autoComplete="off"
                     />
                     {catalogTierTableQuery.trim() ? (
@@ -1500,18 +1508,18 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           <button
                             type="button"
                             className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("pname")}
+                            onClick={() => toggleCatalogTierSort("tier")}
                             aria-sort={
-                              catalogTierSort.col === "pname"
+                              catalogTierSort.col === "tier"
                                 ? catalogTierSort.dir === "asc"
                                   ? "ascending"
                                   : "descending"
                                 : "none"
                             }
                           >
-                            Package
+                            Solution tier
                             <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "pname" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
+                              {catalogTierSort.col === "tier" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
                             </span>
                           </button>
                         </th>
@@ -1626,14 +1634,14 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 setFilterSol("");
                               }
                             }}
-                            title={`${r.solutionName} → ${r.tierName}`}
+                            title={`${r.tierName} · ${r.solutionName}`}
                           >
                             <td>
-                              <div className="agency-catalog-tier-sheet__pkg">{r.pname}</div>
-                              <div className="agency-catalog-tier-sheet__tiermeta">
-                                <span>{r.tierName}</span>
-                                <span className="agency-catalog-tier-sheet__soldot"> · </span>
-                                <span className="agency-catalog-tier-sheet__sol">{r.solutionName}</span>
+                              <div className="agency-catalog-tier-sheet__tier-title">{r.tierName}</div>
+                              <div className="agency-catalog-tier-sheet__submeta">
+                                <span className="agency-catalog-tier-sheet__sol-name">{r.solutionName}</span>
+                                <span className="agency-catalog-tier-sheet__subdot"> · </span>
+                                <span>{r.pname}</span>
                               </div>
                             </td>
                             <td className="agency-catalog-tier-sheet__cell--num">{r.priceDisplay}</td>

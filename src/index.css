@@ -1277,6 +1277,110 @@ button {
   color: var(--muted);
 }
 
+.agency-kpi-panel__head--with-toggle {
+  text-align: inherit;
+}
+
+.agency-kpi-panel__scope--tight {
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 0.38rem;
+  max-width: 44rem;
+  text-align: left;
+}
+
+.agency-catalog-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.agency-catalog-segment {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  align-self: center;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(226, 220, 211, 0.95);
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.05),
+    0 0 0 1px rgba(255, 252, 247, 0.6) inset;
+  gap: 3px;
+}
+
+.agency-catalog-segment__btn {
+  flex: 1 1 0;
+  min-width: 7.75rem;
+  margin: 0;
+  padding: 0.5rem 0.95rem;
+  border: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--muted);
+  background: transparent;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.14s ease;
+}
+
+.agency-catalog-segment__btn:hover:not(.agency-catalog-segment__btn--active) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.agency-catalog-segment__btn--active {
+  color: #fff;
+  background: linear-gradient(165deg, rgba(16, 104, 87, 0.98) 0%, rgba(10, 83, 68, 0.98) 100%);
+  box-shadow:
+    0 2px 10px rgba(13, 92, 77, 0.22),
+    0 1px 0 rgba(255, 255, 255, 0.22) inset;
+}
+
+.agency-catalog-segment__btn--active:active {
+  transform: scale(0.99);
+}
+
+.agency-catalog-segment__btn:focus-visible {
+  outline: 2px solid rgba(13, 92, 77, 0.42);
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .agency-catalog-segment__btn {
+    min-width: 0;
+    padding: 0.48rem 0.72rem;
+    font-size: 0.76rem;
+  }
+
+  .agency-catalog-segment {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .agency-catalog-view-head .agency-catalog-segment {
+    flex: 1 1 100%;
+    justify-content: stretch;
+    box-sizing: border-box;
+  }
+}
+
+.agency-catalog-view-head .agency-kpi-panel__title {
+  text-align: left;
+}
+
 .agency-kpi-panel__grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -4320,6 +4424,182 @@ button {
 
 .agency-package-matrix__table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Catalog: all tiers spreadsheet (Solutions Overview) */
+.agency-catalog-tier-sheet {
+  margin-bottom: 1.45rem;
+  padding: 1rem 1.15rem 1.08rem;
+  background: linear-gradient(180deg, #fffcf7 0%, #faf8f3 100%);
+  border: 1px solid rgba(226, 220, 211, 0.9);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.agency-catalog-tier-sheet__toolbar {
+  margin-bottom: 0.75rem;
+}
+
+.agency-catalog-tier-sheet__filter-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.32rem;
+}
+
+.agency-catalog-tier-sheet__filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.agency-catalog-tier-sheet__filter-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.45rem 0.62rem;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 220, 211, 0.95);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.agency-catalog-tier-sheet__clear {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.36rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 220, 211, 0.95);
+  background: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.agency-catalog-tier-sheet__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.79rem;
+  line-height: 1.42;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.agency-catalog-tier-sheet__scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 220, 211, 0.85);
+  background: rgba(255, 252, 247, 0.92);
+}
+
+.agency-catalog-tier-sheet__table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.agency-catalog-tier-sheet__table th {
+  vertical-align: bottom;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.agency-catalog-tier-sheet__table th,
+.agency-catalog-tier-sheet__table td {
+  padding: 0.52rem 0.72rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(226, 220, 211, 0.72);
+}
+
+.agency-catalog-tier-sheet__cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.agency-catalog-tier-sheet__col--narrow {
+  width: 5.75rem;
+}
+
+.agency-catalog-tier-sheet__col--tax {
+  width: 8rem;
+}
+
+.agency-catalog-tier-sheet__th-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.agency-catalog-tier-sheet__th-btn:hover {
+  color: var(--text);
+}
+
+.agency-catalog-tier-sheet__sort {
+  font-weight: 600;
+}
+
+.agency-catalog-tier-sheet__data-row {
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.agency-catalog-tier-sheet__data-row:hover {
+  background: rgba(13, 92, 77, 0.05);
+}
+
+.agency-catalog-tier-sheet__data-row:focus-visible {
+  outline: 2px solid rgba(13, 92, 77, 0.45);
+  outline-offset: -2px;
+}
+
+.agency-catalog-tier-sheet__pkg {
+  font-weight: 650;
+  color: var(--text);
+}
+
+.agency-catalog-tier-sheet__tiermeta {
+  margin-top: 0.28rem;
+  font-size: 0.76rem;
+  line-height: 1.38;
+  color: var(--muted);
+}
+
+.agency-catalog-tier-sheet__soldot {
+  opacity: 0.72;
+}
+
+.agency-catalog-tier-sheet__sol {
+  font-weight: 500;
+}
+
+.agency-catalog-tier-sheet__tags {
+  max-width: 22rem;
+  word-break: break-word;
+}
+
+.agency-catalog-tier-sheet__empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.86rem;
+  padding: 1.65rem 0.85rem !important;
 }
 
 .visually-hidden {

@@ -997,6 +997,80 @@ export function TaskGroupBuilderPanel({
     [editLineId, logAudit, onRefresh, setOpOk]
   );
 
+  const duplicateLine = useCallback(
+    async (r: TaskGroupLineRow) => {
+      const client = getSupabase();
+      if (!client) return;
+      setOpErr(null);
+      setOpOk(null);
+      setSaving(true);
+      try {
+        const groupLines = linesByGroup.get(r.task_group_id) ?? [];
+        const toBump = groupLines
+          .filter((l) => l.sort_order > r.sort_order)
+          .sort((a, b) => b.sort_order - a.sort_order);
+        for (const l of toBump) {
+          const { error } = await client
+            .from("task_group_lines")
+            .update({ sort_order: l.sort_order + 1 })
+            .eq("id", l.id);
+          if (error) {
+            pushError(error.message);
+            return;
+          }
+        }
+        const { data, error } = await client
+          .from("task_group_lines")
+          .insert({
+            task_group_id: r.task_group_id,
+            sort_order: r.sort_order + 1,
+            line_type: r.line_type,
+            source_task_id: r.source_task_id,
+            task_name: r.task_name,
+            task_implementer: r.task_implementer,
+            hours: r.hours,
+          })
+          .select("id")
+          .single();
+        if (error) {
+          pushError(error.message);
+          return;
+        }
+        await logAudit(client, {
+          entityType: "task_group_lines",
+          entityId: String(data?.id ?? ""),
+          action: "insert",
+          before: null,
+          after: { task_group_id: r.task_group_id, line_type: r.line_type },
+        });
+        setOpOk("Line duplicated.");
+        notifyPackagingDataChanged();
+        await onRefresh();
+      } finally {
+        setSaving(false);
+      }
+    },
+    [linesByGroup, logAudit, onRefresh, setOpErr, setOpOk]
+  );
+
+  const duplicateCreateDraftLine = useCallback((d: LineDraftItem) => {
+    setCreateLineDraft((list) => {
+      const i = list.findIndex((x) => x.key === d.key);
+      if (i === -1) return list;
+      const copy: LineDraftItem =
+        d.line_type === "archetype"
+          ? {
+              key: crypto.randomUUID(),
+              line_type: "archetype",
+              name: d.name,
+              implementer: d.implementer,
+              hours: d.hours,
+            }
+          : { key: crypto.randomUUID(), line_type: "copy_from_task", taskId: d.taskId };
+      return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
+    });
+  }, []);
+
   const startEditGroup = (g: TaskGroupRow) => {
     setEditGroupId(g.id);
     setEditGroupName(g.name);
@@ -1252,15 +1326,19 @@ export function TaskGroupBuilderPanel({
                     <li key={d.key} className="admin-tg-draft-list__item">
                       <span className="admin-tg-draft-list__n">{i + 1}</span>
                       <span className="admin-tg-draft-list__line">{summarizeDraft(d, tasks, tiers, solutions)}</span>
-                      <button
-                        type="button"
-                        className="admin-tg-draft-list__remove"
-                        style={btnDangerSm}
-                        onClick={() => setCreateLineDraft((x) => x.filter((y) => y.key !== d.key))}
-                        disabled={saving}
-                      >
-                        Remove
-                      </button>
+                      <span className="admin-tg-draft-list__actions">
+                        <button type="button" style={btn} onClick={() => duplicateCreateDraftLine(d)} disabled={saving}>
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          style={btnDangerSm}
+                          onClick={() => setCreateLineDraft((x) => x.filter((y) => y.key !== d.key))}
+                          disabled={saving}
+                        >
+                          Remove
+                        </button>
+                      </span>
                     </li>
                   ))}
                 </ol>
@@ -1434,6 +1512,9 @@ export function TaskGroupBuilderPanel({
                       <td style={td}>
                         <button type="button" style={btn} onClick={() => startEditLine(r)} disabled={saving}>
                           Edit
+                        </button>{" "}
+                        <button type="button" style={btn} onClick={() => void duplicateLine(r)} disabled={saving}>
+                          Copy
                         </button>{" "}
                         <button type="button" style={btnDangerSm} onClick={() => void removeLine(r)} disabled={saving}>
                           Remove

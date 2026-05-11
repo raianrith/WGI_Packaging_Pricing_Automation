@@ -88,7 +88,6 @@ function tierHoursLine(pricing: SolutionTierPricing | null): string {
 
 function tierPitchText(t: SolutionTier): string {
   const pick =
-    t.solution_tier_described_to_client?.trim() ||
     t.solution_tier_overview?.trim() ||
     t.solution_tier_why_is_it_valuable?.trim() ||
     "";
@@ -768,7 +767,6 @@ function tierCatalogDetailBlocks(t: SolutionTier, pr: SolutionTierPricing | null
             <dd className="roadmap-details-dd">{pkgLine}</dd>
           </>
         ) : null}
-        {prose("Described to client", t.solution_tier_described_to_client)}
         {prose("Overview", t.solution_tier_overview)}
         {prose("Why valuable", t.solution_tier_why_is_it_valuable)}
         {prose("When to use", t.solution_tier_when_should_it_be_used)}

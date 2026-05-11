@@ -17,7 +17,6 @@ export const PACKAGE_TIER_OVERRIDE_KEYS = [
   "solution_tier_out_of_scope",
   "solution_tier_final_deliverable",
   "solution_tier_how_do_we_get_this_work_done",
-  "solution_tier_described_to_client",
 ] as const;
 
 export type PackageTierOverrideKey = (typeof PACKAGE_TIER_OVERRIDE_KEYS)[number];
@@ -133,5 +132,4 @@ export const PACKAGE_TIER_FORM_FIELDS: {
   { key: "solution_tier_out_of_scope", label: "Out of scope", multiline: true },
   { key: "solution_tier_final_deliverable", label: "Final deliverable", multiline: true },
   { key: "solution_tier_how_do_we_get_this_work_done", label: "How we get this work done", multiline: true },
-  { key: "solution_tier_described_to_client", label: "Described to client", multiline: true },
 ];

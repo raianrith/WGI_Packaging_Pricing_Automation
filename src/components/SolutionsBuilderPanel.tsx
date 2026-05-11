@@ -15,6 +15,7 @@ import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
 import type {
   ImplementerHourGroupRow,
+  PackageSolutionTier,
   PricingHourGroupKey,
   Solution,
   SolutionTier,
@@ -374,6 +375,7 @@ export function SolutionsBuilderPanel({
   implementerHourGroups = [],
   taskGroups = [],
   taskGroupLines = [],
+  packageTiers = [],
   onSaved,
   setOpErr,
   setOpOk,
@@ -387,6 +389,8 @@ export function SolutionsBuilderPanel({
   tiers: SolutionTier[];
   tasks: TaskRow[];
   tierPricing: SolutionTierPricing[];
+  /** Used only to warn how many package links will drop when deleting a tier (DB cascades). */
+  packageTiers?: PackageSolutionTier[];
   implementerHourGroups?: ImplementerHourGroupRow[];
   taskGroups?: TaskGroupRow[];
   taskGroupLines?: TaskGroupLineRow[];
@@ -434,7 +438,6 @@ export function SolutionsBuilderPanel({
   const [tOutScope, setTOutScope] = useState("");
   const [tFinalDeliverable, setTFinalDeliverable] = useState("");
   const [tHowWorkDone, setTHowWorkDone] = useState("");
-  const [tDescribedToClient, setTDescribedToClient] = useState("");
   const [tResTpl, setTResTpl] = useState("");
   const [tResTools, setTResTools] = useState("");
   const [tResExamples, setTResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
@@ -486,7 +489,6 @@ export function SolutionsBuilderPanel({
     setTOutScope("");
     setTFinalDeliverable("");
     setTHowWorkDone("");
-    setTDescribedToClient("");
     setTResTpl("");
     setTResTools("");
     setTResExamples([emptyResourceExampleRow()]);
@@ -576,7 +578,7 @@ export function SolutionsBuilderPanel({
     const t = tiers.find((x) => x.solution_tier_id === value);
     if (!t) return;
     setCreateAutofillFrom(t);
-    setTName(t.solution_tier_name);
+    setTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
     setTOwner(t.solution_tier_owner ?? "");
     setTSop(t.solution_tier_sop ?? "");
     setTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -587,7 +589,6 @@ export function SolutionsBuilderPanel({
     setTOutScope(t.solution_tier_out_of_scope ?? "");
     setTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
-    setTDescribedToClient(t.solution_tier_described_to_client ?? "");
     {
       const h = hydrateTierResourceEditorState(t);
       setTResTpl(h.templates);
@@ -706,7 +707,7 @@ export function SolutionsBuilderPanel({
       solution_tier_out_of_scope: blankToNull(tOutScope),
       solution_tier_final_deliverable: blankToNull(tFinalDeliverable),
       solution_tier_how_do_we_get_this_work_done: blankToNull(tHowWorkDone),
-      solution_tier_described_to_client: blankToNull(tDescribedToClient),
+      solution_tier_described_to_client: null,
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -865,7 +866,7 @@ export function SolutionsBuilderPanel({
       solution_tier_out_of_scope: blankToNull(tOutScope),
       solution_tier_final_deliverable: blankToNull(tFinalDeliverable),
       solution_tier_how_do_we_get_this_work_done: blankToNull(tHowWorkDone),
-      solution_tier_described_to_client: blankToNull(tDescribedToClient),
+      solution_tier_described_to_client: null,
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -896,7 +897,6 @@ export function SolutionsBuilderPanel({
     setTOutScope("");
     setTFinalDeliverable("");
     setTHowWorkDone("");
-    setTDescribedToClient("");
     setTResTpl("");
     setTResTools("");
     setTResExamples([emptyResourceExampleRow()]);
@@ -993,6 +993,19 @@ export function SolutionsBuilderPanel({
     setDraftTasks((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
   };
 
+  const duplicateDraftTaskRow = (key: string) => {
+    setDraftTasks((list) => {
+      const i = list.findIndex((r) => r.key === key);
+      if (i === -1) return list;
+      const row = list[i];
+      const copy: DraftTaskRow = {
+        ...row,
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      };
+      return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
+    });
+  };
+
   const reorderDraftTasksByKeys = useCallback((nextKeys: UniqueIdentifier[]) => {
     setDraftTasks((prev) => {
       const m = new Map(prev.map((r) => [r.key, r]));
@@ -1017,6 +1030,9 @@ export function SolutionsBuilderPanel({
   /** Inline rename: `solution_id` being edited in the Solutions table (update tab). */
   const [solutionRenameId, setSolutionRenameId] = useState<string | null>(null);
   const [solutionRenameDraft, setSolutionRenameDraft] = useState("");
+  /** Inline rename: `solution_tier_id` being edited in the tier summary/detail tables (update tab). */
+  const [tierRenameId, setTierRenameId] = useState<string | null>(null);
+  const [tierRenameDraft, setTierRenameDraft] = useState("");
   /** Keep update page concise until user chooses to edit a solution. */
   const [showUpdateDetails, setShowUpdateDetails] = useState(false);
 
@@ -1044,7 +1060,6 @@ export function SolutionsBuilderPanel({
   const [updTOutScope, setUpdTOutScope] = useState("");
   const [updTFinalDeliverable, setUpdTFinalDeliverable] = useState("");
   const [updTHowWorkDone, setUpdTHowWorkDone] = useState("");
-  const [updTDescribedToClient, setUpdTDescribedToClient] = useState("");
   const [updResTpl, setUpdResTpl] = useState("");
   const [updResTools, setUpdResTools] = useState("");
   const [updResExamples, setUpdResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
@@ -1072,6 +1087,13 @@ export function SolutionsBuilderPanel({
     if (!updTierFocus) return [];
     return tasks.filter((k) => k.solution_tier_id === updTierFocus).sort(compareTasksByOrder);
   }, [tasks, updTierFocus]);
+
+  /** Tier-only wizard: copy-from-tier / task-group apply saves tasks immediately; drafts are only for new manual rows. */
+  const tierOnlySavedVaultTasks = useMemo(() => {
+    const tid = ctxTierId.trim();
+    if (!tid) return [];
+    return tasks.filter((k) => k.solution_tier_id === tid).sort(compareTasksByOrder);
+  }, [tasks, ctxTierId]);
 
   const updTierTotalTaskHours = useMemo(() => {
     let sum = 0;
@@ -1167,6 +1189,35 @@ export function SolutionsBuilderPanel({
     return rollUpTaskTimesByPricingGroup(tasksForHourRollup, implementerToGroup);
   }, [subTab, implementerHourGroups, tasksForHourRollup, implementerToGroup]);
 
+  /** “New tier on existing solution” — Section 3 pricing: roll up saved vault tasks + unsaved draft rows. */
+  const tierOnlyTasksForHourRollup = useMemo((): TaskRow[] => {
+    const tid = ctxTierId.trim();
+    if (!tid) return [];
+    const today = todayISODate();
+    const fromDrafts: TaskRow[] = draftTasks
+      .filter((d) => d.name.trim())
+      .map((d) => ({
+        task_id: `draft-${d.key}`,
+        solution_tier_id: tid,
+        task_name: d.name.trim(),
+        task_implementer: d.impl.trim() || null,
+        task_time: optNum(d.time),
+        task_duration: null,
+        task_dependencies: null,
+        task_notes: null,
+        task_create_date: today,
+        task_modified_date: today,
+      }));
+    return [...tierOnlySavedVaultTasks, ...fromDrafts];
+  }, [ctxTierId, tierOnlySavedVaultTasks, draftTasks]);
+
+  const tierOnlyHourRollupForPricing = useMemo(() => {
+    if (!ctxTierId.trim() || implementerHourGroups.length === 0) {
+      return null;
+    }
+    return rollUpTaskTimesByPricingGroup(tierOnlyTasksForHourRollup, implementerToGroup);
+  }, [ctxTierId, implementerHourGroups, tierOnlyTasksForHourRollup, implementerToGroup]);
+
   const fullCreateDraftTasksForRollup = useMemo((): TaskRow[] => {
     const today = todayISODate();
     return draftTasks
@@ -1223,7 +1274,7 @@ export function SolutionsBuilderPanel({
     if (!t) return;
     if (updTierEditId && t.solution_tier_id === updTierEditId) return;
     setUpdAutofillFrom(t);
-    setUpdTName(t.solution_tier_name);
+    setUpdTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
     setUpdTOwner(t.solution_tier_owner ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -1234,7 +1285,6 @@ export function SolutionsBuilderPanel({
     setUpdTOutScope(t.solution_tier_out_of_scope ?? "");
     setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
-    setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
     {
       const h = hydrateTierResourceEditorState(t);
       setUpdResTpl(h.templates);
@@ -1274,7 +1324,6 @@ export function SolutionsBuilderPanel({
     setUpdTOutScope("");
     setUpdTFinalDeliverable("");
     setUpdTHowWorkDone("");
-    setUpdTDescribedToClient("");
     setUpdResTpl("");
     setUpdResTools("");
     setUpdResExamples([emptyResourceExampleRow()]);
@@ -1306,6 +1355,8 @@ export function SolutionsBuilderPanel({
     if (subTab !== "update") {
       setSolutionRenameId(null);
       setSolutionRenameDraft("");
+      setTierRenameId(null);
+      setTierRenameDraft("");
     }
   }, [subTab]);
 
@@ -1314,12 +1365,22 @@ export function SolutionsBuilderPanel({
     setSolutionRenameDraft("");
   }, []);
 
+  const cancelTierRename = useCallback(() => {
+    setTierRenameId(null);
+    setTierRenameDraft("");
+  }, []);
+
+  useEffect(() => {
+    cancelTierRename();
+  }, [updSolutionId, cancelTierRename]);
+
   const jumpTo = useCallback((id: string) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const startEditTier = (t: SolutionTier) => {
+    cancelTierRename();
     setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
@@ -1333,7 +1394,6 @@ export function SolutionsBuilderPanel({
     setUpdTOutScope(t.solution_tier_out_of_scope ?? "");
     setUpdTFinalDeliverable(t.solution_tier_final_deliverable ?? "");
     setUpdTHowWorkDone(t.solution_tier_how_do_we_get_this_work_done ?? "");
-    setUpdTDescribedToClient(t.solution_tier_described_to_client ?? "");
     {
       const h = hydrateTierResourceEditorState(t);
       setUpdResTpl(h.templates);
@@ -1382,10 +1442,51 @@ export function SolutionsBuilderPanel({
     await onSaved();
   };
 
+  const saveTierRename = async () => {
+    const client = getSupabase();
+    if (!client || !tierRenameId) return;
+    const name = tierRenameDraft.trim();
+    if (!name) {
+      setOpErr("Tier name is required.");
+      return;
+    }
+    const prev = tiers.find((x) => x.solution_tier_id === tierRenameId);
+    if (!prev) {
+      cancelTierRename();
+      return;
+    }
+    if (name === prev.solution_tier_name) {
+      cancelTierRename();
+      return;
+    }
+    setOpErr(null);
+    setOpOk(null);
+    const today = todayISODate();
+    const patch = { solution_tier_name: name, solution_tier_modified_date: today };
+    const { error } = await client.from("solution_tiers").update(patch).eq("solution_tier_id", tierRenameId);
+    if (error) {
+      setOpErr(friendlyMutationMessage(error.message));
+      return;
+    }
+    const next: SolutionTier = { ...prev, ...patch };
+    await logAudit(client, {
+      entityType: "solution_tiers",
+      entityId: tierRenameId,
+      action: "update",
+      before: rowJson(prev),
+      after: rowJson(next),
+    });
+    if (updTierEditId === tierRenameId) setUpdTName(name);
+    setOpOk(`Tier renamed to "${name}".`);
+    cancelTierRename();
+    await onSaved();
+  };
+
   const deleteSolutionById = async (solutionId: string) => {
     const client = getSupabase();
     if (!client || !solutionId) return;
     if (solutionRenameId === solutionId) cancelSolutionRename();
+    cancelTierRename();
     setOpErr(null);
     setOpOk(null);
     const prev = solutions.find((x) => x.solution_id === solutionId);
@@ -1476,7 +1577,7 @@ export function SolutionsBuilderPanel({
       solution_tier_out_of_scope: blankToNull(updTOutScope),
       solution_tier_final_deliverable: blankToNull(updTFinalDeliverable),
       solution_tier_how_do_we_get_this_work_done: blankToNull(updTHowWorkDone),
-      solution_tier_described_to_client: blankToNull(updTDescribedToClient),
+      solution_tier_described_to_client: null,
       solution_tier_modified_date: today,
     };
     if (!payload.solution_tier_name) {
@@ -1535,7 +1636,7 @@ export function SolutionsBuilderPanel({
       solution_tier_out_of_scope: payload.solution_tier_out_of_scope,
       solution_tier_final_deliverable: payload.solution_tier_final_deliverable,
       solution_tier_how_do_we_get_this_work_done: payload.solution_tier_how_do_we_get_this_work_done,
-      solution_tier_described_to_client: payload.solution_tier_described_to_client,
+      solution_tier_described_to_client: null,
       solution_tier_created_date: today,
       solution_tier_modified_date: today,
     };
@@ -1560,28 +1661,107 @@ export function SolutionsBuilderPanel({
   const deleteUpdateTier = async (t: SolutionTier) => {
     const client = getSupabase();
     if (!client) return;
-    if (tasks.some((k) => k.solution_tier_id === t.solution_tier_id)) {
-      setOpErr("Delete tasks under this tier first.");
+
+    const tierTasks = tasks.filter((k) => k.solution_tier_id === t.solution_tier_id);
+    const taskIds = tierTasks.map((k) => k.task_id);
+    const pricingRow = tierPricing.find((p) => p.solution_tier_id === t.solution_tier_id) ?? null;
+    const pkgLinkCount = packageTiers.filter((pt) => pt.solution_tier_id === t.solution_tier_id).length;
+
+    const summaryLines: string[] = [];
+    if (taskIds.length > 0) {
+      summaryLines.push(`• ${taskIds.length} vault task(s)`);
+    }
+    summaryLines.push("• Pricing row for this tier in the vault (if any)");
+    if (pkgLinkCount > 0) {
+      summaryLines.push(
+        `• ${pkgLinkCount} package assignment(s) — this tier will be removed from those packages`
+      );
+    }
+
+    if (tierRenameId === t.solution_tier_id) cancelTierRename();
+
+    if (
+      !window.confirm(
+        `Delete tier "${t.solution_tier_name}" (${t.solution_tier_id})?\n\n` +
+          `This permanently removes:\n${summaryLines.join("\n")}\n\n` +
+          `Related database rows (e.g. task-group applications) are cleaned up automatically.\n\n` +
+          `You cannot undo this.`
+      )
+    ) {
       return;
     }
+
     setOpErr(null);
     setOpOk(null);
-    const { error } = await client.from("solution_tiers").delete().eq("solution_tier_id", t.solution_tier_id);
-    if (error) {
-      setOpErr(error.message);
-      return;
+
+    try {
+      if (taskIds.length > 0) {
+        const { error: relinkErr } = await client
+          .from("task_group_lines")
+          .update({ line_type: "archetype", source_task_id: null })
+          .in("source_task_id", taskIds);
+        if (relinkErr) {
+          setOpErr(`Could not detach task-group template references: ${relinkErr.message}`);
+          return;
+        }
+        const { error: taskErr } = await client.from("tasks").delete().in("task_id", taskIds);
+        if (taskErr) {
+          setOpErr(friendlyMutationMessage(taskErr.message));
+          return;
+        }
+        for (const task of tierTasks) {
+          await logAudit(client, {
+            entityType: "tasks",
+            entityId: task.task_id,
+            action: "delete",
+            before: rowJson(task),
+            after: null,
+          });
+        }
+      }
+
+      const { error: pricingErr } = await client
+        .from("solution_tier_pricing")
+        .delete()
+        .eq("solution_tier_id", t.solution_tier_id);
+      if (pricingErr) {
+        setOpErr(friendlyMutationMessage(pricingErr.message));
+        return;
+      }
+      if (pricingRow) {
+        await logAudit(client, {
+          entityType: "solution_tier_pricing",
+          entityId: t.solution_tier_id,
+          action: "delete",
+          before: rowJson(pricingRow),
+          after: null,
+        });
+      }
+
+      const { error } = await client.from("solution_tiers").delete().eq("solution_tier_id", t.solution_tier_id);
+      if (error) {
+        setOpErr(friendlyMutationMessage(error.message));
+        return;
+      }
+      await logAudit(client, {
+        entityType: "solution_tiers",
+        entityId: t.solution_tier_id,
+        action: "delete",
+        before: rowJson(t),
+        after: null,
+      });
+
+      if (updTierEditId === t.solution_tier_id) clearTierUpdateForm();
+      if (updTierFocus === t.solution_tier_id) setUpdTierFocus("");
+      setOpOk(
+        taskIds.length > 0
+          ? `Tier deleted (removed ${taskIds.length} task(s)${pricingRow ? " and pricing" : ""}).`
+          : "Tier deleted."
+      );
+      await onSaved();
+    } catch (e) {
+      setOpErr(friendlyMutationMessage(String(e)));
     }
-    await logAudit(client, {
-      entityType: "solution_tiers",
-      entityId: t.solution_tier_id,
-      action: "delete",
-      before: rowJson(t),
-      after: null,
-    });
-    if (updTierEditId === t.solution_tier_id) clearTierUpdateForm();
-    if (updTierFocus === t.solution_tier_id) setUpdTierFocus("");
-    setOpOk("Tier deleted.");
-    await onSaved();
   };
 
   const saveUpdateTasksBulk = async () => {
@@ -2051,8 +2231,9 @@ export function SolutionsBuilderPanel({
         </select>
       </label>
       <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
-        Fills every field below (and copies overview, link, and direction on save). Clear the list to use blank legacy
-        fields.
+        Fills fields below this control (and copies overview, link, and direction on save). If <strong>Tier name</strong> is
+        empty, it uses the source tier&apos;s name; if you already typed a name, it is left unchanged. Clear the list to use
+        blank legacy fields.
       </p>
     </>
   );
@@ -2078,7 +2259,8 @@ export function SolutionsBuilderPanel({
         </select>
       </label>
       <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
-        Fills the form; when editing, overview/link/direction are only overwritten if you pick a source tier.
+        Fills the form; empty <strong>Tier name</strong> is filled from the source tier, otherwise your typed name is kept.
+        When editing, overview/link/direction are only overwritten if you pick a source tier.
       </p>
     </>
   );
@@ -2149,12 +2331,6 @@ export function SolutionsBuilderPanel({
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>SOP</AdminFieldCaption>
         <MarkdownTextarea value={tSop} onChange={setTSop} textareaStyle={textarea} />
-      </label>
-
-      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-        <MarkdownTextarea value={tDescribedToClient} onChange={setTDescribedToClient} textareaStyle={textarea} />
       </label>
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
@@ -2236,12 +2412,6 @@ export function SolutionsBuilderPanel({
         <MarkdownTextarea value={updTSop} onChange={setUpdTSop} textareaStyle={textarea} />
       </label>
 
-      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-        <MarkdownTextarea value={updTDescribedToClient} onChange={setUpdTDescribedToClient} textareaStyle={textarea} />
-      </label>
-
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <div style={{ gridColumn: "1 / -1" }}>
         <TierResourcesEditor
@@ -2289,6 +2459,19 @@ export function SolutionsBuilderPanel({
   };
   const removeUpdNewDraftRow = (key: string) => {
     setUpdNewTaskDrafts((list) => (list.length <= 1 ? list : list.filter((r) => r.key !== key)));
+  };
+
+  const duplicateUpdNewDraftRow = (key: string) => {
+    setUpdNewTaskDrafts((list) => {
+      const i = list.findIndex((r) => r.key === key);
+      if (i === -1) return list;
+      const row = list[i];
+      const copy: DraftTaskRow = {
+        ...row,
+        key: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      };
+      return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
+    });
   };
 
   const reorderUpdNewDraftsByKeys = useCallback((nextKeys: UniqueIdentifier[]) => {
@@ -2523,12 +2706,6 @@ export function SolutionsBuilderPanel({
                     <MarkdownTextarea value={tSop} onChange={setTSop} textareaStyle={textarea} />
                   </label>
 
-                  <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>How can this solution be described to the client</AdminFieldCaption>
-                    <MarkdownTextarea value={tDescribedToClient} onChange={setTDescribedToClient} textareaStyle={textarea} />
-                  </label>
-
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
                   <div style={{ gridColumn: "1 / -1" }}>
                     <TierResourcesEditor
@@ -2630,12 +2807,6 @@ export function SolutionsBuilderPanel({
                     </div>
                   </div>
                 ) : null}
-                <div className="admin-actions-row" style={{ marginTop: 0 }}>
-                  <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
-                    Add task row
-                  </button>
-                  <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "fs_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
-                </div>
                 <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                   <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                     <thead>
@@ -2651,7 +2822,7 @@ export function SolutionsBuilderPanel({
                         <th style={th}>Duration</th>
                         <th style={th}>Dependencies</th>
                         <th style={th}>Notes</th>
-                        <th style={{ ...th, width: 90 }} />
+                        <th style={{ ...th, width: 140 }} />
                       </tr>
                     </thead>
                     <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
@@ -2726,9 +2897,21 @@ export function SolutionsBuilderPanel({
                                 />
                               </td>,
                               <td style={td} key="rm">
-                                <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
-                                  Remove
-                                </button>
+                                <span
+                                  style={{
+                                    display: "inline-flex",
+                                    gap: 8,
+                                    flexWrap: "wrap",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <button type="button" style={btnSm} onClick={() => duplicateDraftTaskRow(d.key)}>
+                                    Copy
+                                  </button>
+                                  <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
+                                    Remove
+                                  </button>
+                                </span>
                               </td>,
                             ]}
                           />
@@ -2750,6 +2933,12 @@ export function SolutionsBuilderPanel({
                       </tr>
                     </tbody>
                   </table>
+                </div>
+                <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                  <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
+                    Add task row
+                  </button>
+                  <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "fs_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                 </div>
                 </div>
 
@@ -3117,12 +3306,6 @@ export function SolutionsBuilderPanel({
                           </div>
                         </div>
                       ) : null}
-                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
-                        <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
-                          Add task row
-                        </button>
-                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
-                      </div>
                       <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
@@ -3138,9 +3321,62 @@ export function SolutionsBuilderPanel({
                           <th style={th}>Duration</th>
                           <th style={th}>Dependencies</th>
                           <th style={th}>Notes</th>
-                          <th style={{ ...th, width: 90 }} />
+                          <th style={{ ...th, width: 140 }} />
                             </tr>
                           </thead>
+                          {tierOnlySavedVaultTasks.length > 0 ? (
+                            <tbody>
+                              <tr>
+                                <td
+                                  colSpan={10}
+                                  style={{
+                                    ...td,
+                                    background: "rgba(13, 92, 77, 0.06)",
+                                    fontSize: "0.82rem",
+                                    fontWeight: 600,
+                                    borderBottom: "1px solid rgba(13, 92, 77, 0.12)",
+                                  }}
+                                >
+                                  Saved in Supabase for this tier ({tierOnlySavedVaultTasks.length}) — use{" "}
+                                  <strong>Update</strong> to edit or delete individual tasks.
+                                </td>
+                              </tr>
+                              {tierOnlySavedVaultTasks.map((k) => {
+                                const notesPreview = (k.task_notes ?? "").trim();
+                                const notesShort =
+                                  notesPreview.length > 100 ? `${notesPreview.slice(0, 100)}…` : notesPreview;
+                                return (
+                                  <tr key={k.task_id}>
+                                    <td style={td} aria-hidden />
+                                    <td style={td} aria-hidden />
+                                    <td style={td}>
+                                      <strong>{k.task_name}</strong>
+                                      <div style={{ ...muted, fontSize: "0.76rem" }}>{k.task_id}</div>
+                                    </td>
+                                    <td style={{ ...td, fontSize: "0.78rem", color: "var(--muted)" }}>
+                                      {sourceLabelForTask(k)}
+                                    </td>
+                                    <td style={td}>{k.task_implementer?.trim() ? k.task_implementer : "—"}</td>
+                                    <td style={td}>
+                                      {k.task_time != null && Number.isFinite(Number(k.task_time))
+                                        ? String(k.task_time)
+                                        : "—"}
+                                    </td>
+                                    <td style={td}>
+                                      {k.task_duration != null && Number.isFinite(Number(k.task_duration))
+                                        ? String(k.task_duration)
+                                        : "—"}
+                                    </td>
+                                    <td style={td}>{k.task_dependencies?.trim() ? k.task_dependencies : "—"}</td>
+                                    <td style={td} title={notesPreview || undefined}>
+                                      <span style={{ fontSize: "0.82rem" }}>{notesShort || "—"}</span>
+                                    </td>
+                                    <td style={{ ...td, fontSize: "0.78rem", color: "var(--muted)" }}>Saved</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          ) : null}
                           <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
                             <tbody>
                               {draftTasks.map((d) => (
@@ -3213,9 +3449,25 @@ export function SolutionsBuilderPanel({
                                       />
                                     </td>,
                                     <td style={td} key="rm">
-                                      <button type="button" style={btnDangerSm} onClick={() => removeDraftTaskRow(d.key)}>
-                                        Remove
-                                      </button>
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          gap: 8,
+                                          flexWrap: "wrap",
+                                          alignItems: "center",
+                                        }}
+                                      >
+                                        <button type="button" style={btnSm} onClick={() => duplicateDraftTaskRow(d.key)}>
+                                          Copy
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={btnDangerSm}
+                                          onClick={() => removeDraftTaskRow(d.key)}
+                                        >
+                                          Remove
+                                        </button>
+                                      </span>
                                     </td>,
                                   ]}
                                 />
@@ -3223,6 +3475,12 @@ export function SolutionsBuilderPanel({
                             </tbody>
                           </TaskSortableList>
                         </table>
+                      </div>
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button type="button" style={btn} onClick={() => addDraftTaskRow()}>
+                          Add task row
+                        </button>
+                        <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_add_row")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                       </div>
                   <div className="admin-actions-row" style={{ marginTop: 10 }}>
                     <button
@@ -3275,6 +3533,19 @@ export function SolutionsBuilderPanel({
                     <>
                       <p style={{ ...muted, marginTop: 0 }}>
                         Solution <code>{ctxSolutionId}</code>, tier <code>{ctxTierId}</code>. Save pricing below.
+                        {implementerHourGroups.length > 0 ? (
+                          <>
+                            {" "}
+                            Hour buckets sum each task&apos;s <strong>Time</strong> into Client services, Copy, etc., using{" "}
+                            <strong>Admin → Implementer–Pricing Mapping</strong> (same as the Update tab).
+                          </>
+                        ) : (
+                          <>
+                            {" "}
+                            Configure <strong>Admin → Implementer–Pricing Mapping</strong> so hours can roll up from task
+                            implementers automatically.
+                          </>
+                        )}
                       </p>
                       <PricingPanel
                         key={ctxTierId}
@@ -3301,6 +3572,8 @@ export function SolutionsBuilderPanel({
                         logAudit={logAudit}
                         tierIdsInScope={[ctxTierId]}
                         createLockedTierId={ctxTierId}
+                        taskDrivenHours={implementerHourGroups.length > 0}
+                        taskHourRollup={tierOnlyHourRollupForPricing}
                       />
                     </>
                   )}
@@ -3417,6 +3690,7 @@ export function SolutionsBuilderPanel({
                                       style={btnSm}
                                       onClick={() => {
                                         cancelSolutionRename();
+                                        cancelTierRename();
                                         setUpdSolutionId(sol.solution_id);
                                         setShowUpdateDetails(false);
                                       }}
@@ -3428,6 +3702,7 @@ export function SolutionsBuilderPanel({
                                       style={btnSm}
                                       onClick={() => {
                                         setOpErr(null);
+                                        cancelTierRename();
                                         setSolutionRenameId(sol.solution_id);
                                         setSolutionRenameDraft(sol.solution_name);
                                       }}
@@ -3467,26 +3742,81 @@ export function SolutionsBuilderPanel({
                         <tbody>
                           {tiersOfUpdateSol.map((t) => (
                             <tr key={t.solution_tier_id}>
-                              <td style={td}>{t.solution_tier_name}</td>
+                              <td style={td}>
+                                {tierRenameId === t.solution_tier_id ? (
+                                  <input
+                                    type="text"
+                                    className="admin-field"
+                                    style={{ ...input, width: "100%", maxWidth: "28rem", marginTop: 0 }}
+                                    value={tierRenameDraft}
+                                    onChange={(e) => setTierRenameDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        cancelTierRename();
+                                      }
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void saveTierRename();
+                                      }
+                                    }}
+                                    aria-label={`Rename tier ${t.solution_tier_id}`}
+                                    autoComplete="off"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  t.solution_tier_name
+                                )}
+                              </td>
                               <td style={td}>
                                 <code>{t.solution_tier_id}</code>
                               </td>
                               <td style={td}>
                                 <div className="admin-actions-row" style={{ marginTop: 0 }}>
-                                  <button
-                                    type="button"
-                                    style={btnSm}
-                                    onClick={() => {
-                                      startEditTier(t);
-                                      setShowUpdateDetails(true);
-                                      window.setTimeout(() => jumpTo("sb-update-section-tiers"), 0);
-                                    }}
-                                  >
-                                    Update
-                                  </button>
-                                  <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
-                                    Delete
-                                  </button>
+                                  {tierRenameId === t.solution_tier_id ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        style={btnPrimary}
+                                        className="admin-btn-primary"
+                                        onClick={() => void saveTierRename()}
+                                      >
+                                        Save name
+                                      </button>
+                                      <button type="button" style={btnSm} onClick={cancelTierRename}>
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        style={btnSm}
+                                        onClick={() => {
+                                          startEditTier(t);
+                                          setShowUpdateDetails(true);
+                                          window.setTimeout(() => jumpTo("sb-update-section-tiers"), 0);
+                                        }}
+                                      >
+                                        Update
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={btnSm}
+                                        onClick={() => {
+                                          cancelSolutionRename();
+                                          setOpErr(null);
+                                          setTierRenameId(t.solution_tier_id);
+                                          setTierRenameDraft(t.solution_tier_name);
+                                        }}
+                                      >
+                                        Rename
+                                      </button>
+                                      <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3524,14 +3854,69 @@ export function SolutionsBuilderPanel({
                     {tiersOfUpdateSol.map((t) => (
                       <tr key={t.solution_tier_id}>
                         <td style={td}>{t.solution_tier_id}</td>
-                        <td style={td}>{t.solution_tier_name}</td>
                         <td style={td}>
-                          <button type="button" style={btnSm} onClick={() => startEditTier(t)}>
-                            Edit
-                          </button>{" "}
-                          <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
-                            Delete
-                          </button>
+                          {tierRenameId === t.solution_tier_id ? (
+                            <input
+                              type="text"
+                              className="admin-field"
+                              style={{ ...input, width: "100%", maxWidth: "28rem", marginTop: 0 }}
+                              value={tierRenameDraft}
+                              onChange={(e) => setTierRenameDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  cancelTierRename();
+                                }
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void saveTierRename();
+                                }
+                              }}
+                              aria-label={`Rename tier ${t.solution_tier_id}`}
+                              autoComplete="off"
+                              autoFocus
+                            />
+                          ) : (
+                            t.solution_tier_name
+                          )}
+                        </td>
+                        <td style={td}>
+                          {tierRenameId === t.solution_tier_id ? (
+                            <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                              <button
+                                type="button"
+                                style={btnPrimary}
+                                className="admin-btn-primary"
+                                onClick={() => void saveTierRename()}
+                              >
+                                Save name
+                              </button>
+                              <button type="button" style={btnSm} onClick={cancelTierRename}>
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button type="button" style={btnSm} onClick={() => startEditTier(t)}>
+                                Edit
+                              </button>{" "}
+                              <button
+                                type="button"
+                                style={btnSm}
+                                onClick={() => {
+                                  cancelSolutionRename();
+                                  setOpErr(null);
+                                  setTierRenameId(t.solution_tier_id);
+                                  setTierRenameDraft(t.solution_tier_name);
+                                }}
+                              >
+                                Rename
+                              </button>{" "}
+                              <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
+                                Delete
+                              </button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -3820,11 +4205,6 @@ export function SolutionsBuilderPanel({
                         Add one or more rows, then save all at once. New task ids use <code>4-…</code> (next:{" "}
                         <code>{previewNextTaskIdUpdate}</code>).
                       </p>
-                      <div className="admin-actions-row" style={{ marginTop: 6 }}>
-                        <button type="button" style={btn} onClick={() => addUpdNewDraftRow()}>
-                          Add task row
-                        </button>
-                      </div>
                       <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
@@ -3837,7 +4217,7 @@ export function SolutionsBuilderPanel({
                               <th style={th}>Duration</th>
                               <th style={th}>Dependencies</th>
                               <th style={th}>Notes</th>
-                              <th style={{ ...th, width: 90 }} />
+                              <th style={{ ...th, width: 140 }} />
                             </tr>
                           </thead>
                           <TaskSortableList
@@ -3904,13 +4284,29 @@ export function SolutionsBuilderPanel({
                                       />
                                     </td>,
                                     <td style={td} key="rm">
-                                      <button
-                                        type="button"
-                                        style={btnDangerSm}
-                                        onClick={() => removeUpdNewDraftRow(d.key)}
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          gap: 8,
+                                          flexWrap: "wrap",
+                                          alignItems: "center",
+                                        }}
                                       >
-                                        Remove
-                                      </button>
+                                        <button
+                                          type="button"
+                                          style={btnSm}
+                                          onClick={() => duplicateUpdNewDraftRow(d.key)}
+                                        >
+                                          Copy
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={btnDangerSm}
+                                          onClick={() => removeUpdNewDraftRow(d.key)}
+                                        >
+                                          Remove
+                                        </button>
+                                      </span>
                                     </td>,
                                   ]}
                                 />
@@ -3918,6 +4314,11 @@ export function SolutionsBuilderPanel({
                             </tbody>
                           </TaskSortableList>
                         </table>
+                      </div>
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button type="button" style={btn} onClick={() => addUpdNewDraftRow()}>
+                          Add task row
+                        </button>
                       </div>
                       <div className="admin-actions-row" style={{ marginTop: 10 }}>
                         <button

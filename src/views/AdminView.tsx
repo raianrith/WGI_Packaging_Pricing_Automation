@@ -532,6 +532,7 @@ export function AdminView() {
               tiers={tiers}
               tasks={tasks}
               tierPricing={tierPricing}
+              packageTiers={packageTiers}
               implementerHourGroups={implementerHourGroups}
               taskGroups={taskGroups}
               taskGroupLines={taskGroupLines}
@@ -1286,7 +1287,6 @@ async function downloadBulkTemplateWorkbook(data: {
       "solution_tier_out_of_scope",
       "solution_tier_final_deliverable",
       "solution_tier_how_do_we_get_this_work_done",
-      "solution_tier_described_to_client",
       "solution_tier_created_date",
       "solution_tier_modified_date",
     ],
@@ -1476,10 +1476,6 @@ const BULK_GLOSSARY: Record<
       {
         name: "solution_tier_how_do_we_get_this_work_done",
         description: "How the work is executed (optional).",
-      },
-      {
-        name: "solution_tier_described_to_client",
-        description: "How the solution can be described to the client (optional).",
       },
       { name: "solution_tier_created_date", description: "Created date in YYYY-MM-DD format (optional)." },
       { name: "solution_tier_modified_date", description: "Last updated date in YYYY-MM-DD format (optional)." },

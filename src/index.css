@@ -3392,6 +3392,14 @@ button {
   margin-left: auto;
 }
 
+.admin-task-group-builder .admin-tg-draft-list__actions {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .admin-task-group-builder .admin-tg-nested__lead {
   margin: 0 0 0.35rem;
   font-size: 0.84rem;

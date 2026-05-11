@@ -175,7 +175,7 @@ function AgencyTierSubsection({
 
 function firstTierCategory(
   t: SolutionTier
-): "desc" | "scope" | "process" | "selling" | "res" | null {
+): "desc" | "scope" | "process" | "res" | null {
   if (t.solution_tier_what_is_it || t.solution_tier_why_is_it_valuable || t.solution_tier_when_should_it_be_used)
     return "desc";
   if (
@@ -187,7 +187,6 @@ function firstTierCategory(
     return "scope";
   if (t.solution_tier_how_do_we_get_this_work_done || t.solution_tier_direction || t.solution_tier_sop)
     return "process";
-  if (t.solution_tier_described_to_client) return "selling";
   if (tierHasAnyResourceSectionContent(t)) return "res";
   return null;
 }
@@ -1361,7 +1360,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         t.solution_tier_direction ||
                         t.solution_tier_sop
                     );
-                    const hasSelling = Boolean(t.solution_tier_described_to_client);
                     const hasRes = tierHasAnyResourceSectionContent(t);
                     const resTemplatesRaw = tierTemplatesForProposalDisplay(t).trim();
                     const resTemplates = stripRedundantResourceMarkdownHeading(resTemplatesRaw, "templates");
@@ -1468,25 +1466,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               <AgencyTierSubsection
                                 title="Direction"
                                 text={t.solution_tier_direction}
-                                blockTitle={blockTitle}
-                              />
-                            ) : null}
-                          </section>
-                        ) : null}
-
-                        {hasSelling ? (
-                          <section
-                            className={
-                              first === "selling"
-                                ? "agency-tier-category agency-tier-category--first"
-                                : "agency-tier-category"
-                            }
-                          >
-                            <h3 className="agency-tier-category__title">Selling</h3>
-                            {t.solution_tier_described_to_client ? (
-                              <AgencyTierSubsection
-                                title="How this can be described to the client"
-                                text={t.solution_tier_described_to_client}
                                 blockTitle={blockTitle}
                               />
                             ) : null}

@@ -109,16 +109,6 @@ export function SolutionTierFormUpdateBlock({ tierIdReadonly, values, onChange, 
         <MarkdownTextarea value={v("solution_tier_sop")} onChange={(x) => onChange("solution_tier_sop", x)} textareaStyle={textarea} />
       </label>
 
-      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Selling</h4>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <span className="admin-field-caption">How can this solution be described to the client</span>
-        <MarkdownTextarea
-          value={v("solution_tier_described_to_client")}
-          onChange={(x) => onChange("solution_tier_described_to_client", x)}
-          textareaStyle={textarea}
-        />
-      </label>
-
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Resources</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <span className="admin-field-caption">Resources</span>

@@ -843,6 +843,19 @@ export function PackagesBuilderPanel({
     });
   }, []);
 
+  const duplicatePkgNewDraftRow = useCallback((key: string) => {
+    setPkgNewDrafts((list) => {
+      const i = list.findIndex((r) => r.key === key);
+      if (i === -1) return list;
+      const row = list[i];
+      const copy: PkgDraftTaskRow = {
+        ...row,
+        key: `pkg-d-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      };
+      return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
+    });
+  }, []);
+
   const distinctImplementerOptions = useMemo(() => {
     const s = new Set<string>();
     for (const t of tasks) {
@@ -1434,7 +1447,19 @@ export function PackagesBuilderPanel({
                               if (!v) return;
                               const t = tiers.find((x) => x.solution_tier_id === v);
                               if (!t) return;
-                              setTierForms((prev) => ({ ...prev, [pkgEditTierId]: tierToOverrideFormStrings(t) }));
+                              setTierForms((prev) => {
+                                const priorRow = prev[pkgEditTierId];
+                                const priorName = (priorRow?.solution_tier_name ?? "").trim();
+                                const filled = tierToOverrideFormStrings(t);
+                                return {
+                                  ...prev,
+                                  [pkgEditTierId]: {
+                                    ...filled,
+                                    solution_tier_name:
+                                      priorName !== "" ? (priorRow?.solution_tier_name ?? "") : filled.solution_tier_name,
+                                  },
+                                };
+                              });
                             }}
                             disabled={pkgTiersForAutofill.length === 0}
                           >
@@ -1449,7 +1474,8 @@ export function PackagesBuilderPanel({
                           </select>
                         </label>
                         <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
-                          Copies vault tier text into this package overlay (same idea as Solutions Builder autofill).
+                          Copies vault tier text into this package overlay. Empty tier display name is filled from the
+                          source; if you already typed a name in the overlay, it is left unchanged.
                         </p>
                       </>
                     }
@@ -1716,11 +1742,6 @@ export function PackagesBuilderPanel({
                           Add one blank row
                         </button>
                       </p>
-                      <div className="admin-actions-row" style={{ marginTop: 6 }}>
-                        <button type="button" style={btnSm} onClick={() => setPkgNewDrafts((l) => [...l, newPkgDraftTaskRow()])}>
-                          Add task row
-                        </button>
-                      </div>
                       <div className="admin-table-scroll" style={{ marginTop: 8 }}>
                         <table className="admin-data-table" style={{ ...tbl, minWidth: 720 }}>
                           <thead>
@@ -1732,7 +1753,7 @@ export function PackagesBuilderPanel({
                               <th style={th}>Duration</th>
                               <th style={th}>Dependencies</th>
                               <th style={th}>Notes</th>
-                              <th style={{ ...th, width: 90 }} />
+                              <th style={{ ...th, width: 140 }} />
                             </tr>
                           </thead>
                           <TaskSortableList
@@ -1821,17 +1842,33 @@ export function PackagesBuilderPanel({
                                       />
                                     </td>,
                                     <td style={td} key="rm">
-                                      <button
-                                        type="button"
-                                        style={btnDangerSm}
-                                        onClick={() =>
-                                          setPkgNewDrafts((list) =>
-                                            list.length <= 1 ? list : list.filter((r) => r.key !== d.key)
-                                          )
-                                        }
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          gap: 8,
+                                          flexWrap: "wrap",
+                                          alignItems: "center",
+                                        }}
                                       >
-                                        Remove
-                                      </button>
+                                        <button
+                                          type="button"
+                                          style={btnSm}
+                                          onClick={() => duplicatePkgNewDraftRow(d.key)}
+                                        >
+                                          Copy
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={btnDangerSm}
+                                          onClick={() =>
+                                            setPkgNewDrafts((list) =>
+                                              list.length <= 1 ? list : list.filter((r) => r.key !== d.key)
+                                            )
+                                          }
+                                        >
+                                          Remove
+                                        </button>
+                                      </span>
                                     </td>,
                                   ]}
                                 />
@@ -1839,6 +1876,11 @@ export function PackagesBuilderPanel({
                             </tbody>
                           </TaskSortableList>
                         </table>
+                      </div>
+                      <div className="admin-actions-row" style={{ marginTop: 8 }}>
+                        <button type="button" style={btnSm} onClick={() => setPkgNewDrafts((l) => [...l, newPkgDraftTaskRow()])}>
+                          Add task row
+                        </button>
                       </div>
                       <div className="admin-actions-row" style={{ marginTop: 10 }}>
                         <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void savePkgNewTasksBulk()}>

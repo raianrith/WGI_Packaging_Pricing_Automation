@@ -62,6 +62,28 @@ export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2, dis
     [setNext, value]
   );
 
+  const prefixSelectedLinesNumbered = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    const lineStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const lineEndRaw = value.indexOf("\n", end);
+    const lineEnd = lineEndRaw === -1 ? value.length : lineEndRaw;
+    const selectedBlock = value.slice(lineStart, lineEnd);
+    let n = 0;
+    const nextBlock = selectedBlock
+      .split("\n")
+      .map((line) => {
+        if (line.trim().length === 0) return line;
+        n += 1;
+        return `${n}. ${line}`;
+      })
+      .join("\n");
+    const next = `${value.slice(0, lineStart)}${nextBlock}${value.slice(lineEnd)}`;
+    setNext(next, lineStart, lineStart + nextBlock.length);
+  }, [setNext, value]);
+
   return (
     <div className="admin-md-field">
       <div className="admin-md-toolbar" role="toolbar" aria-label="Formatting">
@@ -83,6 +105,14 @@ export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2, dis
         </button>
         <button type="button" className="admin-md-toolbar__btn" disabled={disabled} onClick={() => prefixSelectedLines("- ")}>
           Bullet list
+        </button>
+        <button
+          type="button"
+          className="admin-md-toolbar__btn"
+          disabled={disabled}
+          onClick={() => prefixSelectedLinesNumbered()}
+        >
+          Numbered list
         </button>
         <button
           type="button"

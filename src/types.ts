@@ -37,7 +37,7 @@ export type SolutionTier = {
   solution_tier_out_of_scope: string | null;
   solution_tier_final_deliverable: string | null;
   solution_tier_how_do_we_get_this_work_done: string | null;
-  /** Selling: how the solution can be described to the client. */
+  /** Legacy DB column; not shown or edited in the app (always cleared on tier save). */
   solution_tier_described_to_client: string | null;
   solution_tier_created_date: string;
   solution_tier_modified_date: string;
@@ -62,7 +62,6 @@ export type PackageTierOverrides = Partial<
     | "solution_tier_out_of_scope"
     | "solution_tier_final_deliverable"
     | "solution_tier_how_do_we_get_this_work_done"
-    | "solution_tier_described_to_client"
   >
 >;
 

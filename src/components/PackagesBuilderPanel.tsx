@@ -43,7 +43,6 @@ import type { TierPricingMathConfig } from "../lib/tierPricingMath";
 import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback";
 import { PricingPanel } from "./PricingPanel";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
-import { PackageBuilderSlotLimitsPanel } from "./PackageBuilderSlotLimitsPanel";
 import { SolutionTierFormUpdateBlock } from "./SolutionTierFormUpdateBlock";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import {
@@ -1220,28 +1219,16 @@ export function PackagesBuilderPanel({
           <p className="admin-intro" style={muted}>
             Name the bundle and choose which solution tiers belong to it. The next package id in the{" "}
             <code style={{ fontSize: "0.9em" }}>1-n</code> sequence is assigned automatically. Use{" "}
-            <strong>Update</strong> to edit tier copy, pricing overrides, tasks, and membership on existing packages.
+            <strong>Update</strong> to edit tier copy, pricing overrides, tasks, and membership on existing packages. Use
+            the <strong>Edit Tier Slot Ceilings</strong> sub-tab to configure Build-a-Package ceilings.
           </p>
         ) : (
           <p className="admin-intro" style={muted}>
             Pick a package, adjust its name, tier membership, then choose a tier to edit tasks and pricing. Vault values
             stay canonical; changes here are stored only on the package–tier link. Sell price shows vault vs your draft
-            (including pricing overrides).
+            (including pricing overrides). Build-a-Package ceilings live under <strong>Edit Tier Slot Ceilings</strong>.
           </p>
         )}
-
-        <PackageBuilderSlotLimitsPanel
-          muted={muted}
-          input={input}
-          btnPrimary={btnPrimary}
-          btnSm={btnSm}
-          tbl={tbl}
-          th={th}
-          td={td}
-          setOpErr={setOpErr}
-          setOpOk={setOpOk}
-          onSaved={onSaved}
-        />
 
         {subTab === "update" && (
           <div className="admin-form-stack" style={{ ...formGrid, marginBottom: "0.75rem" }}>

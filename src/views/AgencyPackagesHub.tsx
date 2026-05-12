@@ -7,7 +7,7 @@ import {
 import { todayISODate } from "../lib/dates";
 import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
-import { fetchPackageBuilderSlots, PACKAGE_BUILDER_DEFAULT_SLOTS } from "../lib/packageBuilderSlots";
+import { fetchPackageBuilderSlots, defaultPackageBuilderSlots } from "../lib/packageBuilderSlots";
 import {
   applyPackageTierMembership,
   emptyPackageLinkPayload,
@@ -109,8 +109,8 @@ const slotCard: CSSProperties = {
 
 const slotCardActive: CSSProperties = {
   ...slotCard,
-  borderColor: "var(--accent, #c45c26)",
-  boxShadow: "0 0 0 2px rgba(196, 92, 38, 0.2)",
+  borderColor: "var(--accent)",
+  boxShadow: "0 0 0 2px rgba(13, 92, 77, 0.18)",
 };
 
 const meterWrap: CSSProperties = {
@@ -190,7 +190,7 @@ export function AgencyPackagesHub() {
   const [pricing, setPricing] = useState<SolutionTierPricing[]>([]);
   const [packageTiers, setPackageTiers] = useState<PackageSolutionTier[]>([]);
   const [slots, setSlots] = useState<PackageBuilderSlotTemplate[]>(() =>
-    PACKAGE_BUILDER_DEFAULT_SLOTS.map((r) => ({ ...r }))
+    defaultPackageBuilderSlots().map((r) => ({ ...r }))
   );
   const [pkgFilter, setPkgFilter] = useState("");
 
@@ -637,18 +637,18 @@ export function AgencyPackagesHub() {
             {wizStep === 1 && (
               <>
                 <p style={{ color: "var(--muted)", marginTop: "0.35rem" }}>
-                  Choose one of the three package tier slots. Ceilings are set in{" "}
+                  Choose a package tier slot. Ceilings are set in{" "}
                   <Link className="agency-hub__link" to="/admin">
-                    Admin → Package Builder
+                    Admin → Package Builder → Edit Tier Slot Ceilings
                   </Link>
                   .
                 </p>
                 <div style={cardGrid}>
                   {slots.map((s) => {
-                    const active = selectedSlot?.slot === s.slot;
+                    const active = selectedSlot?.id === s.id;
                     return (
                       <button
-                        key={s.slot}
+                        key={s.id}
                         type="button"
                         style={active ? slotCardActive : slotCard}
                         onClick={() => setSelectedSlot({ ...s })}

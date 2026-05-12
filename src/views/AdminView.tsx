@@ -33,6 +33,7 @@ import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
+import { PackageBuilderSlotLimitsPanel } from "../components/PackageBuilderSlotLimitsPanel";
 import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
 import { useToast } from "../context/ToastContext";
 import type {
@@ -58,8 +59,8 @@ type AdminTab =
   | "implementer_mapping"
   | "audit";
 
-/** Create-only vs list + edit — shown under each entity tab (not Change history). */
-export type AdminSubTab = "create" | "update";
+/** Create-only vs list + edit, plus tier slot ceilings editor. Shown under Package / Solutions builder tabs. */
+export type AdminSubTab = "create" | "update" | "build_slots";
 
 /** Single caption row so label+input stacks align across grid columns (avoids extra flex rows for “(locked)”). */
 function AdminFieldCaption({ children }: { children: ReactNode }) {
@@ -451,15 +452,17 @@ export function AdminView() {
             tab !== "implementer_mapping" &&
             tab !== "pricing_calculator" &&
             tab !== "task_group_builder" && (
-            <div className="admin-subtabs" role="tablist" aria-label="Create or update records">
+            <div
+              className="admin-subtabs"
+              role="tablist"
+              aria-label={tab === "packages" ? "Package builder mode" : "Create or update records"}
+            >
               <button
                 type="button"
                 role="tab"
                 aria-selected={adminSubTab === "create"}
                 className={
-                  adminSubTab === "create"
-                    ? "admin-subtab admin-subtab--active"
-                    : "admin-subtab"
+                  adminSubTab === "create" ? "admin-subtab admin-subtab--active" : "admin-subtab"
                 }
                 onClick={() => {
                   setAdminSubTab("create");
@@ -474,9 +477,7 @@ export function AdminView() {
                 role="tab"
                 aria-selected={adminSubTab === "update"}
                 className={
-                  adminSubTab === "update"
-                    ? "admin-subtab admin-subtab--active"
-                    : "admin-subtab"
+                  adminSubTab === "update" ? "admin-subtab admin-subtab--active" : "admin-subtab"
                 }
                 onClick={() => {
                   setAdminSubTab("update");
@@ -486,10 +487,50 @@ export function AdminView() {
               >
                 Update
               </button>
+              {tab === "packages" && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={adminSubTab === "build_slots"}
+                  className={
+                    adminSubTab === "build_slots"
+                      ? "admin-subtab admin-subtab--active"
+                      : "admin-subtab"
+                  }
+                  onClick={() => {
+                    setAdminSubTab("build_slots");
+                    setOpErr(null);
+                    setOpOk(null);
+                  }}
+                >
+                  Edit Tier Slot Ceilings
+                </button>
+              )}
             </div>
           )}
 
-          {tab === "packages" && (
+          {tab === "packages" && adminSubTab === "build_slots" && (
+            <section className="admin-panel admin-panel--editor" style={panel}>
+              <div className="admin-editor-layout">
+                <h2 style={h2}>Edit Tier Slot Ceilings (Build a Package)</h2>
+                <PackageBuilderSlotLimitsPanel
+                  muted={muted}
+                  input={input}
+                  btnPrimary={btnPrimary}
+                  btnSm={btnSm}
+                  btnDangerSm={btnDangerSm}
+                  tbl={tbl}
+                  th={th}
+                  td={td}
+                  setOpErr={setOpErr}
+                  setOpOk={setOpOk}
+                  onSaved={refreshAfterSave}
+                />
+              </div>
+            </section>
+          )}
+
+          {tab === "packages" && (adminSubTab === "create" || adminSubTab === "update") && (
             <PackagesBuilderPanel
               subTab={adminSubTab}
               packages={packages}
@@ -526,7 +567,7 @@ export function AdminView() {
           )}
           {tab === "solutions_builder" && (
             <SolutionsBuilderPanel
-              subTab={adminSubTab}
+              subTab={adminSubTab === "create" ? "create" : "update"}
               tierPricingMathConfig={tierPricingMathConfig}
               solutions={solutions}
               tiers={tiers}

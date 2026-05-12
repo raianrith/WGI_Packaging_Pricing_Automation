@@ -5,9 +5,10 @@ export type Package = {
   package_modified_date: string;
 };
 
-/** Admin-editable ceilings for the agency “Build a Package” flow (slots 1–3). See `package_builder_slot_templates`. */
+/** Admin-editable ceilings for the agency “Build a Package” flow. See `package_builder_slot_templates`. */
 export type PackageBuilderSlotTemplate = {
-  slot: number;
+  id: string;
+  sort_order: number;
   label: string;
   hour_ceiling: number;
   price_ceiling: number;

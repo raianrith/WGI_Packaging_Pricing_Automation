@@ -2431,6 +2431,20 @@ button {
   white-space: nowrap;
 }
 
+.admin-audit-table .admin-audit-related-cell {
+  max-width: 22rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text);
+  vertical-align: top;
+}
+
+@media (max-width: 1100px) {
+  .admin-audit-table .admin-audit-related-cell {
+    max-width: 14rem;
+  }
+}
+
 .admin-audit-id {
   font-size: 0.78rem;
   color: var(--muted);
@@ -4052,6 +4066,255 @@ button {
 
 .agency-hub__link:hover {
   border-bottom-color: var(--accent);
+}
+
+/* Packages tab hub — “Open a package” as cards */
+.agency-pkg-hub__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 288px), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.agency-pkg-hub__grid > li {
+  min-width: 0;
+}
+
+.agency-pkg-hub__card {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 10.25rem;
+  text-decoration: none;
+  color: inherit;
+  border-radius: calc(var(--radius-lg) + 2px);
+  border: 1px solid rgba(226, 220, 211, 0.95);
+  background:
+    radial-gradient(130% 90% at 100% 0%, rgba(13, 92, 77, 0.07) 0%, transparent 52%),
+    radial-gradient(80% 60% at 0% 100%, rgba(226, 220, 211, 0.35) 0%, transparent 45%),
+    linear-gradient(168deg, rgba(255, 252, 247, 1) 0%, rgba(241, 237, 230, 0.98) 100%);
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.04),
+    0 12px 32px rgba(28, 25, 23, 0.05);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+  overflow: hidden;
+}
+
+.agency-pkg-hub__card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(180deg, #0f6b59 0%, var(--accent) 42%, rgba(13, 92, 77, 0.35) 100%);
+  border-radius: 3px 0 0 3px;
+  opacity: 0.95;
+}
+
+.agency-pkg-hub__card:hover {
+  border-color: rgba(13, 92, 77, 0.28);
+  box-shadow:
+    0 2px 4px rgba(28, 25, 23, 0.05),
+    0 18px 44px rgba(13, 92, 77, 0.1);
+  transform: translateY(-3px);
+}
+
+.agency-pkg-hub__card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.agency-pkg-hub__card-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: inherit;
+  padding: 1.1rem 1.15rem 1rem 1.35rem;
+}
+
+.agency-pkg-hub__card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.agency-pkg-hub__card-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.32;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.agency-pkg-hub__tier-pill {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(13, 92, 77, 0.22);
+  background: rgba(13, 92, 77, 0.08);
+  color: var(--accent);
+}
+
+.agency-pkg-hub__tier-pill--empty {
+  border-color: rgba(87, 83, 78, 0.2);
+  background: rgba(87, 83, 78, 0.06);
+  color: var(--muted);
+}
+
+.agency-pkg-hub__card-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin-bottom: 0.4rem;
+}
+
+.agency-pkg-hub__stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 5.5rem;
+  padding: 0;
+  border-radius: 13px;
+  border: 1px solid rgba(226, 220, 211, 0.95);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 252, 247, 0.98) 48%,
+    rgba(245, 241, 234, 0.92) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 10px rgba(28, 25, 23, 0.045);
+  overflow: hidden;
+}
+
+.agency-pkg-hub__stat::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 13px 13px 0 0;
+  opacity: 1;
+}
+
+.agency-pkg-hub__stat--hours::before {
+  background: linear-gradient(90deg, #0a5a4a 0%, var(--accent) 55%, rgba(13, 92, 77, 0.45) 100%);
+}
+
+.agency-pkg-hub__stat--sell::before {
+  background: linear-gradient(90deg, #7a4f18 0%, #b8892e 50%, rgba(180, 140, 60, 0.55) 100%);
+}
+
+.agency-pkg-hub__stat-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0.72rem 0.78rem 0.68rem;
+}
+
+.agency-pkg-hub__stat-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.82;
+  margin-bottom: 0.15rem;
+}
+
+.agency-pkg-hub__stat-hint {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  line-height: 1.35;
+  margin-bottom: 0.45rem;
+}
+
+.agency-pkg-hub__stat-value {
+  display: block;
+  margin-top: auto;
+  padding-top: 0.15rem;
+  font-size: clamp(0.98rem, 2.4vw, 1.2rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.agency-pkg-hub__stat--hours .agency-pkg-hub__stat-value {
+  color: #0d4a3f;
+}
+
+.agency-pkg-hub__stat--sell .agency-pkg-hub__stat-value {
+  color: #5c4012;
+}
+
+.agency-pkg-hub__card-partial {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.agency-pkg-hub__card-foot {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(226, 220, 211, 0.75);
+}
+
+.agency-pkg-hub__card-cta {
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.agency-pkg-hub__card:hover .agency-pkg-hub__card-cta {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.agency-pkg-hub__card-arrow {
+  flex-shrink: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--accent);
+  opacity: 0.88;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.agency-pkg-hub__card:hover .agency-pkg-hub__card-arrow {
+  transform: translateX(3px);
 }
 
 .agency-hub__banner {

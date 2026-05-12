@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ProtectedLayout } from "./components/ProtectedLayout";
-import { AgencyPackagesRedirect } from "./views/AgencyPackagesRedirect";
+import { AgencyPackagesHub } from "./views/AgencyPackagesHub";
 import { AgencyTabsShell } from "./views/AgencyTabsShell";
 import { AgencyView } from "./views/AgencyView";
 import { RequireAdmin } from "./components/RequireAdmin";
@@ -21,7 +21,7 @@ export default function App() {
           <Route path="/roadmap" element={<RoadmapPlanningView />} />
           <Route path="/" element={<AgencyTabsShell />}>
             <Route index element={<AgencyView mode="catalog" />} />
-            <Route path="packages" element={<AgencyPackagesRedirect />} />
+            <Route path="packages" element={<AgencyPackagesHub />} />
             <Route path="package/standalone" element={<Navigate to="/" replace />} />
             <Route path="package/:packageId" element={<AgencyView mode="package" />} />
           </Route>

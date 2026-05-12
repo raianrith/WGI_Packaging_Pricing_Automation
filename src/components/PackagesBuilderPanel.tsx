@@ -21,7 +21,6 @@ import {
   mergeTierWithPackageOverrides,
   overrideFormStringsToPartial,
   parseTierOverrides,
-  sanitizeOverridesForDb,
   tierToOverrideFormStrings,
   type PackageTierOverrideKey,
 } from "../lib/packageTierOverrides";
@@ -34,8 +33,6 @@ import {
   parseTaskOverridesMap,
   pricingFormStringsToPartial,
   pricingToFormStrings,
-  sanitizePricingOverridesForDb,
-  sanitizeTaskOverridesMapForDb,
   taskFormToOverridePartial,
   taskToOverrideFormStrings,
   emptyTaskFormRow,
@@ -46,6 +43,7 @@ import type { TierPricingMathConfig } from "../lib/tierPricingMath";
 import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback";
 import { PricingPanel } from "./PricingPanel";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
+import { PackageBuilderSlotLimitsPanel } from "./PackageBuilderSlotLimitsPanel";
 import { SolutionTierFormUpdateBlock } from "./SolutionTierFormUpdateBlock";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import {
@@ -56,17 +54,18 @@ import {
   newPackageTaskId,
   parseTaskExtensions,
   pruneTaskOverridesForHidden,
-  sanitizeTaskExtensionsForDb,
 } from "../lib/packageTaskLayout";
+import {
+  applyPackageTierMembership,
+  emptyPackageLinkPayload,
+  type PackageLinkSavePayload,
+} from "../lib/packageTierLinkPersistence";
 import type {
   ImplementerHourGroupRow,
   Package,
   PackageExtraTaskRow,
-  PackagePricingOverrides,
   PackageSolutionTier,
   PackageTaskExtensions,
-  PackageTaskOverridesMap,
-  PackageTierOverrides,
   Solution,
   SolutionTier,
   SolutionTierPricing,
@@ -103,31 +102,6 @@ function nextAutoPackageId(packages: Package[]): string {
 
 function rowJson(row: object): Record<string, unknown> {
   return JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
-}
-
-type PackageLinkSavePayload = {
-  tier_overrides: PackageTierOverrides;
-  pricing_overrides: PackagePricingOverrides;
-  task_overrides: PackageTaskOverridesMap;
-  task_extensions: PackageTaskExtensions;
-};
-
-function emptyPayload(): PackageLinkSavePayload {
-  return {
-    tier_overrides: {},
-    pricing_overrides: {},
-    task_overrides: {},
-    task_extensions: emptyTaskExtensions(),
-  };
-}
-
-function packRowForDb(p: PackageLinkSavePayload): Record<string, unknown> {
-  return {
-    tier_overrides: sanitizeOverridesForDb(p.tier_overrides),
-    pricing_overrides: sanitizePricingOverridesForDb(p.pricing_overrides),
-    task_overrides: sanitizeTaskOverridesMapForDb(p.task_overrides),
-    task_extensions: sanitizeTaskExtensionsForDb(p.task_extensions),
-  };
 }
 
 function extraRowFromForm(package_task_id: string, f: TaskOverrideFormRow): PackageExtraTaskRow {
@@ -500,59 +474,9 @@ export function PackagesBuilderPanel({
     setPkgNewDrafts([newPkgDraftTaskRow()]);
   };
 
-  const applyPackageTierMembership = async (
-    client: SupabaseClient,
-    packageId: string,
-    wantedTierIds: string[],
-    payloadByTier: Record<string, PackageLinkSavePayload>
-  ): Promise<string | null> => {
-    const { data: curRows, error: fetchErr } = await client
-      .from("package_solution_tiers")
-      .select("*")
-      .eq("package_id", packageId);
-    if (fetchErr) return friendlyMutationMessage(fetchErr.message);
-    const cur = (curRows ?? []) as PackageSolutionTier[];
-    const curSet = new Set(cur.map((r) => r.solution_tier_id));
-    const wantedSet = new Set(wantedTierIds);
-
-    for (const r of cur) {
-      if (!wantedSet.has(r.solution_tier_id)) {
-        const { error } = await client
-          .from("package_solution_tiers")
-          .delete()
-          .eq("package_id", packageId)
-          .eq("solution_tier_id", r.solution_tier_id);
-        if (error) return friendlyMutationMessage(error.message);
-      }
-    }
-
-    for (const tid of wantedTierIds) {
-      const payload = payloadByTier[tid] ?? emptyPayload();
-      const rowPayload = packRowForDb(payload);
-      if (!curSet.has(tid)) {
-        const { error: e1 } = await client.from("package_solution_tiers").delete().eq("solution_tier_id", tid);
-        if (e1) return friendlyMutationMessage(e1.message);
-        const { error: e2 } = await client.from("package_solution_tiers").insert({
-          package_id: packageId,
-          solution_tier_id: tid,
-          ...rowPayload,
-        });
-        if (e2) return friendlyMutationMessage(e2.message);
-      } else {
-        const { error: e3 } = await client
-          .from("package_solution_tiers")
-          .update(rowPayload)
-          .eq("package_id", packageId)
-          .eq("solution_tier_id", tid);
-        if (e3) return friendlyMutationMessage(e3.message);
-      }
-    }
-    return null;
-  };
-
   const buildPayloadForTier = (tid: string): PackageLinkSavePayload => {
     const vaultTier = tiers.find((t) => t.solution_tier_id === tid);
-    if (!vaultTier) return emptyPayload();
+    if (!vaultTier) return emptyPackageLinkPayload();
     const tier_partial = overrideFormStringsToPartial(tierForms[tid] ?? tierToOverrideFormStrings(vaultTier));
     const tier_overrides = computeSparseOverrides(vaultTier, tier_partial);
 
@@ -610,7 +534,7 @@ export function PackagesBuilderPanel({
       return;
     }
     const payloadByTier: Record<string, PackageLinkSavePayload> = {};
-    for (const tid of wanted) payloadByTier[tid] = emptyPayload();
+    for (const tid of wanted) payloadByTier[tid] = emptyPackageLinkPayload();
     const assignErr = await applyPackageTierMembership(client, newId, wanted, payloadByTier);
     if (assignErr) {
       setOpErr(`${assignErr} (Package ${newId} was created; fix links in Package Builder if needed.)`);
@@ -701,6 +625,9 @@ export function PackagesBuilderPanel({
       setOpErr(friendlyMutationMessage(d1.message));
       return;
     }
+    const beforeTierIds = packageTiers
+      .filter((x) => x.package_id === pkgEditId)
+      .map((x) => x.solution_tier_id);
     const { error: d2 } = await client.from("packages").delete().eq("package_id", pkgEditId);
     if (d2) {
       setOpErr(friendlyMutationMessage(d2.message));
@@ -711,7 +638,12 @@ export function PackagesBuilderPanel({
       entityType: "packages",
       entityId: pkgEditId,
       action: "delete",
-      before: beforePkg ? (rowJson(beforePkg) as Record<string, unknown>) : null,
+      before: beforePkg
+        ? {
+            ...(rowJson(beforePkg) as Record<string, unknown>),
+            solution_tier_ids: beforeTierIds,
+          }
+        : null,
       after: null,
     });
     setOpOk(`Package ${pkgEditId} deleted.`);
@@ -1297,6 +1229,19 @@ export function PackagesBuilderPanel({
             (including pricing overrides).
           </p>
         )}
+
+        <PackageBuilderSlotLimitsPanel
+          muted={muted}
+          input={input}
+          btnPrimary={btnPrimary}
+          btnSm={btnSm}
+          tbl={tbl}
+          th={th}
+          td={td}
+          setOpErr={setOpErr}
+          setOpOk={setOpOk}
+          onSaved={onSaved}
+        />
 
         {subTab === "update" && (
           <div className="admin-form-stack" style={{ ...formGrid, marginBottom: "0.75rem" }}>

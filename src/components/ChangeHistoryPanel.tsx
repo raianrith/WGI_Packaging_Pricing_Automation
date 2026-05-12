@@ -107,7 +107,8 @@ export function ChangeHistoryPanel(props: Props) {
         <h2 style={h2}>Change History</h2>
         <p className="admin-intro" style={muted}>
           Recent saves from this admin workspace are recorded below. Each row shows who was signed in when
-          the save ran (after the database migration is applied). Dates use your browser&apos;s local
+          the save ran (after the database migration is applied). The <strong>Related</strong> column summarizes
+          which package, solution, or tier the change belongs with. Dates use your browser&apos;s local
           timezone. Open a row to see which fields changed (updates) or the full snapshot (raw JSON).
         </p>
         <div className="admin-audit-toolbar">
@@ -146,6 +147,7 @@ export function ChangeHistoryPanel(props: Props) {
                 <th style={th}>Action</th>
                 <th style={th}>Record type</th>
                 <th style={th}>What happened</th>
+                <th style={{ ...th, minWidth: "12rem" }}>Related</th>
                 <th style={{ ...th }}>Record ID</th>
                 <th style={{ ...th, width: "1%" }} aria-label="Expand details">
                   {""}
@@ -158,6 +160,7 @@ export function ChangeHistoryPanel(props: Props) {
                 const friendly = resolver.labelFor(row.entity_type, row.entity_id, row);
                 const snapName = pickNameFromSnapshot(row.after_data ?? row.before_data ?? undefined);
                 const desc = buildAuditDescription(row, diff, friendly, snapName);
+                const related = resolver.relatedContext(row);
                 const actor = auditActorLabel(row);
                 const expanded = expandedId === row.id;
                 const badgeClass =
@@ -182,6 +185,9 @@ export function ChangeHistoryPanel(props: Props) {
                       </td>
                       <td style={td}>{auditRecordTypeLabel(row.entity_type)}</td>
                       <td style={td}>{desc}</td>
+                      <td style={td} className="admin-audit-related-cell">
+                        {related === "—" ? <span style={muted}>—</span> : related}
+                      </td>
                       <td style={td} className="admin-audit-id-cell">
                         <code className="admin-audit-id" title={row.entity_id}>
                           {shortEntityId(row.entity_id)}
@@ -203,7 +209,7 @@ export function ChangeHistoryPanel(props: Props) {
                     </tr>
                     {expanded && (
                       <tr className="admin-audit-expand-row">
-                        <td style={{ ...td, padding: "0 0.6rem 0.85rem" }} colSpan={7}>
+                        <td style={{ ...td, padding: "0 0.6rem 0.85rem" }} colSpan={8}>
                           <div
                             id={`audit-detail-${row.id}`}
                             className="admin-audit-detail"

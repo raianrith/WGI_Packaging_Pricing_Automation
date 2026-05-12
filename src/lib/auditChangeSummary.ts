@@ -173,6 +173,90 @@ export function createAuditEntityLabelResolver(input: AuditLookupInput) {
     return sol ? `${t.solution_tier_name} (${sol})` : t.solution_tier_name;
   }
 
+  /**
+   * Short line for the Change History table: which package, solution, tier, or group
+   * this row belongs with (derived from entity id and snapshots).
+   */
+  function relatedContext(row: AuditLogRow): string {
+    const snap = (row.after_data ?? row.before_data ?? undefined) as Record<string, unknown> | undefined;
+
+    switch (row.entity_type) {
+      case "packages": {
+        let tierIds: string[] = [];
+        if (snap && Array.isArray(snap.solution_tier_ids)) {
+          tierIds = (snap.solution_tier_ids as unknown[]).filter((x): x is string => typeof x === "string");
+        }
+        if (tierIds.length === 0) {
+          tierIds = [
+            ...new Set(
+              input.packageTiers.filter((x) => x.package_id === row.entity_id).map((x) => x.solution_tier_id)
+            ),
+          ];
+        }
+        if (tierIds.length === 0) return "No linked tiers";
+        const labels = tierIds.map((id) => tierDisplay(id) ?? id);
+        const max = 4;
+        const head = labels.slice(0, max).join(" · ");
+        const tail = labels.length > max ? ` (+${labels.length - max} more)` : "";
+        return `Tiers (${tierIds.length}): ${head}${tail}`;
+      }
+      case "solutions": {
+        const n = input.tiers.filter((t) => t.solution_id === row.entity_id).length;
+        return n === 0 ? "No tiers in vault" : `${n} tier(s) on this solution`;
+      }
+      case "solution_tiers":
+      case "solution_tier_pricing": {
+        const t = tierRow.get(row.entity_id);
+        if (!t) {
+          const td = tierDisplay(row.entity_id);
+          return td ? `Tier: ${td}` : "—";
+        }
+        const sol = solName.get(t.solution_id);
+        return sol ? `Solution: ${sol}` : `Tier: ${t.solution_tier_name}`;
+      }
+      case "tasks": {
+        const task = input.tasks.find((x) => x.task_id === row.entity_id);
+        if (!task) return "—";
+        const td = tierDisplay(task.solution_tier_id);
+        return td ? `Tier: ${td}` : `Tier id ${task.solution_tier_id}`;
+      }
+      case "package_solution_tiers": {
+        const pid = snap && typeof snap.package_id === "string" ? snap.package_id : null;
+        const stid = snap && typeof snap.solution_tier_id === "string" ? snap.solution_tier_id : null;
+        if (!pid || !stid) return "—";
+        const pkgN = pkgName.get(pid) ?? pid;
+        const tierN = tierDisplay(stid) ?? stid;
+        return `Package: ${pkgN} · Tier: ${tierN}`;
+      }
+      case "task_groups": {
+        const lines = input.taskGroupLines.filter((l) => l.task_group_id === row.entity_id).length;
+        return lines > 0 ? `${lines} line(s) in group` : "Task group template";
+      }
+      case "task_group_lines": {
+        const line = input.taskGroupLines.find((x) => x.id === row.entity_id);
+        const g = line ? input.taskGroups.find((x) => x.id === line.task_group_id) : null;
+        return g?.name?.trim() ? `Task group: ${g.name.trim()}` : "—";
+      }
+      case "solution_tier_task_group_applied": {
+        const app = input.taskGroupApplied.find((a) => a.id === row.entity_id);
+        const tid =
+          app?.solution_tier_id ??
+          (snap && typeof snap.solution_tier_id === "string" ? snap.solution_tier_id : null);
+        const gid =
+          app?.task_group_id ?? (snap && typeof snap.task_group_id === "string" ? snap.task_group_id : null);
+        const gname = gid != null ? input.taskGroups.find((g) => g.id === gid)?.name?.trim() : null;
+        const tierL = tid != null ? tierDisplay(tid) : null;
+        const parts = [
+          gname ? `Group: ${gname}` : null,
+          tierL ? `Tier: ${tierL}` : null,
+        ].filter(Boolean);
+        return parts.length ? parts.join(" · ") : "—";
+      }
+      default:
+        return "—";
+    }
+  }
+
   function labelFor(entityType: string, entityId: string, row: AuditLogRow): string | null {
     switch (entityType) {
       case "packages":
@@ -237,7 +321,7 @@ export function createAuditEntityLabelResolver(input: AuditLookupInput) {
     }
   }
 
-  return { labelFor, tierDisplay };
+  return { labelFor, tierDisplay, relatedContext };
 }
 
 /** One-line description for the main table column. */
@@ -286,6 +370,7 @@ export function auditRowSearchText(
   const diff = computeAuditDiff(row.before_data, row.after_data);
   const diffBlob = diff.map((d) => `${d.fieldLabel} ${d.before} ${d.after}`).join(" ");
   const actor = auditActorLabel(row);
+  const related = resolver.relatedContext(row);
   return [
     row.entity_id,
     row.entity_type,
@@ -298,6 +383,7 @@ export function auditRowSearchText(
     diffBlob,
     actor,
     row.changed_by_user_id ?? "",
+    related,
   ]
     .join(" ")
     .toLowerCase();

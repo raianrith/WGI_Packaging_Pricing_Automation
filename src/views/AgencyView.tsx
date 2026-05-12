@@ -987,8 +987,8 @@ export function AgencyView({ mode }: AgencyViewProps) {
           {AGENCY_VIEW_DESCRIPTION}{" "}
           {mode === "catalog" ? (
             <>
-              Use the <Link className="agency-hub__link" to="/packages">Packages</Link> tab to open
-              a package workspace (tiers and pricing for that bundle).
+              Use the <Link className="agency-hub__link" to="/packages">Packages</Link> tab to build a new bundle or
+              open an existing package workspace.
             </>
           ) : (
             <>

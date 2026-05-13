@@ -81,6 +81,11 @@ function matchesQuery(haystack: string, query: string): boolean {
   return haystack.toLowerCase().includes(q);
 }
 
+function compareNamedRowsAsc(aName: string, bName: string, aId: string, bId: string): number {
+  const byName = aName.localeCompare(bName, undefined, { sensitivity: "base" });
+  return byName !== 0 ? byName : sortId(aId, bId);
+}
+
 function formatKpiNumber(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -435,7 +440,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           matchesQuery(s.solution_name, filterSol) ||
           matchesQuery(s.solution_id, filterSol)
       )
-      .sort((a, b) => sortId(a.solution_id, b.solution_id));
+      .sort((a, b) => compareNamedRowsAsc(a.solution_name, b.solution_name, a.solution_id, b.solution_id));
   }, [data, pkgId, filterSol]);
 
   /** Catalog: all solutions (sidebar list), filtered by search. */
@@ -447,7 +452,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           matchesQuery(s.solution_name, filterSol) ||
           matchesQuery(s.solution_id, filterSol)
       )
-      .sort((a, b) => sortId(a.solution_id, b.solution_id));
+      .sort((a, b) => compareNamedRowsAsc(a.solution_name, b.solution_name, a.solution_id, b.solution_id));
   }, [data, filterSol]);
 
   /** Sidebar always lists solutions in scope (catalog: all filtered; package: package scope). */
@@ -466,7 +471,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           matchesQuery(p.package_name, filterPkg) ||
           matchesQuery(p.package_id, filterPkg)
       )
-      .sort((a, b) => sortId(a.package_id, b.package_id));
+      .sort((a, b) => compareNamedRowsAsc(a.package_name, b.package_name, a.package_id, b.package_id));
   }, [data, mode, filterPkg]);
 
   /** Package workspace: tiers linked to this package via package_solution_tiers (or unassigned tiers for standalone). */

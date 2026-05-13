@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UniqueIdentifier } from "@dnd-kit/core";
 import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { getSupabase } from "../lib/supabase";
@@ -15,6 +16,7 @@ import {
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { syncTaskGroupTemplateToAppliedTiers } from "../lib/syncTaskGroupTemplateToAppliedTiers";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
+import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 import type {
   ImplementerHourGroupRow,
   Solution,
@@ -1173,6 +1175,48 @@ export function TaskGroupBuilderPanel({
 
   const editingLineRow = editLineId ? taskGroupLines.find((x) => x.id === editLineId) ?? null : null;
 
+  const reorderSelectedGroupLines = useCallback(
+    async (orderedIds: UniqueIdentifier[]) => {
+      if (!selectedGroupId) return;
+      const client = getSupabase();
+      if (!client) return;
+      const nextIds = orderedIds.map(String);
+      const byId = new Map(linesInSelected.map((line) => [line.id, line]));
+      setSaving(true);
+      setOpErr(null);
+      setOpOk(null);
+      try {
+        for (let i = 0; i < nextIds.length; i += 1) {
+          const id = nextIds[i]!;
+          const prev = byId.get(id);
+          if (!prev || prev.sort_order === i) continue;
+          const { error } = await client
+            .from("task_group_lines")
+            .update({ sort_order: i })
+            .eq("id", id)
+            .eq("task_group_id", selectedGroupId);
+          if (error) {
+            pushError(error.message);
+            return;
+          }
+          await logAudit(client, {
+            entityType: "task_group_lines",
+            entityId: id,
+            action: "update",
+            before: rowJson(prev),
+            after: rowJson({ ...prev, sort_order: i }),
+          });
+        }
+        setOpOk("Line order updated.");
+        notifyPackagingDataChanged();
+        await onRefresh();
+      } finally {
+        setSaving(false);
+      }
+    },
+    [linesInSelected, logAudit, onRefresh, selectedGroupId, setOpErr, setOpOk]
+  );
+
   return (
     <section className="admin-panel admin-panel--editor admin-task-group-builder" style={panel}>
       <div className="admin-editor-layout admin-editor-layout--wide">
@@ -1483,55 +1527,81 @@ export function TaskGroupBuilderPanel({
                 <thead>
                   <tr>
                     <th style={th}>#</th>
+                    <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                     <th style={th}>Task name</th>
                     <th style={th}>Implementer</th>
                     <th style={th}>Hours</th>
                     <th style={th} />
                   </tr>
                 </thead>
-                <tbody>
-                  {linesInSelected.length === 0 ? (
+                {linesInSelected.length === 0 ? (
+                  <tbody>
                     <tr>
-                      <td colSpan={5} style={td}>
+                      <td colSpan={6} style={td}>
                         No lines. Add one below.
                       </td>
                     </tr>
-                  ) : null}
-                  {linesInSelected.map((r, idx) => (
-                    <tr key={r.id}>
-                      <td style={td}>{idx + 1}</td>
-                      <td style={td}>
-                        {r.line_type === "copy_from_task" && r.source_task_id ? (
-                          <span title={`Copy from task ${r.source_task_id}`}>{r.task_name || "—"}</span>
-                        ) : (
-                          r.task_name || "—"
-                        )}
-                      </td>
-                      <td style={td}>{(r.task_implementer ?? "").trim() || "—"}</td>
-                      <td style={td}>{formatTaskGroupLineHours(r.hours)}</td>
-                      <td style={td}>
-                        <button type="button" style={btn} onClick={() => startEditLine(r)} disabled={saving}>
-                          Edit
-                        </button>{" "}
-                        <button type="button" style={btn} onClick={() => void duplicateLine(r)} disabled={saving}>
-                          Copy
-                        </button>{" "}
-                        <button type="button" style={btnDangerSm} onClick={() => void removeLine(r)} disabled={saving}>
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {linesInSelected.length > 0 ? (
+                  </tbody>
+                ) : (
+                  <TaskSortableList
+                    itemIds={linesInSelected.map((r) => r.id)}
+                    disabled={saving || Boolean(editLineId)}
+                    onReorder={reorderSelectedGroupLines}
+                  >
+                    <tbody>
+                      {linesInSelected.map((r, idx) => (
+                        <SortableTableRowTr
+                          key={r.id}
+                          id={r.id}
+                          disabled={saving || Boolean(editLineId)}
+                          renderCells={(dragHandle) => [
+                            <td style={td} key="idx">
+                              {idx + 1}
+                            </td>,
+                            <td style={td} key="drag">
+                              {dragHandle}
+                            </td>,
+                            <td style={td} key="name">
+                              {r.line_type === "copy_from_task" && r.source_task_id ? (
+                                <span title={`Copy from task ${r.source_task_id}`}>{r.task_name || "—"}</span>
+                              ) : (
+                                r.task_name || "—"
+                              )}
+                            </td>,
+                            <td style={td} key="impl">
+                              {(r.task_implementer ?? "").trim() || "—"}
+                            </td>,
+                            <td style={td} key="hours">
+                              {formatTaskGroupLineHours(r.hours)}
+                            </td>,
+                            <td style={td} key="actions">
+                              <button type="button" style={btn} onClick={() => startEditLine(r)} disabled={saving}>
+                                Edit
+                              </button>{" "}
+                              <button type="button" style={btn} onClick={() => void duplicateLine(r)} disabled={saving}>
+                                Copy
+                              </button>{" "}
+                              <button type="button" style={btnDangerSm} onClick={() => void removeLine(r)} disabled={saving}>
+                                Remove
+                              </button>
+                            </td>,
+                          ]}
+                        />
+                      ))}
+                    </tbody>
+                  </TaskSortableList>
+                )}
+                {linesInSelected.length > 0 ? (
+                  <tbody>
                     <tr style={{ fontWeight: 600, borderTop: "1px solid rgba(13, 92, 77, 0.2)" }}>
-                      <td colSpan={3} style={td}>
+                      <td colSpan={4} style={td}>
                         Total hours
                       </td>
                       <td style={td}>{formatTaskGroupLineHours(totalLineHours)}</td>
                       <td style={td} />
                     </tr>
-                  ) : null}
-                </tbody>
+                  </tbody>
+                ) : null}
               </table>
             </div>
 

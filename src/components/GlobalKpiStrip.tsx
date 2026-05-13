@@ -13,6 +13,7 @@ type Counts = {
   solutions: number;
   tiers: number;
   tasks: number;
+  uniqueTasks: number;
 };
 
 export function GlobalKpiStrip() {
@@ -33,23 +34,30 @@ export function GlobalKpiStrip() {
       return;
     }
     setLoading(true);
-    const [p, s, t, k] = await Promise.all([
+    const [p, s, t, k, taskNames] = await Promise.all([
       client.from("packages").select("*", { count: "exact", head: true }),
       client.from("solutions").select("*", { count: "exact", head: true }),
       client.from("solution_tiers").select("*", { count: "exact", head: true }),
       client.from("tasks").select("*", { count: "exact", head: true }),
+      client.from("tasks").select("task_name"),
     ]);
-    const err = p.error || s.error || t.error || k.error;
+    const err = p.error || s.error || t.error || k.error || taskNames.error;
     if (err) {
       setCounts(null);
       setLoading(false);
       return;
     }
+    const uniqueTaskNames = new Set(
+      (taskNames.data ?? [])
+        .map((row) => normalizeTaskName(row.task_name))
+        .filter((value): value is string => Boolean(value))
+    );
     setCounts({
       packages: p.count ?? 0,
       solutions: s.count ?? 0,
       tiers: t.count ?? 0,
       tasks: k.count ?? 0,
+      uniqueTasks: uniqueTaskNames.size,
     });
     setLoading(false);
   }, []);
@@ -83,6 +91,7 @@ export function GlobalKpiStrip() {
     { key: "solutions", label: "Solutions", hint: "Offerings" },
     { key: "tiers", label: "Tiers", hint: "Variants" },
     { key: "tasks", label: "Tasks", hint: "Steps" },
+    { key: "uniqueTasks", label: "Unique Tasks", hint: "Distinct names" },
   ];
 
   return (
@@ -128,4 +137,10 @@ const accentLine = [
   "#1b6f5c",
   "#b45309",
   "#1d4ed8",
+  "#7c3aed",
 ] as const;
+
+function normalizeTaskName(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  return normalized || null;
+}

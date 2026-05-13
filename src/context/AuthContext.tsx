@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "../lib/supabase";
+import { clearUserPresence } from "../lib/userPresence";
 
 type AuthContextValue = {
   session: Session | null;
@@ -90,11 +91,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const c = getSupabase();
+    const userId = session?.user?.id;
+    if (c && userId) {
+      await clearUserPresence(c, userId).catch(() => {});
+    }
     if (c) await c.auth.signOut();
     setSession(null);
     setIsAdmin(false);
     setProfileLoading(false);
-  }, []);
+  }, [session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

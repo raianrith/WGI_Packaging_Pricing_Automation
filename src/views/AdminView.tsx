@@ -28,6 +28,7 @@ import {
 } from "../lib/recomputeStoredTierPricing";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { PricingCalculatorPanel } from "../components/PricingCalculatorPanel";
+import { ActiveUsersPanel } from "../components/ActiveUsersPanel";
 import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
@@ -54,6 +55,7 @@ type AdminTab =
   | "packages"
   | "solutions_builder"
   | "task_group_builder"
+  | "active_users"
   | "pricing_calculator"
   | "glossary"
   | "implementer_mapping"
@@ -427,6 +429,7 @@ export function AdminView() {
                 ["pricing_calculator", "Pricing Calculator"],
                 ["glossary", "Data Glossary"],
                 ["audit", "Change History"],
+                ["active_users", "Active Users"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -451,6 +454,7 @@ export function AdminView() {
             tab !== "glossary" &&
             tab !== "implementer_mapping" &&
             tab !== "pricing_calculator" &&
+            tab !== "active_users" &&
             tab !== "task_group_builder" && (
             <div
               className="admin-subtabs"
@@ -647,6 +651,11 @@ export function AdminView() {
               onRecalculateAllSavedPricing={recalculateAllSavedTierPricing}
               savedPricingRowCount={tierPricing.length}
               recalculateAllSavedPricingBusy={recalculateAllSavedPricingBusy}
+            />
+          )}
+          {tab === "active_users" && (
+            <ActiveUsersPanel
+              styles={{ panel, h2, muted, tbl, th, td, btnSm, input }}
             />
           )}
           {tab === "glossary" && <DataGlossaryPanel />}

@@ -223,6 +223,17 @@ export type ProfileRow = {
   updated_at?: string;
 };
 
+/** `public.user_presence` — heartbeat rows for showing who is active in the app now. */
+export type UserPresenceRow = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  current_path: string | null;
+  last_seen_at: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AuditLogRow = {
   id: string;
   entity_type: string;

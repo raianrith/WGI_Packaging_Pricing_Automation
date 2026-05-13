@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   APP_BRAND_NAME,
@@ -9,6 +9,11 @@ import {
 } from "../branding";
 import { useAuth } from "../context/AuthContext";
 import { isAgencyRoute } from "../lib/agencyRoutes";
+import { getSupabase } from "../lib/supabase";
+import {
+  presenceHeartbeatIntervalMs,
+  upsertUserPresence,
+} from "../lib/userPresence";
 
 function AuthLoadingScreen() {
   return (
@@ -42,6 +47,29 @@ export function ProtectedLayout() {
   const { session, loading, configured, profileLoading, isAdmin } = useAuth();
   const location = useLocation();
   const agencyTabActive = isAgencyRoute(location.pathname);
+
+  useEffect(() => {
+    const client = getSupabase();
+    const user = session?.user;
+    if (!client || !user) return;
+
+    const heartbeat = () => {
+      if (document.visibilityState === "hidden") return;
+      void upsertUserPresence(client, user, location.pathname);
+    };
+
+    heartbeat();
+    const intervalId = window.setInterval(heartbeat, presenceHeartbeatIntervalMs());
+    const onVisible = () => heartbeat();
+    const onFocus = () => heartbeat();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [location.pathname, session?.user]);
 
   if (!configured) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;

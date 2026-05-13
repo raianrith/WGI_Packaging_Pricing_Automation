@@ -29,6 +29,7 @@ export type SolutionTier = {
   solution_tier_id: string;
   solution_id: string;
   solution_tier_name: string;
+  solution_tier_category: string | null;
   solution_tier_owner: string | null;
   solution_tier_overview: string | null;
   solution_tier_overview_link: string | null;
@@ -58,6 +59,7 @@ export type PackageTierOverrides = Partial<
   Pick<
     SolutionTier,
     | "solution_tier_name"
+    | "solution_tier_category"
     | "solution_tier_owner"
     | "solution_tier_overview"
     | "solution_tier_overview_link"

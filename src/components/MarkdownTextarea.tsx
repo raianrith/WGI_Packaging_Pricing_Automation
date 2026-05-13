@@ -6,9 +6,19 @@ export type MarkdownTextareaProps = {
   textareaStyle: CSSProperties;
   rows?: number;
   disabled?: boolean;
+  placeholder?: string;
+  ariaLabel?: string;
 };
 
-export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2, disabled }: MarkdownTextareaProps) {
+export function MarkdownTextarea({
+  value,
+  onChange,
+  textareaStyle,
+  rows = 2,
+  disabled,
+  placeholder,
+  ariaLabel,
+}: MarkdownTextareaProps) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
   const setNext = useCallback(
@@ -129,6 +139,8 @@ export function MarkdownTextarea({ value, onChange, textareaStyle, rows = 2, dis
         rows={rows}
         value={value}
         disabled={disabled}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>

@@ -181,12 +181,14 @@ type Props = {
   taskDrivenHours?: boolean;
   /** Per pricing group: summed task times for the tier; required when `taskDrivenHours`. */
   taskHourRollup?: Record<PricingHourGroupKey, number> | null;
-  /** Default writes to `solution_tier_pricing`. `package` pushes drafts to parent only (package link JSON). */
-  persistTarget?: "vault" | "package";
+  /** Default writes to `solution_tier_pricing`. Non-vault modes push drafts back to the parent instead. */
+  persistTarget?: "vault" | "package" | "draft";
   /** When `persistTarget` is `package`, seed the form from this merged row (vault + existing package overrides). */
   packagePricingSeed?: SolutionTierPricing | null;
   /** When `persistTarget` is `package`, receive the live merged pricing row (including derived sell). */
   onPackagePricingDraft?: (row: SolutionTierPricing) => void;
+  /** When `persistTarget` is `draft`, receive the live draft pricing row for a parent wizard save. */
+  onDraftPricingDraft?: (row: SolutionTierPricing) => void;
 };
 
 export function PricingPanel({
@@ -219,6 +221,7 @@ export function PricingPanel({
   persistTarget = "vault",
   packagePricingSeed = null,
   onPackagePricingDraft,
+  onDraftPricingDraft,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [scope, setScope] = useState("");
@@ -427,8 +430,8 @@ export function PricingPanel({
     loadRow(packagePricingSeed);
   }, [persistTarget, packagePricingSeed, loadRow]);
 
-  const packageDraftRow = useMemo(() => {
-    if (persistTarget !== "package" || !tierPick.trim()) return null;
+  const externalDraftRow = useMemo(() => {
+    if (persistTarget === "vault" || !tierPick.trim()) return null;
     const d = derived;
     const pc = percentChangeFromSellAndOld(d.sellPrice, oldPrice);
     const tierRow = tiersScoped.find((t) => t.solution_tier_id === tierPick.trim()) ?? null;
@@ -487,9 +490,15 @@ export function PricingPanel({
   ]);
 
   useEffect(() => {
-    if (persistTarget !== "package" || !packageDraftRow || !onPackagePricingDraft) return;
-    onPackagePricingDraft(packageDraftRow);
-  }, [persistTarget, packageDraftRow, onPackagePricingDraft]);
+    if (!externalDraftRow) return;
+    if (persistTarget === "package") {
+      onPackagePricingDraft?.(externalDraftRow);
+      return;
+    }
+    if (persistTarget === "draft") {
+      onDraftPricingDraft?.(externalDraftRow);
+    }
+  }, [persistTarget, externalDraftRow, onPackagePricingDraft, onDraftPricingDraft]);
 
   useEffect(() => {
     if (!taskDrivenHours || !taskHourRollup) {
@@ -636,6 +645,11 @@ export function PricingPanel({
             link when you click <strong>Save package</strong> (vault <code style={{ fontSize: "0.85em" }}>solution_tier_pricing</code>{" "}
             is not updated here).
           </>
+        ) : persistTarget === "draft" ? (
+          <>
+            Same pricing form as <strong>new tiers on existing solutions</strong>. This draft is saved together with the
+            new solution when you click the final create button below.
+          </>
         ) : subTab === "create" ? (
           <>
             Add or replace a row — upsert on <code style={{ fontSize: "0.85em" }}>solution_tier_id</code>. Sell
@@ -654,7 +668,7 @@ export function PricingPanel({
         )}
       </p>
 
-      {subTab === "update" && persistTarget !== "package" && (
+      {subTab === "update" && persistTarget === "vault" && (
         <>
           <div className="admin-table-scroll">
           <table className="admin-data-table" style={{ ...tbl, marginTop: 8 }}>
@@ -969,6 +983,10 @@ export function PricingPanel({
         {persistTarget === "package" ? (
           <p className="admin-hint" style={{ ...muted, margin: 0, maxWidth: "56ch" }}>
             Pricing is included when you save the package (no separate pricing save to the vault).
+          </p>
+        ) : persistTarget === "draft" ? (
+          <p className="admin-hint" style={{ ...muted, margin: 0, maxWidth: "56ch" }}>
+            Pricing is included when you create the solution (no separate pricing save to the vault).
           </p>
         ) : (
           <>

@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import type { TierResourceExampleRow } from "../types";
 
 type Props = {
@@ -26,7 +27,19 @@ export function TierResourceExamplesDisplay({ rows, className }: Props) {
               <div className="tier-resource-examples__grid">
                 <div className="tier-resource-examples__cell">
                   <span className="tier-resource-examples__label">Example</span>
-                  <span className="tier-resource-examples__value">{example}</span>
+                  <div className="tier-resource-examples__value tier-resource-examples__value--markdown">
+                    <ReactMarkdown
+                      components={{
+                        a: ({ href, children }) => (
+                          <a href={href} className="agency-hub__link" target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
+                      {example}
+                    </ReactMarkdown>
+                  </div>
                 </div>
                 <div className="tier-resource-examples__cell">
                   <span className="tier-resource-examples__label">Date</span>

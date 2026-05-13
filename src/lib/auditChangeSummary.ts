@@ -47,6 +47,7 @@ const FIELD_LABEL_OVERRIDES: Record<string, string> = {
   solution_name: "Solution name",
   solution_tier_id: "Solution tier",
   solution_tier_name: "Tier name",
+  solution_tier_category: "Tier category",
   task_id: "Task",
   task_name: "Task name",
   task_implementer: "Implementer",

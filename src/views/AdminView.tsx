@@ -798,6 +798,7 @@ function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig)
         solution_tier_id: id,
         solution_id: solutionId,
         solution_tier_name: normStr(r.solution_tier_name) || id,
+        solution_tier_category: normOptStr(r.solution_tier_category),
         solution_tier_owner: normOptStr(r.solution_tier_owner),
         solution_tier_overview: normOptStr(r.solution_tier_overview),
         solution_tier_overview_link: normOptStr(r.solution_tier_overview_link),
@@ -1311,6 +1312,7 @@ async function downloadBulkTemplateWorkbook(data: {
       "solution_tier_id",
       "solution_id",
       "solution_tier_name",
+      "solution_tier_category",
       "solution_tier_owner",
       "solution_tier_overview",
       "solution_tier_overview_link",
@@ -1491,6 +1493,10 @@ const BULK_GLOSSARY: Record<
       {
         name: "solution_tier_name",
         description: "Tier name users see (for example: Basic, Standard, Advanced).",
+      },
+      {
+        name: "solution_tier_category",
+        description: "Optional category label for this tier (for example: Strategy, Launch, Optimization).",
       },
       { name: "solution_tier_owner", description: "Owner of this tier (person or role)." },
       { name: "solution_tier_overview", description: "Overview text shown in Agency mode." },

@@ -42,6 +42,14 @@ export function SolutionTierFormUpdateBlock({ tierIdReadonly, values, onChange, 
         <input style={input} value={v("solution_tier_name")} onChange={(e) => onChange("solution_tier_name", e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Tier category</span>
+        <input
+          style={input}
+          value={v("solution_tier_category")}
+          onChange={(e) => onChange("solution_tier_category", e.target.value)}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <span className="admin-field-caption">Owner</span>
         <input style={input} value={v("solution_tier_owner")} onChange={(e) => onChange("solution_tier_owner", e.target.value)} />
       </label>

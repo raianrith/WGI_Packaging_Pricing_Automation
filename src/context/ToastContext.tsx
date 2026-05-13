@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -36,40 +35,14 @@ function toastId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-const STACK_BASE: CSSProperties = {
-  padding: "0.75rem 0.95rem",
-  borderRadius: "var(--radius-lg)",
-  fontSize: "0.9rem",
-  lineHeight: 1.45,
+const VARIANT_META: Record<
+  ToastVariant,
+  { title: string; icon: string; modifier: "err" | "ok" | "note" }
+> = {
+  error: { title: "Issue", icon: "!", modifier: "err" },
+  success: { title: "Success", icon: "✓", modifier: "ok" },
+  note: { title: "Note", icon: "i", modifier: "note" },
 };
-
-const VARIANT_STYLE: Record<ToastVariant, CSSProperties> = {
-  error: {
-    ...STACK_BASE,
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "var(--danger)",
-  },
-  success: {
-    ...STACK_BASE,
-    background: "#ecfdf5",
-    border: "1px solid #a7f3d0",
-    color: "#065f46",
-  },
-  note: {
-    ...STACK_BASE,
-    background: "#fffbeb",
-    border: "1px solid #fde68a",
-    color: "#92400e",
-  },
-};
-
-/** Modifiers for stacked toasts rendered in the portal. */
-function mapVariantToModifier(v: ToastVariant): "err" | "ok" | "note" {
-  if (v === "error") return "err";
-  if (v === "success") return "ok";
-  return "note";
-}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastRow[]>([]);
@@ -190,11 +163,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               {items.map((t) => (
                 <div
                   key={t.id}
-                  className={`admin-op-toast admin-op-toast--${mapVariantToModifier(t.variant)}`}
+                  className={`admin-op-toast admin-op-toast--${VARIANT_META[t.variant].modifier}`}
                   role={t.variant === "error" ? "alert" : "status"}
-                  style={VARIANT_STYLE[t.variant]}
                 >
-                  <span className="admin-op-toast__text">{t.message}</span>
+                  <div className="admin-op-toast__icon" aria-hidden>
+                    {VARIANT_META[t.variant].icon}
+                  </div>
+                  <div className="admin-op-toast__body">
+                    <div className="admin-op-toast__title-row">
+                      <strong className="admin-op-toast__title">{VARIANT_META[t.variant].title}</strong>
+                    </div>
+                    <span className="admin-op-toast__text">{t.message}</span>
+                  </div>
                   <button
                     type="button"
                     className="admin-op-toast__dismiss"

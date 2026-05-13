@@ -16,7 +16,6 @@ import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../li
 import type {
   ImplementerHourGroupRow,
   PackageSolutionTier,
-  PricingHourGroupKey,
   Solution,
   SolutionTier,
   SolutionTierPricing,
@@ -36,18 +35,7 @@ import { nextAutoSolutionId, nextAutoTierId } from "../lib/entityIdSequences";
 import { nextAutoTaskId } from "../lib/taskIds";
 import { persistTaskSortOrdersForTier } from "../lib/persistTaskSortOrdersForTier";
 import { compareTasksByOrder, tierMaxSortOrder } from "../lib/taskOrder";
-import { pricingHourGroupLabel } from "../lib/pricingHourGroups";
-import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
-  ACCOUNT_MGMT_HOURS_ADDON_RATE,
-  CLIENT_REVISION_RISK_SCORE_HINTS,
-  INTERNAL_COORDINATION_SCORE_HINTS,
-  SCOPE_RISK_SCORE_HINTS,
-  computeTierPricing,
-  riskScore012Options,
-  riskScore012SelectTitle,
-  strategicValueScoreSelectTitle,
-  strategicValueScoreUiLabel,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import { MarkdownTextarea } from "./MarkdownTextarea";
@@ -77,28 +65,6 @@ type SBInlineZone =
   | "upd_copy_db"
   | "upd_copy_draft";
 
-function fmtDerivedHours(n: number): string {
-  return Number.isFinite(n)
-    ? n.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 0 })
-    : "0";
-}
-
-const SCOPE_RISK_OPTIONS = riskScore012Options(SCOPE_RISK_SCORE_HINTS);
-const INTERNAL_COORDINATION_OPTIONS = riskScore012Options(INTERNAL_COORDINATION_SCORE_HINTS);
-const CLIENT_REVISION_RISK_OPTIONS = riskScore012Options(CLIENT_REVISION_RISK_SCORE_HINTS);
-
-const STRATEGIC_OPTIONS: { value: string; label: string }[] = ([0, 1, 2] as const).map((s) => ({
-  value: String(s),
-  label: strategicValueScoreUiLabel(s),
-}));
-
-function parseNumStr(s: string): number | null {
-  const t = s.trim();
-  if (t === "" || t.toLowerCase() === "n/a") return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
-
 function AdminFieldCaption({ children }: { children: ReactNode }) {
   return <span className="admin-field-caption">{children}</span>;
 }
@@ -127,12 +93,6 @@ function optNum(s: string): number | null {
   if (!t) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
-}
-
-function formatRollupBucketForInput(n: number): string {
-  if (n == null || !Number.isFinite(n) || n === 0) return "";
-  if (Number.isInteger(n)) return String(n);
-  return String(Math.round(n * 100) / 100);
 }
 
 function firstTaskMatchingName(tasks: TaskRow[], name: string): TaskRow | null {
@@ -428,6 +388,7 @@ export function SolutionsBuilderPanel({
   const [solNameDraft, setSolNameDraft] = useState("");
 
   const [tName, setTName] = useState("");
+  const [tCategory, setTCategory] = useState("");
   const [tOwner, setTOwner] = useState("");
   const [tSop, setTSop] = useState("");
   const [tWhatIsIt, setTWhatIsIt] = useState("");
@@ -448,28 +409,8 @@ export function SolutionsBuilderPanel({
   const [draftTaskBulkSelectedKeys, setDraftTaskBulkSelectedKeys] = useState<Set<string>>(
     new Set()
   );
-
-  const [prSolLabel, setPrSolLabel] = useState("");
-  const [prTierLabel, setPrTierLabel] = useState("");
-  const [prScope, setPrScope] = useState("");
-  const [prHCs, setPrHCs] = useState("");
-  const [prHCp, setPrHCp] = useState("");
-  const [prHDs, setPrHDs] = useState("");
-  const [prHWd, setPrHWd] = useState("");
-  const [prHVi, setPrHVi] = useState("");
-  const [prHDa, setPrHDa] = useState("");
-  const [prHPm, setPrHPm] = useState("");
-  const [prHHb, setPrHHb] = useState("");
-  const [prHOt, setPrHOt] = useState("");
-  const [prScopeRisk, setPrScopeRisk] = useState("0");
-  const [prInternalCoord, setPrInternalCoord] = useState("0");
-  const [prClientRev, setPrClientRev] = useState("0");
-  const [prStratScore, setPrStratScore] = useState("0");
-  const [prOldPrice, setPrOldPrice] = useState("");
-  const [prReqCustom, setPrReqCustom] = useState(false);
-  const [prTaxable, setPrTaxable] = useState(false);
-  const [prNotes, setPrNotes] = useState("");
-  const [prTags, setPrTags] = useState("");
+  const [saveDraftTasksBusy, setSaveDraftTasksBusy] = useState(false);
+  const [fullStackPricingDraft, setFullStackPricingDraft] = useState<SolutionTierPricing | null>(null);
 
   const resetCreateWizard = useCallback(() => {
     setCreateBranch(null);
@@ -479,6 +420,7 @@ export function SolutionsBuilderPanel({
     setTierOnlySolId("");
     setSolNameDraft("");
     setTName("");
+    setTCategory("");
     setTOwner("");
     setTSop("");
     setTWhatIsIt("");
@@ -495,27 +437,7 @@ export function SolutionsBuilderPanel({
     setCreateAutofillFrom(null);
     setDraftTasks([newDraftTaskRow()]);
     setDraftTaskBulkSelectedKeys(new Set());
-    setPrSolLabel("");
-    setPrTierLabel("");
-    setPrScope("");
-    setPrHCs("");
-    setPrHCp("");
-    setPrHDs("");
-    setPrHWd("");
-    setPrHVi("");
-    setPrHDa("");
-    setPrHPm("");
-    setPrHHb("");
-    setPrHOt("");
-    setPrScopeRisk("0");
-    setPrInternalCoord("0");
-    setPrClientRev("0");
-    setPrStratScore("0");
-    setPrOldPrice("");
-    setPrReqCustom(false);
-    setPrTaxable(false);
-    setPrNotes("");
-    setPrTags("");
+    setFullStackPricingDraft(null);
     setCreateApplyTemplateGroupId("");
     setFullStackApplyGroupId("");
   }, []);
@@ -579,6 +501,7 @@ export function SolutionsBuilderPanel({
     if (!t) return;
     setCreateAutofillFrom(t);
     setTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
+    setTCategory((prev) => (prev.trim() ? prev : (t.solution_tier_category ?? "")));
     setTOwner(t.solution_tier_owner ?? "");
     setTSop(t.solution_tier_sop ?? "");
     setTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -596,41 +519,6 @@ export function SolutionsBuilderPanel({
       setTResExamples(h.examples);
     }
   };
-
-  const fullPricingHours = useMemo(
-    () => ({
-      client: parseNumStr(prHCs) ?? 0,
-      copy: parseNumStr(prHCp) ?? 0,
-      design: parseNumStr(prHDs) ?? 0,
-      web: parseNumStr(prHWd) ?? 0,
-      video: parseNumStr(prHVi) ?? 0,
-      data: parseNumStr(prHDa) ?? 0,
-      paidMedia: parseNumStr(prHPm) ?? 0,
-      hubspot: parseNumStr(prHHb) ?? 0,
-      other: parseNumStr(prHOt) ?? 0,
-    }),
-    [prHCs, prHCp, prHDs, prHWd, prHVi, prHDa, prHPm, prHHb, prHOt]
-  );
-
-  const fullPricingDerived = useMemo(
-    () =>
-      computeTierPricing(
-        {
-          hours: fullPricingHours,
-          scopeRisk: Number(prScopeRisk),
-          internalCoordination: Number(prInternalCoord),
-          clientRevisionRisk: Number(prClientRev),
-          strategicValueScore: Number(prStratScore),
-        },
-        tierPricingMathConfig
-      ),
-    [fullPricingHours, prScopeRisk, prInternalCoord, prClientRev, prStratScore, tierPricingMathConfig]
-  );
-
-  const prPercentFromOld = useMemo(
-    () => percentChangeFromSellAndOld(fullPricingDerived.sellPrice, prOldPrice),
-    [fullPricingDerived.sellPrice, prOldPrice]
-  );
 
   const createFullSolutionStack = async () => {
     const client = getSupabase();
@@ -666,7 +554,11 @@ export function SolutionsBuilderPanel({
     }
     const solId = nextAutoSolutionId(solRes.data ?? []);
     const tierId = nextAutoTierId(tierRes.data ?? []);
-    const d = fullPricingDerived;
+    const pricingDraft = fullStackPricingDraft;
+    if (!pricingDraft) {
+      setOpErr("Pricing draft is missing. Fill in Section 3 before creating the solution.");
+      return;
+    }
 
     const solRow: Solution = {
       solution_id: solId,
@@ -693,6 +585,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: tierId,
       solution_id: solId,
       solution_tier_name: tierName,
+      solution_tier_category: blankToNull(tCategory),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -764,35 +657,35 @@ export function SolutionsBuilderPanel({
 
     const pricingPayload: Record<string, unknown> = {
       solution_tier_id: tierId,
-      solution_label: prSolLabel.trim() || null,
-      tier: prTierLabel.trim() || null,
-      scope: prScope.trim() || null,
-      hours_client_services: fullPricingHours.client,
-      hours_copy: fullPricingHours.copy,
-      hours_design: fullPricingHours.design,
-      hours_web_dev: fullPricingHours.web,
-      hours_video: fullPricingHours.video,
-      hours_data: fullPricingHours.data,
-      hours_paid_media: fullPricingHours.paidMedia,
-      hours_hubspot: fullPricingHours.hubspot,
-      hours_other: fullPricingHours.other,
-      total_hours: d.totalHours,
-      expected_effort_base_price: d.expectedEffortBase,
-      scope_risk: d.scopeRisk,
-      internal_coordination: d.internalCoordination,
-      client_revision_risk: d.clientRevisionRisk,
-      risk_multiplier: d.riskMultiplier,
-      risk_mitigated_base_price: d.riskMitigatedBase,
-      strategic_value_score: d.strategicValueScore,
-      strategic_value_multiplier: d.strategicMultiplier,
-      sell_price: d.sellPrice,
+      solution_label: pricingDraft.solution_label,
+      tier: pricingDraft.tier,
+      scope: pricingDraft.scope,
+      hours_client_services: pricingDraft.hours_client_services,
+      hours_copy: pricingDraft.hours_copy,
+      hours_design: pricingDraft.hours_design,
+      hours_web_dev: pricingDraft.hours_web_dev,
+      hours_video: pricingDraft.hours_video,
+      hours_data: pricingDraft.hours_data,
+      hours_paid_media: pricingDraft.hours_paid_media,
+      hours_hubspot: pricingDraft.hours_hubspot,
+      hours_other: pricingDraft.hours_other,
+      total_hours: pricingDraft.total_hours,
+      expected_effort_base_price: pricingDraft.expected_effort_base_price,
+      scope_risk: pricingDraft.scope_risk,
+      internal_coordination: pricingDraft.internal_coordination,
+      client_revision_risk: pricingDraft.client_revision_risk,
+      risk_multiplier: pricingDraft.risk_multiplier,
+      risk_mitigated_base_price: pricingDraft.risk_mitigated_base_price,
+      strategic_value_score: pricingDraft.strategic_value_score,
+      strategic_value_multiplier: pricingDraft.strategic_value_multiplier,
+      sell_price: pricingDraft.sell_price,
       standalone_sell_price: null,
-      old_price: parseNumStr(prOldPrice),
-      percent_change: percentChangeFromSellAndOld(d.sellPrice, prOldPrice).forDb,
-      requires_customization: prReqCustom,
-      taxable: prTaxable,
-      notes: prNotes.trim() || null,
-      tags: prTags.trim() || null,
+      old_price: pricingDraft.old_price,
+      percent_change: pricingDraft.percent_change,
+      requires_customization: pricingDraft.requires_customization,
+      taxable: pricingDraft.taxable,
+      notes: pricingDraft.notes,
+      tags: pricingDraft.tags,
     };
 
     const prevPricing = tierPricing.find((p) => p.solution_tier_id === tierId) ?? null;
@@ -816,7 +709,7 @@ export function SolutionsBuilderPanel({
     });
 
     setOpOk(
-      `Created solution ${solId}, tier ${tierId}, ${rowsToSave.length} task(s), and pricing (sell $${Math.round(d.sellPrice).toLocaleString()}).`
+      `Created solution ${solId}, tier ${tierId}, ${rowsToSave.length} task(s), and pricing (sell $${Math.round(Number(pricingDraft.sell_price ?? 0)).toLocaleString()}).`
     );
     await onSaved();
     resetCreateWizard();
@@ -852,6 +745,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: id,
       solution_id: solId,
       solution_tier_name: name,
+      solution_tier_category: blankToNull(tCategory),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -887,6 +781,7 @@ export function SolutionsBuilderPanel({
     setCreatePhase("tasks");
     setDraftTasks([newDraftTaskRow()]);
     setTName("");
+    setTCategory("");
     setTOwner("");
     setTSop("");
     setTWhatIsIt("");
@@ -906,66 +801,72 @@ export function SolutionsBuilderPanel({
   };
 
   const saveAllDraftTasksAndContinue = async () => {
+    if (saveDraftTasksBusy) return;
     const client = getSupabase();
     if (!client) return;
+    setSaveDraftTasksBusy(true);
     setOpErr(null);
     setOpOk(null);
-    const tierId = ctxTierId.trim();
-    if (!tierId) {
-      setOpErr("Missing tier context.");
-      return;
-    }
-    const rowsToSave = draftTasks.filter((d) => d.name.trim());
-    const tasksAlreadyOnTier = tasks.filter((k) => k.solution_tier_id === tierId);
-    if (rowsToSave.length === 0 && tasksAlreadyOnTier.length === 0) {
-      setOpErr("Add at least one task (or apply a task group template above) before continuing.");
-      return;
-    }
-    const today = todayISODate();
-    const { data: tierOnlyTaskSeed, error: tierOnlyTaskPrefetchErr } = await client.from("tasks").select("task_id");
-    if (tierOnlyTaskPrefetchErr) {
-      setOpErr(friendlyMutationMessage(tierOnlyTaskPrefetchErr.message));
-      return;
-    }
-    let localTasks: Pick<TaskRow, "task_id">[] = [...(tierOnlyTaskSeed ?? [])];
-    const baseMaxSort = tierMaxSortOrder(tasks, tierId);
-    for (let i = 0; i < rowsToSave.length; i++) {
-      const d = rowsToSave[i]!;
-      const id = nextAutoTaskId(localTasks);
-      const row: TaskRow = {
-        task_id: id,
-        solution_tier_id: tierId,
-        sort_order: baseMaxSort + i + 1,
-        task_name: d.name.trim(),
-        task_implementer: blankToNull(d.impl),
-        task_time: optNum(d.time),
-        task_duration: optNum(d.dur),
-        task_dependencies: blankToNull(d.dep),
-        task_notes: blankToNull(d.notes),
-        task_create_date: today,
-        task_modified_date: today,
-      };
-      const { error } = await client.from("tasks").insert(row);
-      if (error) {
-        setOpErr(error.message);
+    try {
+      const tierId = ctxTierId.trim();
+      if (!tierId) {
+        setOpErr("Missing tier context.");
         return;
       }
-      await logAudit(client, {
-        entityType: "tasks",
-        entityId: id,
-        action: "insert",
-        before: null,
-        after: rowJson(row),
-      });
-      localTasks.push(row);
+      const rowsToSave = draftTasks.filter((d) => d.name.trim());
+      const tasksAlreadyOnTier = tasks.filter((k) => k.solution_tier_id === tierId);
+      if (rowsToSave.length === 0 && tasksAlreadyOnTier.length === 0) {
+        setOpErr("Add at least one task (or apply a task group template above) before continuing.");
+        return;
+      }
+      const today = todayISODate();
+      const { data: tierOnlyTaskSeed, error: tierOnlyTaskPrefetchErr } = await client.from("tasks").select("task_id");
+      if (tierOnlyTaskPrefetchErr) {
+        setOpErr(friendlyMutationMessage(tierOnlyTaskPrefetchErr.message));
+        return;
+      }
+      let localTasks: Pick<TaskRow, "task_id">[] = [...(tierOnlyTaskSeed ?? [])];
+      const baseMaxSort = tierMaxSortOrder(tasks, tierId);
+      for (let i = 0; i < rowsToSave.length; i++) {
+        const d = rowsToSave[i]!;
+        const id = nextAutoTaskId(localTasks);
+        const row: TaskRow = {
+          task_id: id,
+          solution_tier_id: tierId,
+          sort_order: baseMaxSort + i + 1,
+          task_name: d.name.trim(),
+          task_implementer: blankToNull(d.impl),
+          task_time: optNum(d.time),
+          task_duration: optNum(d.dur),
+          task_dependencies: blankToNull(d.dep),
+          task_notes: blankToNull(d.notes),
+          task_create_date: today,
+          task_modified_date: today,
+        };
+        const { error } = await client.from("tasks").insert(row);
+        if (error) {
+          setOpErr(error.message);
+          return;
+        }
+        await logAudit(client, {
+          entityType: "tasks",
+          entityId: id,
+          action: "insert",
+          before: null,
+          after: rowJson(row),
+        });
+        localTasks.push(row);
+      }
+      setOpOk(
+        rowsToSave.length > 0
+          ? `Saved ${rowsToSave.length} task(s). Fill in pricing next.`
+          : "Continuing to pricing for tasks already on this tier."
+      );
+      setCreatePhase("pricing");
+      await onSaved();
+    } finally {
+      setSaveDraftTasksBusy(false);
     }
-    setOpOk(
-      rowsToSave.length > 0
-        ? `Saved ${rowsToSave.length} task(s). Fill in pricing next.`
-        : "Continuing to pricing for tasks already on this tier."
-    );
-    setCreatePhase("pricing");
-    await onSaved();
   };
 
   const updateDraftRow = (key: string, patch: Partial<DraftTaskRow>) => {
@@ -1050,6 +951,7 @@ export function SolutionsBuilderPanel({
   const [updCopyTierPick, setUpdCopyTierPick] = useState("");
   const [updTierEditId, setUpdTierEditId] = useState<string | null>(null);
   const [updTName, setUpdTName] = useState("");
+  const [updTCategory, setUpdTCategory] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
   const [updTSop, setUpdTSop] = useState("");
   const [updTWhatIsIt, setUpdTWhatIsIt] = useState("");
@@ -1240,20 +1142,36 @@ export function SolutionsBuilderPanel({
     () => rollUpTaskTimesByPricingGroup(fullCreateDraftTasksForRollup, implementerToGroup),
     [fullCreateDraftTasksForRollup, implementerToGroup]
   );
-
-  useEffect(() => {
-    if (subTab !== "create" || createBranch !== "full" || createPhase !== "foundation") return;
-    const r = fullCreateHourRollup;
-    setPrHCs(formatRollupBucketForInput(r.client_services));
-    setPrHCp(formatRollupBucketForInput(r.copy));
-    setPrHDs(formatRollupBucketForInput(r.design));
-    setPrHWd(formatRollupBucketForInput(r.web_dev));
-    setPrHVi(formatRollupBucketForInput(r.video));
-    setPrHDa(formatRollupBucketForInput(r.data));
-    setPrHPm(formatRollupBucketForInput(r.paid_media));
-    setPrHHb(formatRollupBucketForInput(r.hubspot));
-    setPrHOt(formatRollupBucketForInput(r.other));
-  }, [subTab, createBranch, createPhase, fullCreateHourRollup]);
+  const draftPricingTierId = useMemo(() => `draft-tier-${previewTierId}`, [previewTierId]);
+  const fullCreateDraftTier = useMemo<SolutionTier>(
+    () => ({
+      solution_tier_id: draftPricingTierId,
+      solution_id: previewSolutionId || "draft-solution",
+      solution_tier_name: tName.trim() || "New tier",
+      solution_tier_category: blankToNull(tCategory),
+      solution_tier_owner: blankToNull(tOwner),
+      solution_tier_overview: null,
+      solution_tier_overview_link: null,
+      solution_tier_direction: null,
+      solution_tier_sop: null,
+      solution_tier_resources: null,
+      solution_tier_resource_templates: null,
+      solution_tier_resource_tools: null,
+      solution_tier_resource_examples: null,
+      solution_tier_what_is_it: null,
+      solution_tier_why_is_it_valuable: null,
+      solution_tier_when_should_it_be_used: null,
+      solution_tier_assumption_prerequisites: null,
+      solution_tier_in_scope: null,
+      solution_tier_out_of_scope: null,
+      solution_tier_final_deliverable: null,
+      solution_tier_how_do_we_get_this_work_done: null,
+      solution_tier_described_to_client: null,
+      solution_tier_created_date: todayISODate(),
+      solution_tier_modified_date: todayISODate(),
+    }),
+    [draftPricingTierId, previewSolutionId, tName, tCategory, tOwner]
+  );
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
 
@@ -1275,6 +1193,7 @@ export function SolutionsBuilderPanel({
     if (updTierEditId && t.solution_tier_id === updTierEditId) return;
     setUpdAutofillFrom(t);
     setUpdTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
+    setUpdTCategory(t.solution_tier_category ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -1314,6 +1233,7 @@ export function SolutionsBuilderPanel({
   const clearTierUpdateForm = () => {
     setUpdTierEditId(null);
     setUpdTName("");
+    setUpdTCategory("");
     setUpdTOwner("");
     setUpdTSop("");
     setUpdTWhatIsIt("");
@@ -1384,6 +1304,7 @@ export function SolutionsBuilderPanel({
     setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
+    setUpdTCategory(t.solution_tier_category ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -1561,6 +1482,7 @@ export function SolutionsBuilderPanel({
     const payload = {
       solution_id: updSolutionId,
       solution_tier_name: updTName.trim(),
+      solution_tier_category: blankToNull(updTCategory),
       solution_tier_owner: blankToNull(updTOwner),
       solution_tier_overview: legU ? legU.solution_tier_overview : (prevTier?.solution_tier_overview ?? null),
       solution_tier_overview_link: legU
@@ -1619,6 +1541,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: id,
       solution_id: updSolutionId,
       solution_tier_name: payload.solution_tier_name,
+      solution_tier_category: payload.solution_tier_category,
       solution_tier_owner: payload.solution_tier_owner,
       solution_tier_overview: payload.solution_tier_overview,
       solution_tier_overview_link: payload.solution_tier_overview_link,
@@ -2007,7 +1930,7 @@ export function SolutionsBuilderPanel({
     updTierFocus,
   ]);
 
-  const applyTaskGroupTemplateToCreateTier = useCallback(async () => {
+  const applyTaskGroupTemplateToCreateTier = useCallback(() => {
     if (!ctxTierId.trim() || !createApplyTemplateGroupId) {
       showSbInline(
         "to_apply_tg",
@@ -2019,25 +1942,25 @@ export function SolutionsBuilderPanel({
     const lines = (taskGroupLines ?? [])
       .filter((l) => l.task_group_id === createApplyTemplateGroupId)
       .sort((a, b) => a.sort_order - b.sort_order);
-    const res = await applyTaskGroupToTier({
-      solution_tier_id: ctxTierId.trim(),
-      task_group_id: createApplyTemplateGroupId,
-      lines,
-      allTasks: tasks,
-      logAudit,
-    });
-    if (!res.ok) {
-      showSbInline("to_apply_tg", res.message, "err");
+    if (lines.length === 0) {
+      showSbInline("to_apply_tg", "This task group has no lines.", "err");
       return;
     }
+    const sourceTaskGroupName =
+      taskGroups.find((g) => g.id === createApplyTemplateGroupId)?.name ?? createApplyTemplateGroupId;
+    const newRows = draftRowsFromTaskGroupLines(lines, tasks, sourceTaskGroupName);
+    if (newRows.length === 0) {
+      showSbInline("to_apply_tg", "No rows could be built from that template.", "err");
+      return;
+    }
+    setDraftTasks((prev) => [...prev, ...newRows]);
     showSbInline(
       "to_apply_tg",
-      `Added ${res.created} task(s) from the template. You can add more rows below, then continue to pricing.`,
+      `Added ${newRows.length} editable draft row(s) from the template. You can adjust them below before saving.`,
       "ok"
     );
     setCreateApplyTemplateGroupId("");
-    await onSaved();
-  }, [createApplyTemplateGroupId, ctxTierId, logAudit, onSaved, showSbInline, taskGroupLines, tasks]);
+  }, [createApplyTemplateGroupId, ctxTierId, showSbInline, taskGroupLines, taskGroups, tasks]);
 
   const appendTaskGroupToFullSolutionDraft = useCallback(() => {
     if (!fullStackApplyGroupId) {
@@ -2098,7 +2021,7 @@ export function SolutionsBuilderPanel({
     setFullStackCopyTierId("");
   }, [fullStackCopyTierId, showSbInline, tasks, tiers]);
 
-  const applyCopiedTierTasksToTierOnlyTier = useCallback(async () => {
+  const applyCopiedTierTasksToTierOnlyTier = useCallback(() => {
     if (!ctxTierId.trim() || !tierOnlyCopyTierId.trim()) {
       showSbInline(
         "to_copy_tier",
@@ -2109,25 +2032,35 @@ export function SolutionsBuilderPanel({
       );
       return;
     }
-    const res = await insertCopiedVaultTasksFromTier({
-      targetTierId: ctxTierId.trim(),
-      sourceTierId: tierOnlyCopyTierId.trim(),
-      allTasks: tasks,
-      tiers,
-      logAudit,
-    });
-    if (!res.ok) {
-      showSbInline("to_copy_tier", res.message, "err");
+    const srcId = tierOnlyCopyTierId.trim();
+    if (srcId === ctxTierId.trim()) {
+      showSbInline("to_copy_tier", "Pick a different tier than the one you're building.", "err");
       return;
     }
+    const { name } = sourceTierMeta(tiers, srcId);
+    const seeds = draftFieldsFromTierVaultTasks(tasks, srcId, name);
+    if (seeds.length === 0) {
+      showSbInline("to_copy_tier", "That tier has no vault tasks to copy.", "err");
+      return;
+    }
+    const added: DraftTaskRow[] = seeds.map((s) => ({
+      key: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: s.name,
+      impl: s.impl,
+      time: s.time,
+      dur: s.dur,
+      dep: s.dep,
+      notes: s.notes,
+      source: s.source,
+    }));
+    setDraftTasks((prev) => [...prev, ...added]);
     showSbInline(
       "to_copy_tier",
-      `Added ${res.created} vault task(s) from tier ${tierOnlyCopyTierId.trim()} into ${ctxTierId.trim()}.`,
+      `Added ${added.length} editable draft row(s) from tier ${srcId}. Save all tasks when ready.`,
       "ok"
     );
     setTierOnlyCopyTierId("");
-    await onSaved();
-  }, [ctxTierId, tierOnlyCopyTierId, tiers, tasks, logAudit, onSaved, showSbInline]);
+  }, [ctxTierId, tierOnlyCopyTierId, showSbInline, tiers, tasks]);
 
   const applyCopiedTierTasksToUpdateFocusedTier = useCallback(async () => {
     if (!updTierFocus.trim() || !updCopyTierPick.trim()) {
@@ -2286,6 +2219,10 @@ export function SolutionsBuilderPanel({
         <input style={input} value={tName} onChange={(e) => setTName(e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Tier Category</AdminFieldCaption>
+        <input style={input} value={tCategory} onChange={(e) => setTCategory(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
         <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
       </label>
@@ -2363,6 +2300,10 @@ export function SolutionsBuilderPanel({
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Tier name</AdminFieldCaption>
         <input style={input} value={updTName} onChange={(e) => setUpdTName(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Tier Category</AdminFieldCaption>
+        <input style={input} value={updTCategory} onChange={(e) => setUpdTCategory(e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
@@ -2657,6 +2598,10 @@ export function SolutionsBuilderPanel({
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Tier name</AdminFieldCaption>
                     <input style={input} value={tName} onChange={(e) => setTName(e.target.value)} />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>Tier Category</AdminFieldCaption>
+                    <input style={input} value={tCategory} onChange={(e) => setTCategory(e.target.value)} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Owner</AdminFieldCaption>
@@ -2973,179 +2918,38 @@ export function SolutionsBuilderPanel({
                     Section 3 — Tier pricing
                   </h4>
                   <p style={{ ...muted, marginTop: 0, marginBottom: "0.65rem" }}>
-                    Derived sell amounts use the same math as the Pricing tab (rules:{" "}
-                    <strong>Admin → Pricing calculator</strong>, this browser).
+                    This now uses the same pricing form and math as <strong>Create new tier on existing solution</strong>.
                   </p>
-                  <div className="admin-form-stack" style={formGrid}>
-                  <div style={{ ...formSubHeading, gridColumn: "1 / -1", marginTop: 0 }}>Labels &amp; scope</div>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Solution label</AdminFieldCaption>
-                    <input style={input} value={prSolLabel} onChange={(e) => setPrSolLabel(e.target.value)} />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Tier label</AdminFieldCaption>
-                    <input style={input} value={prTierLabel} onChange={(e) => setPrTierLabel(e.target.value)} />
-                  </label>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Scope</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={prScope} onChange={(e) => setPrScope(e.target.value)} />
-                  </label>
-                  <div style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Hours</div>
-                  <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.84rem" }}>
-                    These fields stay in sync with <strong>Section 2</strong> task rows: each row&apos;s <strong>Time</strong> and{" "}
-                    <strong>Implementer</strong> roll into a bucket (Client services, Design, &hellip;) using the same{" "}
-                    <strong>Implementer&ndash;Pricing mapping</strong> as elsewhere. Unmapped or blank implementer goes to
-                    {" "}
-                    <strong>{pricingHourGroupLabel("other")}</strong>. You can still edit a bucket if you need a manual
-                    adjustment; another change in the
-                    task table will refresh the split.
-                  </p>
-                  {(
-                    [
-                      ["client_services", prHCs, setPrHCs],
-                      ["copy", prHCp, setPrHCp],
-                      ["design", prHDs, setPrHDs],
-                      ["web_dev", prHWd, setPrHWd],
-                      ["video", prHVi, setPrHVi],
-                      ["data", prHDa, setPrHDa],
-                      ["paid_media", prHPm, setPrHPm],
-                      ["hubspot", prHHb, setPrHHb],
-                      ["other", prHOt, setPrHOt],
-                    ] as const satisfies ReadonlyArray<readonly [PricingHourGroupKey, string, (v: string) => void]>
-                  ).map(([k, val, set]) => (
-                    <label key={k} style={lbl}>
-                      <AdminFieldCaption>{pricingHourGroupLabel(k)} (hours)</AdminFieldCaption>
-                      <input style={input} value={val} onChange={(e) => set(e.target.value)} />
-                    </label>
-                  ))}
-                  <label style={lbl}>
-                    <AdminFieldCaption>Total resource hours</AdminFieldCaption>
-                    <input
-                      style={{ ...input, cursor: "default" }}
-                      readOnly
-                      tabIndex={-1}
-                      value={fmtDerivedHours(fullPricingDerived.totalHours)}
-                    />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%)</AdminFieldCaption>
-                    <input
-                      style={{ ...input, cursor: "default" }}
-                      readOnly
-                      tabIndex={-1}
-                      title="Automatic before sell math."
-                      value={fmtDerivedHours(fullPricingDerived.accountMgmtAddonHours)}
-                    />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Billable hours (resource + account mgmt)</AdminFieldCaption>
-                    <input
-                      style={{ ...input, cursor: "default" }}
-                      readOnly
-                      tabIndex={-1}
-                      value={fmtDerivedHours(fullPricingDerived.hoursForExpectedEffort)}
-                    />
-                  </label>
-                  <div style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Risk &amp; value</div>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Scope risk</AdminFieldCaption>
-                    <select
-                      style={input}
-                      value={prScopeRisk}
-                      title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
-                      onChange={(e) => setPrScopeRisk(e.target.value)}
-                    >
-                      {SCOPE_RISK_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Internal coordination</AdminFieldCaption>
-                    <select
-                      style={input}
-                      value={prInternalCoord}
-                      title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
-                      onChange={(e) => setPrInternalCoord(e.target.value)}
-                    >
-                      {INTERNAL_COORDINATION_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Client revision risk</AdminFieldCaption>
-                    <select
-                      style={input}
-                      value={prClientRev}
-                      title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
-                      onChange={(e) => setPrClientRev(e.target.value)}
-                    >
-                      {CLIENT_REVISION_RISK_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Strategic value</AdminFieldCaption>
-                    <select
-                      style={input}
-                      value={prStratScore}
-                      title={strategicValueScoreSelectTitle()}
-                      onChange={(e) => setPrStratScore(e.target.value)}
-                    >
-                      {STRATEGIC_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Sell price (calculated)</AdminFieldCaption>
-                    <input
-                      style={{ ...input, cursor: "default" }}
-                      readOnly
-                      tabIndex={-1}
-                      value={`$${Math.round(fullPricingDerived.sellPrice).toLocaleString()}`}
-                    />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Old price</AdminFieldCaption>
-                    <input style={input} value={prOldPrice} onChange={(e) => setPrOldPrice(e.target.value)} />
-                  </label>
-                  <label style={lbl}>
-                    <AdminFieldCaption>Percent change</AdminFieldCaption>
-                    <input
-                      style={{ ...input, cursor: "default" }}
-                      readOnly
-                      tabIndex={-1}
-                      value={prPercentFromOld.display}
-                    />
-                  </label>
-                  <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" checked={prReqCustom} onChange={(e) => setPrReqCustom(e.target.checked)} />
-                    Requires customization
-                  </label>
-                  <label style={{ ...lbl, flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <input type="checkbox" checked={prTaxable} onChange={(e) => setPrTaxable(e.target.checked)} />
-                    Taxable
-                  </label>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Notes</AdminFieldCaption>
-                    <textarea style={textarea} rows={2} value={prNotes} onChange={(e) => setPrNotes(e.target.value)} />
-                  </label>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Tags</AdminFieldCaption>
-                    <input style={input} value={prTags} onChange={(e) => setPrTags(e.target.value)} />
-                  </label>
-                  </div>
+                  <PricingPanel
+                    key={draftPricingTierId}
+                    tierPricingMathConfig={tierPricingMathConfig}
+                    subTab="create"
+                    tiers={[...tiers, fullCreateDraftTier]}
+                    pricing={tierPricing}
+                    panelStyle={{ ...panel, marginBottom: 0 }}
+                    formGrid={formGrid}
+                    lbl={lbl}
+                    input={input}
+                    textarea={textarea}
+                    btn={btn}
+                    btnPrimary={btnPrimary}
+                    btnSm={btnSm}
+                    tbl={tbl}
+                    th={th}
+                    td={td}
+                    h2={{ ...h2, fontSize: "0.95rem" }}
+                    muted={muted}
+                    onSaved={onSaved}
+                    setOpErr={setOpErr}
+                    setOpOk={setOpOk}
+                    logAudit={logAudit}
+                    tierIdsInScope={[draftPricingTierId]}
+                    createLockedTierId={draftPricingTierId}
+                    taskDrivenHours={implementerHourGroups.length > 0}
+                    taskHourRollup={implementerHourGroups.length > 0 ? fullCreateHourRollup : null}
+                    persistTarget="draft"
+                    onDraftPricingDraft={setFullStackPricingDraft}
+                  />
                 </div>
 
                 <div id="sb-full-save" className="admin-actions-row" style={{ marginTop: 16 }}>
@@ -3231,8 +3035,8 @@ export function SolutionsBuilderPanel({
                         <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
                           <p style={formSectionHeading}>Apply task group to this new tier</p>
                           <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
-                            Inserts new <code>4-…</code> tasks for tier <code>{ctxTierId}</code>. Safe to use more than
-                            once (new ids each time). Configure templates in{" "}
+                            Appends editable draft rows from the selected task group for tier <code>{ctxTierId}</code>.
+                            Safe to use more than once, and you can change the rows before saving. Configure templates in{" "}
                             <strong>Admin → Task-Group templates</strong>.
                           </p>
                           <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
@@ -3255,10 +3059,10 @@ export function SolutionsBuilderPanel({
                               type="button"
                               className="admin-btn-primary"
                               style={btnPrimary}
-                              onClick={() => void applyTaskGroupTemplateToCreateTier()}
+                              onClick={() => applyTaskGroupTemplateToCreateTier()}
                               disabled={!ctxTierId.trim() || !createApplyTemplateGroupId}
                             >
-                              Apply to tier
+                              Append to editable draft table
                             </button>
                             <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_apply_tg")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                           </div>
@@ -3268,8 +3072,8 @@ export function SolutionsBuilderPanel({
                         <div style={{ ...formSectionBox, marginTop: 12, marginBottom: 12 }}>
                           <p style={formSectionHeading}>Copy vault tasks from another tier</p>
                           <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
-                            Inserts new <code>4-…</code> vault tasks cloned from another tier&apos;s checklist (excluding
-                            this tier). The first note line records attribution.
+                            Appends editable draft rows cloned from another tier&apos;s checklist (excluding this tier).
+                            The first note line records attribution, and you can change anything before saving.
                           </p>
                           <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
                             <AdminFieldCaption>Source tier</AdminFieldCaption>
@@ -3297,10 +3101,10 @@ export function SolutionsBuilderPanel({
                               type="button"
                               className="admin-btn-primary"
                               style={btnPrimary}
-                              onClick={() => void applyCopiedTierTasksToTierOnlyTier()}
+                              onClick={() => applyCopiedTierTasksToTierOnlyTier()}
                               disabled={!ctxTierId.trim() || !tierOnlyCopyTierId.trim()}
                             >
-                              Copy vault tasks into this tier
+                              Append to editable draft table
                             </button>
                             <InlineActionFeedback model={pickInlineFeedback(sbInlineFb, "to_copy_tier")} style={{ flex: "1 1 14rem", marginTop: 0 }} />
                           </div>
@@ -3513,8 +3317,9 @@ export function SolutionsBuilderPanel({
                           className="admin-btn-primary"
                           style={btnPrimary}
                           onClick={() => void saveAllDraftTasksAndContinue()}
+                          disabled={saveDraftTasksBusy}
                         >
-                          Save all tasks
+                          {saveDraftTasksBusy ? "Saving tasks..." : "Save all tasks"}
                         </button>
                       </div>
                     </>

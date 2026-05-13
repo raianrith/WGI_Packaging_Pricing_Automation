@@ -872,6 +872,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
       pkgId === STANDALONE_PACKAGE_NAV_ID
         ? data.tiers.filter((t) => !assignedTierIdSet(data.packageTiers).has(t.solution_tier_id))
         : data.tiers.filter((t) => tierIdsForPackage(data.packageTiers, pkgId).has(t.solution_tier_id));
+    const useMergedPackage = pkgId !== STANDALONE_PACKAGE_NAV_ID;
     const bySol = new Map<string, SolutionTier[]>();
     for (const t of tierList) {
       const arr = bySol.get(t.solution_id) ?? [];
@@ -881,6 +882,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     const rows: Array<{
       solution: Solution;
       tier: SolutionTier;
+      hours: string;
       sell: string;
       tax: string;
     }> = [];
@@ -890,11 +892,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
       for (const t of [...trs].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))) {
         const vault = data.pricing.find((p) => p.solution_tier_id === t.solution_tier_id) ?? null;
         const link =
-          pkgId !== STANDALONE_PACKAGE_NAV_ID
+          useMergedPackage
             ? data.packageTiers.find((r) => r.package_id === pkgId && r.solution_tier_id === t.solution_tier_id)
             : undefined;
         const pr =
-          pkgId !== STANDALONE_PACKAGE_NAV_ID
+          useMergedPackage
             ? mergePricingWithPackageOverrides(
                 vault,
                 t.solution_tier_id,
@@ -902,12 +904,37 @@ export function AgencyView({ mode }: AgencyViewProps) {
               )
             : vault;
         const tierDisplay =
-          pkgId !== STANDALONE_PACKAGE_NAV_ID
+          useMergedPackage
             ? mergeTierWithPackageOverrides(t, parseTierOverrides(link?.tier_overrides))
             : t;
+        const mergedTasks = useMergedPackage
+          ? buildMergedTaskRowsForPackageTier({
+              tierId: t.solution_tier_id,
+              vaultTasks: data.tasks,
+              taskOverrides: parseTaskOverridesMap(link?.task_overrides),
+              taskExtensions: parseTaskExtensions(link?.task_extensions),
+            })
+          : data.tasks
+              .filter((tk) => tk.solution_tier_id === t.solution_tier_id)
+              .sort(compareTasksByOrder);
+        let summedTaskHours = 0;
+        let hasSummedTaskHours = false;
+        for (const task of mergedTasks) {
+          if (task.task_time == null || !Number.isFinite(Number(task.task_time))) continue;
+          summedTaskHours += Number(task.task_time);
+          hasSummedTaskHours = true;
+        }
+        const pricingHours =
+          pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
         rows.push({
           solution: s,
           tier: tierDisplay,
+          hours:
+            pricingHours != null
+              ? formatKpiNumber(pricingHours)
+              : hasSummedTaskHours
+                ? formatKpiNumber(summedTaskHours)
+                : "—",
           sell: sellPriceDisplay(pr),
           tax: taxableLabel(pr),
         });
@@ -1366,7 +1393,8 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 <div className="agency-package-matrix__head">
                   <h2 className="agency-package-matrix__title">Price sheet (this package)</h2>
                   <p className="agency-package-matrix__lede">
-                    Sell price and tax reflect package overrides when set; otherwise the vault pricing row.
+                    Sell price, hours, and tax reflect package overrides when set; otherwise hours fall back to summed task
+                    time for that tier.
                   </p>
                 </div>
                 <div className="agency-package-matrix__scroll">
@@ -1375,6 +1403,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                       <tr>
                         <th scope="col">Solution</th>
                         <th scope="col">Tier</th>
+                        <th scope="col">Hours</th>
                         <th scope="col">Sell</th>
                         <th scope="col">Tax</th>
                       </tr>
@@ -1384,6 +1413,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         <tr key={row.tier.solution_tier_id}>
                           <td>{row.solution.solution_name}</td>
                           <td>{row.tier.solution_tier_name}</td>
+                          <td>{row.hours}</td>
                           <td>{row.sell}</td>
                           <td>{row.tax}</td>
                         </tr>

@@ -217,9 +217,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
   /** Catalog Solutions tab: spreadsheet-style list of every tier vs. single-tier detail. */
   const [catalogTierTableView, setCatalogTierTableView] = useState(false);
   const [catalogTierTableQuery, setCatalogTierTableQuery] = useState("");
+  const [catalogFlyoutSolutionId, setCatalogFlyoutSolutionId] = useState<string | null>(null);
   const catalogTierTableSearchId = useId();
   const [catalogTierSort, setCatalogTierSort] = useState<{
-    col: "tier" | "price" | "hours" | "taxable" | "tags";
+    col: "tier" | "category" | "price" | "hours" | "taxable" | "tags";
     dir: "asc" | "desc";
   }>({ col: "tier", dir: "asc" });
   const solSearchFieldId = useId();
@@ -231,6 +232,22 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const prevErrMsg = useRef<string | null>(null);
   const emptyVaultNotified = useRef(false);
   const routeInvalidNotified = useRef(false);
+  const catalogFlyoutCloseTimer = useRef<number | null>(null);
+
+  const clearCatalogFlyoutCloseTimer = useCallback(() => {
+    if (catalogFlyoutCloseTimer.current != null) {
+      window.clearTimeout(catalogFlyoutCloseTimer.current);
+      catalogFlyoutCloseTimer.current = null;
+    }
+  }, []);
+
+  const scheduleCatalogFlyoutClose = useCallback(() => {
+    clearCatalogFlyoutCloseTimer();
+    catalogFlyoutCloseTimer.current = window.setTimeout(() => {
+      setCatalogFlyoutSolutionId(null);
+      catalogFlyoutCloseTimer.current = null;
+    }, 180);
+  }, [clearCatalogFlyoutCloseTimer]);
 
   const load = useCallback(async () => {
     const keyErr = browserKeyConfigurationError();
@@ -334,6 +351,13 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     void load();
   }, [load]);
+
+  useEffect(
+    () => () => {
+      clearCatalogFlyoutCloseTimer();
+    },
+    [clearCatalogFlyoutCloseTimer]
+  );
 
   /** When Admin (or other tools) save, reload so this view stays in sync without a manual refresh button. */
   useEffect(() => {
@@ -456,11 +480,53 @@ export function AgencyView({ mode }: AgencyViewProps) {
   }, [data, filterSol]);
 
   /** Sidebar always lists solutions in scope (catalog: all filtered; package: package scope). */
+  const solutionSidebarMetaById = useMemo(() => {
+    const out = new Map<string, { ownerLabel: string }>();
+    if (!data) return out;
+    const tiersBySolutionId = new Map<string, SolutionTier[]>();
+    for (const tier of data.tiers) {
+      const list = tiersBySolutionId.get(tier.solution_id) ?? [];
+      list.push(tier);
+      tiersBySolutionId.set(tier.solution_id, list);
+    }
+    for (const solution of data.solutions) {
+      const tiersForSolution = tiersBySolutionId.get(solution.solution_id) ?? [];
+      const owners = new Set<string>();
+      for (const tier of tiersForSolution) {
+        const owner = tier.solution_tier_owner?.trim();
+        if (owner) owners.add(owner);
+      }
+      const ownerLabel =
+        owners.size === 0 ? "No owner" : owners.size === 1 ? [...owners][0]! : "Multiple owners";
+      out.set(solution.solution_id, {
+        ownerLabel,
+      });
+    }
+    return out;
+  }, [data]);
+
   const solutionsNavRows = useMemo(() => {
     if (!data) return [];
-    if (mode === "catalog" && pkgId == null) return allSolutionsFiltered;
-    return solutionsVisible;
-  }, [data, mode, pkgId, allSolutionsFiltered, solutionsVisible]);
+    const base = mode === "catalog" && pkgId == null ? allSolutionsFiltered : solutionsVisible;
+    return base.map((solution) => {
+      const meta = solutionSidebarMetaById.get(solution.solution_id);
+      return {
+        ...solution,
+        ownerLabel: meta?.ownerLabel ?? "No owner",
+      };
+    });
+  }, [data, mode, pkgId, allSolutionsFiltered, solutionsVisible, solutionSidebarMetaById]);
+
+  useEffect(() => {
+    if (mode !== "catalog") {
+      if (catalogFlyoutSolutionId !== null) setCatalogFlyoutSolutionId(null);
+      return;
+    }
+    if (!catalogFlyoutSolutionId) return;
+    if (!solutionsNavRows.some((row) => row.solution_id === catalogFlyoutSolutionId)) {
+      setCatalogFlyoutSolutionId(null);
+    }
+  }, [mode, catalogFlyoutSolutionId, solutionsNavRows]);
 
   /** Package workspace: sidebar package list. */
   const packagesNavRows = useMemo(() => {
@@ -543,6 +609,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
     if (!data || !tierId) return null;
     return data.pricing.find((p) => p.solution_tier_id === tierId) ?? null;
   }, [data, tierId]);
+
+  const pricingByTierId = useMemo(() => {
+    if (!data) return new Map<string, SolutionTierPricing>();
+    return new Map(data.pricing.map((row) => [row.solution_tier_id, row]));
+  }, [data]);
 
   const tasksForTierDisplay = useMemo(() => {
     if (!data || !tierId) return [];
@@ -682,6 +753,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
         const solution = data.solutions.find((s) => s.solution_id === tier.solution_id);
         const solutionName = solution?.solution_name ?? tier.solution_id;
         const tierName = tier.solution_tier_name;
+        const categoryRaw = tier.solution_tier_category?.trim() ?? "";
         const priceNum = sellPriceNumber(pr);
         const priceDisplay = sellPriceDisplay(pr);
         const vaultHours = pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
@@ -697,6 +769,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           pname,
           tierName,
           solutionName,
+          categoryRaw,
           priceNum,
           priceDisplay,
           hoursNum,
@@ -714,7 +787,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     let rows = catalogTierTableRows;
     if (q) {
       rows = rows.filter((r) => {
-        const blob = `${r.pname} ${r.tierName} ${r.solutionName} ${r.tagsRaw} ${r.taxableLabel} ${r.tierId} ${r.priceDisplay} ${r.hoursDisplay}`
+        const blob = `${r.pname} ${r.tierName} ${r.solutionName} ${r.categoryRaw} ${r.tagsRaw} ${r.taxableLabel} ${r.tierId} ${r.priceDisplay} ${r.hoursDisplay}`
           .toLowerCase()
           .replace(/\$/g, "");
         return blob.includes(q);
@@ -741,6 +814,12 @@ export function AgencyView({ mode }: AgencyViewProps) {
               : a.solutionName.localeCompare(b.solutionName, undefined, { sensitivity: "base" }) * dir;
           break;
         }
+        case "category":
+          c =
+            (a.categoryRaw || "\uffff").localeCompare(b.categoryRaw || "\uffff", undefined, {
+              sensitivity: "base",
+            }) * dir;
+          break;
         case "price":
           c = cmpNum(a.priceNum, b.priceNum);
           break;
@@ -769,7 +848,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return sorted;
   }, [catalogTierTableRows, catalogTierTableQuery, catalogTierSort]);
 
-  const toggleCatalogTierSort = (col: "tier" | "price" | "hours" | "taxable" | "tags") => {
+  const toggleCatalogTierSort = (col: "tier" | "category" | "price" | "hours" | "taxable" | "tags") => {
     setCatalogTierSort((prev) =>
       prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
     );
@@ -1052,7 +1131,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
       {data && !(mode === "package" && packageRouteInvalid) && (
         <div className="kb-grid" style={layout.grid}>
           <nav
-            className="kb-nav"
+            className={mode === "catalog" ? "kb-nav kb-nav--catalog-flyout" : "kb-nav"}
             aria-label={
               mode === "package" ? "Packages and solution tiers" : "Solutions and tiers"
             }
@@ -1196,138 +1275,156 @@ export function AgencyView({ mode }: AgencyViewProps) {
               </>
             ) : (
               <>
-                <div className="agency-nav-panel">
-                  <section style={navSection}>
-                    <h2 style={navHeading}>Solutions</h2>
-                    <div className="agency-nav-sol-filter">
-                      <label className="agency-nav-sol-filter__label" htmlFor={solSearchFieldId}>
-                        Search solutions
-                      </label>
-                      <div className="agency-nav-sol-filter__row">
-                        <input
-                          id={solSearchFieldId}
-                          type="search"
-                          className="agency-nav-sol-filter__input"
-                          value={filterSol}
-                          onChange={(e) => setFilterSol(e.target.value)}
-                          placeholder="Filter by name…"
-                          autoComplete="off"
-                        />
-                        {filterSol && (
-                          <button
-                            type="button"
-                            className="agency-nav-sol-filter__clear"
-                            onClick={() => setFilterSol("")}
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <ul style={list}>
-                      {solutionsNavRows.length === 0 ? (
-                        <li>
-                          <p style={{ ...emptyHint, padding: "0.35rem 0 0" }}>
-                            No solutions match this search.
-                          </p>
-                        </li>
-                      ) : (
-                        solutionsNavRows.map((s) => (
-                          <li key={s.solution_id}>
+                <div className="agency-nav-flyout-shell">
+                  <div className="agency-nav-panel agency-nav-panel--solutions-flyout">
+                    <section style={navSection}>
+                      <h2 style={navHeading}>Solutions</h2>
+                      <div className="agency-nav-sol-filter">
+                        <label className="agency-nav-sol-filter__label" htmlFor={solSearchFieldId}>
+                          Search solutions
+                        </label>
+                        <div className="agency-nav-sol-filter__row">
+                          <input
+                            id={solSearchFieldId}
+                            type="search"
+                            className="agency-nav-sol-filter__input"
+                            value={filterSol}
+                            onChange={(e) => setFilterSol(e.target.value)}
+                            placeholder="Filter by name…"
+                            autoComplete="off"
+                          />
+                          {filterSol && (
                             <button
                               type="button"
-                              className={
-                                solId === s.solution_id
-                                  ? "kb-nav-item kb-nav-item--active"
-                                  : "kb-nav-item"
-                              }
-                              title={solutionNavTitle(s)}
-                              onClick={() => {
-                                setSolId(s.solution_id);
-                                const tr = data.tiers
-                                  .filter((tier) => tier.solution_id === s.solution_id)
-                                  .sort((a, b) =>
-                                    sortId(a.solution_tier_id, b.solution_tier_id)
-                                  )[0];
-                                setTierId(tr?.solution_tier_id ?? null);
-                              }}
+                              className="agency-nav-sol-filter__clear"
+                              onClick={() => setFilterSol("")}
                             >
-                              <span className="kb-nav-item__label">{s.solution_name}</span>
+                              Clear
                             </button>
+                          )}
+                        </div>
+                      </div>
+                      <ul style={list}>
+                        {solutionsNavRows.length === 0 ? (
+                          <li>
+                            <p style={{ ...emptyHint, padding: "0.35rem 0 0" }}>
+                              No solutions match this search.
+                            </p>
                           </li>
-                        ))
-                      )}
-                    </ul>
-                  </section>
-                </div>
-
-                <div className="agency-nav-panel">
-                  <section style={navSection}>
-                    <h2 style={navHeading}>Tiers</h2>
-                    {!solId ? (
-                      <p style={emptyHint}>Pick a solution above to list its tiers.</p>
-                    ) : tiersForSolution.length === 0 ? (
-                      <p style={emptyHint}>No tiers for this solution.</p>
-                    ) : (
-                      <>
-                        <div className="agency-nav-sol-filter">
-                          <label className="agency-nav-sol-filter__label" htmlFor={tierSearchFieldId}>
-                            Search tiers
-                          </label>
-                          <div className="agency-nav-sol-filter__row">
-                            <input
-                              id={tierSearchFieldId}
-                              type="search"
-                              className="agency-nav-sol-filter__input"
-                              value={filterTier}
-                              onChange={(e) => setFilterTier(e.target.value)}
-                              placeholder="Filter by name…"
-                              autoComplete="off"
-                            />
-                            {filterTier && (
+                        ) : (
+                          solutionsNavRows.map((s) => (
+                          <li
+                            key={s.solution_id}
+                            className="agency-nav-flyout-anchor"
+                            onMouseLeave={scheduleCatalogFlyoutClose}
+                          >
+                            {(() => {
+                              const flyoutTiers = data.tiers
+                                .filter((tier) => tier.solution_id === s.solution_id)
+                                .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
+                              return (
+                                <>
                               <button
                                 type="button"
-                                className="agency-nav-sol-filter__clear"
-                                onClick={() => setFilterTier("")}
+                                className={
+                                  solId === s.solution_id
+                                    ? "kb-nav-item kb-nav-item--solution-rich kb-nav-item--active"
+                                    : "kb-nav-item kb-nav-item--solution-rich"
+                                }
+                                title={`${solutionNavTitle(s)} · Owner: ${s.ownerLabel}`}
+                                onMouseEnter={() => {
+                                  clearCatalogFlyoutCloseTimer();
+                                  setCatalogFlyoutSolutionId(s.solution_id);
+                                }}
+                                onFocus={() => {
+                                  clearCatalogFlyoutCloseTimer();
+                                  setCatalogFlyoutSolutionId(s.solution_id);
+                                }}
+                                onClick={() => {
+                                  clearCatalogFlyoutCloseTimer();
+                                  setCatalogFlyoutSolutionId(s.solution_id);
+                                  setSolId(s.solution_id);
+                                  const tr = data.tiers
+                                    .filter((tier) => tier.solution_id === s.solution_id)
+                                    .sort((a, b) =>
+                                      sortId(a.solution_tier_id, b.solution_tier_id)
+                                    )[0];
+                                  setTierId(tr?.solution_tier_id ?? null);
+                                }}
                               >
-                                Clear
+                                <span className="kb-nav-item__stack">
+                                  <span className="kb-nav-item__label">{s.solution_name}</span>
+                                  <span className="kb-nav-item__subline">{s.ownerLabel}</span>
+                                </span>
+                                <span className="kb-nav-item__meta kb-nav-item__meta--chevron" aria-hidden>
+                                  ›
+                                </span>
                               </button>
-                            )}
-                          </div>
-                        </div>
-                        <ul style={list}>
-                          {tiersNavList.length === 0 ? (
-                            <li>
-                              <p style={{ ...emptyHint, padding: "0.35rem 0 0" }}>
-                                No tiers match this search.
-                              </p>
-                            </li>
-                          ) : (
-                            tiersNavList.map((t) => (
-                              <li key={t.solution_tier_id}>
-                                <button
-                                  type="button"
-                                  className={
-                                    tierId === t.solution_tier_id
-                                      ? "kb-nav-item kb-nav-item--active"
-                                      : "kb-nav-item"
-                                  }
-                                  title={tierNavTitle(t, data.solutions)}
-                                  onClick={() => {
-                                    setTierId(t.solution_tier_id);
-                                    setSolId(t.solution_id);
-                                    setFilterTier("");
-                                  }}
-                                >
-                                  <span className="kb-nav-item__label">{t.solution_tier_name}</span>
-                                </button>
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      </>
-                    )}
-                  </section>
+                                  {catalogFlyoutSolutionId === s.solution_id ? (
+                                    <div
+                                      className="agency-nav-flyout"
+                                      role="menu"
+                                      aria-label={`Solution tiers for ${s.solution_name}`}
+                                      onMouseEnter={clearCatalogFlyoutCloseTimer}
+                                      onMouseLeave={scheduleCatalogFlyoutClose}
+                                    >
+                                      <div className="agency-nav-flyout__header">
+                                        <p className="agency-nav-flyout__eyebrow">Solution tiers</p>
+                                        <p className="agency-nav-flyout__title">{s.solution_name}</p>
+                                      </div>
+                                      {flyoutTiers.length === 0 ? (
+                                        <p className="agency-nav-flyout__hint">No tiers available for this solution.</p>
+                                      ) : (
+                                        <ul className="agency-nav-flyout__list">
+                                          {flyoutTiers.map((t) => (
+                                            <li key={t.solution_tier_id}>
+                                              {(() => {
+                                                const priceDisplay = formatUsd(
+                                                  sellPriceNumber(
+                                                    pricingByTierId.get(t.solution_tier_id) ?? null
+                                                  )
+                                                );
+                                                return (
+                                              <button
+                                                type="button"
+                                                className={
+                                                  tierId === t.solution_tier_id
+                                                    ? "agency-nav-flyout__item agency-nav-flyout__item--active"
+                                                    : "agency-nav-flyout__item"
+                                                }
+                                                title={tierNavTitle(t, data.solutions)}
+                                                onClick={() => {
+                                                  setTierId(t.solution_tier_id);
+                                                  setSolId(t.solution_id);
+                                                  setCatalogFlyoutSolutionId(t.solution_id);
+                                                }}
+                                              >
+                                                <span className="agency-nav-flyout__item-main">
+                                                  <span className="agency-nav-flyout__item-name">
+                                                    {t.solution_tier_name}
+                                                  </span>
+                                                  <span className="agency-nav-flyout__item-price">
+                                                    {priceDisplay}
+                                                  </span>
+                                                </span>
+                                              </button>
+                                                );
+                                              })()}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                          </li>
+                          ))
+                        )}
+                      </ul>
+                    </section>
+                  </div>
                 </div>
               </>
             )}
@@ -1558,6 +1655,29 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             </span>
                           </button>
                         </th>
+                        <th scope="col">
+                          <button
+                            type="button"
+                            className="agency-catalog-tier-sheet__th-btn"
+                            onClick={() => toggleCatalogTierSort("category")}
+                            aria-sort={
+                              catalogTierSort.col === "category"
+                                ? catalogTierSort.dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
+                          >
+                            Category
+                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
+                              {catalogTierSort.col === "category"
+                                ? catalogTierSort.dir === "asc"
+                                  ? " ▲"
+                                  : " ▼"
+                                : ""}
+                            </span>
+                          </button>
+                        </th>
                         <th scope="col" className="agency-catalog-tier-sheet__col--narrow">
                           <button
                             type="button"
@@ -1639,7 +1759,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     <tbody>
                       {catalogTierRowsFilteredSorted.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="agency-catalog-tier-sheet__empty">
+                          <td colSpan={6} className="agency-catalog-tier-sheet__empty">
                             {catalogTierTableRows.length === 0
                               ? "No tiers loaded."
                               : "No tiers match your filter."}
@@ -1679,11 +1799,32 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 <span>{r.pname}</span>
                               </div>
                             </td>
+                            <td>
+                              {r.categoryRaw ? (
+                                <span className="agency-catalog-tier-sheet__category-pill">{r.categoryRaw}</span>
+                              ) : (
+                                <span className="agency-catalog-tier-sheet__dash">—</span>
+                              )}
+                            </td>
                             <td className="agency-catalog-tier-sheet__cell--num">{r.priceDisplay}</td>
                             <td className="agency-catalog-tier-sheet__cell--num">{r.hoursDisplay}</td>
-                            <td>{r.taxableLabel}</td>
+                            <td>
+                              <span
+                                className={
+                                  r.taxable
+                                    ? "agency-catalog-tier-sheet__status-pill agency-catalog-tier-sheet__status-pill--taxable"
+                                    : "agency-catalog-tier-sheet__status-pill"
+                                }
+                              >
+                                {r.taxableLabel}
+                              </span>
+                            </td>
                             <td className="agency-catalog-tier-sheet__tags">
-                              {r.tagsRaw.trim() ? r.tagsRaw : "—"}
+                              {r.tagsRaw.trim() ? (
+                                <span className="agency-catalog-tier-sheet__tags-text">{r.tagsRaw}</span>
+                              ) : (
+                                <span className="agency-catalog-tier-sheet__dash">—</span>
+                              )}
                             </td>
                           </tr>
                         ))
@@ -2010,8 +2151,8 @@ const layout = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "minmax(220px, 280px) 1fr",
-    gap: "1.85rem",
+    gridTemplateColumns: "minmax(260px, 345px) 1fr",
+    gap: "1.7rem",
     alignItems: "start",
   } satisfies CSSProperties,
   main: {
@@ -2020,16 +2161,16 @@ const layout = {
 };
 
 const navSection: CSSProperties = {
-  marginBottom: "1.25rem",
+  marginBottom: "1.05rem",
 };
 
 const navHeading: CSSProperties = {
-  margin: "0 0 0.5rem",
-  fontSize: "0.7rem",
+  margin: "0 0 0.62rem",
+  fontSize: "0.69rem",
   textTransform: "uppercase" as const,
-  letterSpacing: "0.08em",
-  color: "var(--muted)",
-  fontWeight: 600,
+  letterSpacing: "0.13em",
+  color: "rgba(13, 92, 77, 0.9)",
+  fontWeight: 800,
 };
 
 const list: CSSProperties = {

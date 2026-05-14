@@ -580,39 +580,43 @@ function RoadmapCardBlock({
       className={`roadmap-card${c.scope !== "included" ? " roadmap-card--scope-secondary" : ""}`}
     >
       <div className="roadmap-card__toolbar">
-        <span className={`roadmap-card__kind roadmap-card__kind--${c.kind}`}>{kindLabel(c.kind)}</span>
-        <label className="roadmap-card__inline-field">
-          <span className="roadmap-card__cap">Scope</span>
-          <select
-            className="roadmap-input roadmap-select roadmap-select--sm"
-            value={c.scope}
-            onChange={(e) => onPatch(c.key, { scope: e.target.value as RoadmapLineScope })}
-            aria-label="Line scope"
-          >
-            <option value="included">Included</option>
-            <option value="optional">Optional</option>
-            <option value="deferred">Deferred</option>
-          </select>
-        </label>
-        <label className="roadmap-card__inline-field">
-          <span className="roadmap-card__cap">Phase</span>
-          <select
-            className="roadmap-input roadmap-select roadmap-select--sm"
-            value={c.phaseId}
-            onChange={(e) => onPatch(c.key, { phaseId: e.target.value })}
-            aria-label="Move to phase"
-          >
-            {phaseChoices.map((ph) => (
-              <option key={ph.id} value={ph.id}>
-                {ph.title.trim() || "Phase"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="roadmap-card__toolbar-meta">
+          <span className={`roadmap-card__kind roadmap-card__kind--${c.kind}`}>{kindLabel(c.kind)}</span>
+          <p className="roadmap-card__ref">
+            <code>{c.refId}</code>
+          </p>
+        </div>
+        <div className="roadmap-card__toolbar-controls">
+          <label className="roadmap-card__inline-field">
+            <span className="roadmap-card__cap">Scope</span>
+            <select
+              className="roadmap-input roadmap-select roadmap-select--sm"
+              value={c.scope}
+              onChange={(e) => onPatch(c.key, { scope: e.target.value as RoadmapLineScope })}
+              aria-label="Line scope"
+            >
+              <option value="included">Included</option>
+              <option value="optional">Optional</option>
+              <option value="deferred">Deferred</option>
+            </select>
+          </label>
+          <label className="roadmap-card__inline-field">
+            <span className="roadmap-card__cap">Phase</span>
+            <select
+              className="roadmap-input roadmap-select roadmap-select--sm"
+              value={c.phaseId}
+              onChange={(e) => onPatch(c.key, { phaseId: e.target.value })}
+              aria-label="Move to phase"
+            >
+              {phaseChoices.map((ph) => (
+                <option key={ph.id} value={ph.id}>
+                  {ph.title.trim() || "Phase"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
-      <p className="roadmap-card__ref">
-        <code>{c.refId}</code>
-      </p>
       <label className="roadmap-card__field-label">
         <span className="roadmap-card__cap">Title</span>
         <input
@@ -621,9 +625,19 @@ function RoadmapCardBlock({
           onChange={(e) => onPatch(c.key, { headline: e.target.value })}
         />
       </label>
+      <div className="roadmap-card__snapshot">
+        <div className="roadmap-card__snapshot-item">
+          <span className="roadmap-card__snapshot-label">Effective hours</span>
+          <strong>{effHours ? `${effHours} h` : "—"}</strong>
+        </div>
+        <div className="roadmap-card__snapshot-item">
+          <span className="roadmap-card__snapshot-label">Effective price</span>
+          <strong>{effPrice || "—"}</strong>
+        </div>
+      </div>
       <div className="roadmap-card__statgrid">
         <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Hours (catalog)</span>
+          <span className="roadmap-card__cap">Catalog hours</span>
           <input
             className="roadmap-input"
             value={c.hours}
@@ -632,7 +646,7 @@ function RoadmapCardBlock({
           />
         </label>
         <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Hours override</span>
+          <span className="roadmap-card__cap">Proposal hours</span>
           <input
             className="roadmap-input"
             value={c.hoursOverride ?? ""}
@@ -641,12 +655,9 @@ function RoadmapCardBlock({
           />
         </label>
       </div>
-      <p className="roadmap-card__effective-hint">
-        Effective: <strong>{effHours || "—"}</strong> h
-      </p>
       <div className="roadmap-card__statgrid">
         <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Price {c.kind === "custom_tier" ? "(computed)" : "(catalog)"}</span>
+          <span className="roadmap-card__cap">{c.kind === "custom_tier" ? "Computed price" : "Catalog price"}</span>
           {c.kind === "custom_tier" ? (
             <div
               className="roadmap-card__price-readonly"
@@ -664,7 +675,7 @@ function RoadmapCardBlock({
           )}
         </label>
         <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Price override</span>
+          <span className="roadmap-card__cap">Proposal price</span>
           <input
             className="roadmap-input"
             value={c.priceOverride ?? ""}
@@ -1541,23 +1552,92 @@ export function RoadmapPlanningView() {
   const detailsCard = detailsModalKey ? cards.find((c) => c.key === detailsModalKey) ?? null : null;
   const palettePreviewScenarioId = scenarios[0]?.id ?? "";
   const palettePreviewPhaseId = sortedPhasesForScenario(phases, palettePreviewScenarioId)[0]?.id ?? "";
+  const targetScenario = scenarios.find((s) => s.id === targetScenarioId) ?? null;
+  const targetScenarioIndex = scenarios.findIndex((s) => s.id === targetScenarioId);
+  const targetScenarioRollup = targetScenarioIndex >= 0 ? (scenarioRollups[targetScenarioIndex] ?? null) : null;
+  const totalOptionalCount = cards.filter((c) => c.scope === "optional").length;
+  const totalDeferredCount = cards.filter((c) => c.scope === "deferred").length;
+  let budgetClosestLabel = "Add a budget to compare scenarios.";
+  if (budgetNumber != null) {
+    let bestRank = Number.POSITIVE_INFINITY;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    scenarios.forEach((scenario, idx) => {
+      const subtotal = scenarioRollups[idx]?.priceSubtotal ?? 0;
+      const status = budgetVsScenarioStatus(subtotal, budgetNumber);
+      const delta = Math.abs(budgetNumber - subtotal);
+      const rank = status === "in_range" ? 0 : status === "under" ? 1 : 2;
+      if (rank < bestRank || (rank === bestRank && delta < bestDelta)) {
+        bestRank = rank;
+        bestDelta = delta;
+        budgetClosestLabel = `${scenario.title.trim() || "Scenario"}: ${
+          status === "over" ? `Over by ${formatUsd(delta)}` : status === "in_range" ? "Within range" : `${formatUsd(delta)} under`
+        }`;
+      }
+    });
+  }
 
   return (
     <div className="roadmap-page">
       <div className="roadmap-page__inner roadmap-page__inner--wide">
-        <header className="roadmap-hero">
-          <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
-          <h1 className="roadmap-hero__title">Proposal Builder</h1>
-          <p className="roadmap-hero__lead">
-            Compare scenarios in columns, organize each into <strong>phases</strong>, and mark line items as{" "}
-            <strong>included</strong>, <strong>optional</strong>, or <strong>deferred</strong>. Set a <strong>client budget</strong>{" "}
-            to see each scenario against plan (under / in range / over). Use optional <strong>hours and price overrides</strong>{" "}
-            for proposal-only tweaks without changing the catalog. Export groups by phase with optional add-ons separated. Nothing
-            here writes to the database — use <Link to="/admin">Admin</Link> for catalog data.
-          </p>
+        <header className="roadmap-hero roadmap-hero--builder">
+          <div className="roadmap-hero__main">
+            <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
+            <h1 className="roadmap-hero__title">Proposal Builder</h1>
+            <p className="roadmap-hero__lead">
+              Compare scenarios in columns, organize each into <strong>phases</strong>, and mark line items as{" "}
+              <strong>included</strong>, <strong>optional</strong>, or <strong>deferred</strong>. Set a <strong>client budget</strong>{" "}
+              to see each scenario against plan (under / in range / over). Use optional <strong>hours and price overrides</strong>{" "}
+              for proposal-only tweaks without changing the catalog. Export groups by phase with optional add-ons separated. Nothing
+              here writes to the database — use <Link to="/admin">Admin</Link> for catalog data.
+            </p>
+          </div>
+          <div className="roadmap-hero__aside">
+            <div className="roadmap-hero__statgrid">
+              <div className="roadmap-hero-stat">
+                <span className="roadmap-hero-stat__label">Target scenario</span>
+                <strong>{targetScenario?.title?.trim() || "Select a scenario"}</strong>
+                <p>{targetDefaultPhaseId ? "New items land in its first phase." : "Create a phase to start adding items."}</p>
+              </div>
+              <div className="roadmap-hero-stat">
+                <span className="roadmap-hero-stat__label">Scenarios</span>
+                <strong>{scenarios.length}</strong>
+                <p>{cards.length} total line items on board</p>
+              </div>
+              <div className="roadmap-hero-stat">
+                <span className="roadmap-hero-stat__label">Target subtotal</span>
+                <strong>{targetScenarioRollup ? formatUsd(targetScenarioRollup.priceSubtotal) : "—"}</strong>
+                <p>{targetScenarioRollup?.includedCount ?? 0} included lines</p>
+              </div>
+              <div className="roadmap-hero-stat">
+                <span className="roadmap-hero-stat__label">Budget read</span>
+                <strong>{budgetNumber != null ? formatUsd(budgetNumber) : "Not set"}</strong>
+                <p>{budgetClosestLabel}</p>
+              </div>
+            </div>
+            <div className="roadmap-hero__actions">
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={addScenario}>
+                + Scenario
+              </button>
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={clearBoard}>
+                Clear board
+              </button>
+              <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={() => void copySummary()}>
+                Copy summary
+              </button>
+            </div>
+          </div>
         </header>
 
         <section className="roadmap-panel roadmap-panel--meta">
+          <div className="roadmap-section-head">
+            <div>
+              <p className="roadmap-section-head__eyebrow">Proposal setup</p>
+              <h2 className="roadmap-section-head__title">Context and guardrails</h2>
+            </div>
+            <p className="roadmap-section-head__note">
+              These inputs shape the proposal narrative, budget comparison, and exported summary.
+            </p>
+          </div>
           <div className="roadmap-meta-grid">
             <label className="roadmap-field">
               <span className="roadmap-field__cap">Roadmap name</span>
@@ -1619,25 +1699,39 @@ export function RoadmapPlanningView() {
         <div className="roadmap-workspace">
           <aside className="roadmap-library" aria-label="Catalog library">
             <div className="roadmap-library__head">
-              <h2 className="roadmap-library__title">Library</h2>
+              <p className="roadmap-library__eyebrow">Add from catalog</p>
+              <div className="roadmap-library__title-row">
+                <h2 className="roadmap-library__title">Library</h2>
+                <span className="roadmap-library__count">
+                  {paletteTab === "packages" ? filteredPackages.length : filteredTiers.length}
+                </span>
+              </div>
               <p className="roadmap-muted roadmap-library__hint">
                 Choose which <strong>what-if</strong> column to add to, then tap <strong>+ Add</strong> on any row.
               </p>
-              <div className="roadmap-scenario-pick">
-                {scenarios.map((s, i) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`roadmap-scenario-pill${targetScenarioId === s.id ? " is-active" : ""}`}
-                    onClick={() => setTargetScenarioId(s.id)}
-                    title={s.title}
-                  >
-                    {i + 1}. {s.title}
-                  </button>
-                ))}
-                <button type="button" className="roadmap-btn roadmap-btn--sm" onClick={addScenario}>
-                  + Scenario
-                </button>
+              <div className="roadmap-library__target-card">
+                <div className="roadmap-library__target-head">
+                  <span className="roadmap-field__cap">Add next item to</span>
+                  {targetScenarioRollup ? (
+                    <span className="roadmap-library__target-kpi">{formatUsd(targetScenarioRollup.priceSubtotal)} included</span>
+                  ) : null}
+                </div>
+                <div className="roadmap-scenario-pick">
+                  {scenarios.map((s, i) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`roadmap-scenario-pill${targetScenarioId === s.id ? " is-active" : ""}`}
+                      onClick={() => setTargetScenarioId(s.id)}
+                      title={s.title}
+                    >
+                      {i + 1}. {s.title}
+                    </button>
+                  ))}
+                </div>
+                <p className="roadmap-library__target-note">
+                  New items default into the first phase of the selected scenario, then can be moved on-card.
+                </p>
               </div>
               <label className="roadmap-field roadmap-field--search">
                 <span className="roadmap-field__cap" id={searchId}>
@@ -1669,6 +1763,11 @@ export function RoadmapPlanningView() {
                     {lab}
                   </button>
                 ))}
+              </div>
+              <div className="roadmap-library__summary">
+                <span>{ctx.packages.length} packages</span>
+                <span>{ctx.tiers.length} tiers</span>
+                <span>Scratch tiers available</span>
               </div>
             </div>
             <div className="roadmap-palette-scroll">
@@ -1771,14 +1870,12 @@ export function RoadmapPlanningView() {
 
           <main className="roadmap-board" aria-label="Roadmap board">
             <div className="roadmap-board__toolbar">
-              <h2 className="roadmap-board__title">What-if scenarios</h2>
-              <div className="roadmap-board__actions">
-                <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={clearBoard}>
-                  Clear board
-                </button>
-                <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={() => void copySummary()}>
-                  Copy summary
-                </button>
+              <div className="roadmap-board__heading">
+                <p className="roadmap-board__eyebrow">Scenario board</p>
+                <h2 className="roadmap-board__title">What-if scenarios</h2>
+                <p className="roadmap-board__lead">
+                  Compare included scope, optional upsell, deferred work, and phased sequencing side by side.
+                </p>
               </div>
             </div>
             <div className="roadmap-columns">
@@ -1801,20 +1898,33 @@ export function RoadmapPlanningView() {
                 const barPct = b != null && b > 0 ? Math.min(100, (sub / b) * 100) : 0;
                 const budgetStat = b != null ? budgetVsScenarioStatus(sub, b) : null;
                 return (
-                  <section key={scenario.id} className="roadmap-column">
+                  <section
+                    key={scenario.id}
+                    className={`roadmap-column${targetScenarioId === scenario.id ? " roadmap-column--active" : ""}`}
+                  >
                     <header className="roadmap-column__head">
-                      <label className="roadmap-scenario-edit">
-                        <span className="visually-hidden">Scenario name</span>
-                        <input
-                          className="roadmap-scenario-input"
-                          value={scenario.title}
-                          onChange={(e) =>
-                            setScenarios((prev) =>
-                              prev.map((s) => (s.id === scenario.id ? { ...s, title: e.target.value } : s))
-                            )
-                          }
-                        />
-                      </label>
+                      <div className="roadmap-column__heading">
+                        <label className="roadmap-scenario-edit">
+                          <span className="visually-hidden">Scenario name</span>
+                          <input
+                            className="roadmap-scenario-input"
+                            value={scenario.title}
+                            onChange={(e) =>
+                              setScenarios((prev) =>
+                                prev.map((s) => (s.id === scenario.id ? { ...s, title: e.target.value } : s))
+                              )
+                            }
+                          />
+                        </label>
+                        <div className="roadmap-column__badges">
+                          {targetScenarioId === scenario.id ? (
+                            <span className="roadmap-column__target-badge">Library target</span>
+                          ) : null}
+                          <span className="roadmap-column__count" title="All line items in this scenario">
+                            {cards.filter((c) => c.scenarioId === scenario.id).length} items
+                          </span>
+                        </div>
+                      </div>
                       <div className="roadmap-column__scenario-actions">
                         <button
                           type="button"
@@ -1839,10 +1949,21 @@ export function RoadmapPlanningView() {
                           + Phase
                         </button>
                       </div>
-                      <span className="roadmap-column__count" title="All line items in this scenario">
-                        {cards.filter((c) => c.scenarioId === scenario.id).length}
-                      </span>
                     </header>
+                    <div className="roadmap-column__stats">
+                      <div className="roadmap-column__stat">
+                        <span>Included</span>
+                        <strong>{formatUsd(sub)}</strong>
+                      </div>
+                      <div className="roadmap-column__stat">
+                        <span>Optional</span>
+                        <strong>{rollup.optionalParsedCount > 0 ? formatUsd(rollup.optionalPriceSubtotal) : "—"}</strong>
+                      </div>
+                      <div className="roadmap-column__stat">
+                        <span>Hours</span>
+                        <strong>{rollup.hoursSum != null && rollup.hoursCount > 0 ? `~${formatHoursShort(rollup.hoursSum)} h` : "—"}</strong>
+                      </div>
+                    </div>
                     {b != null ? (
                       <div className="roadmap-column__budget-strip">
                         <div
@@ -1998,7 +2119,18 @@ export function RoadmapPlanningView() {
         </div>
 
         <section className="roadmap-panel roadmap-panel--export">
-          <h2 className="roadmap-export__title">Export preview</h2>
+          <div className="roadmap-export__head">
+            <div>
+              <p className="roadmap-export__eyebrow">Client-ready output</p>
+              <h2 className="roadmap-export__title">Export preview</h2>
+            </div>
+            <div className="roadmap-export__stats">
+              <span>{summaryMarkdown.split("\n").filter(Boolean).length} summary lines</span>
+              <span>{cards.length} board items</span>
+              <span>{totalOptionalCount} optional</span>
+              <span>{totalDeferredCount} deferred</span>
+            </div>
+          </div>
           <p className="roadmap-export__explain">
             Phased tables mirror the board: <strong>included</strong> items by phase, then <strong>optional</strong> add-ons.{" "}
             <strong>Deferred</strong> appears last. Use <strong>Copy summary</strong> for Markdown.

@@ -2199,7 +2199,7 @@ export function BulkImportPanel({
             </p>
           ) : null}
         {templateNotice ? (
-          <p className="admin-hint" style={{ ...muted, marginTop: 4, color: "#92400e" }}>
+          <p className="admin-hint" style={{ ...muted, marginTop: 4, color: "var(--danger)" }}>
             {templateNotice}
           </p>
         ) : null}
@@ -2215,7 +2215,7 @@ export function BulkImportPanel({
             border: "1px solid var(--border)",
             borderRadius: 12,
             padding: "0.85rem 0.9rem",
-            background: "rgba(255, 252, 247, 0.7)",
+            background: "var(--surface)",
           }}
         >
           <h3 style={{ ...h2, fontSize: "0.94rem", marginBottom: "0.45rem" }}>
@@ -2343,7 +2343,7 @@ export function BulkImportPanel({
               {importPhase || "Import status"} {isImporting ? `(${importProgress}%)` : ""}
             </p>
             {isImporting ? (
-              <div style={{ width: "100%", background: "rgba(0,0,0,0.08)", borderRadius: 999, height: 8 }}>
+              <div style={{ width: "100%", background: "rgba(127,127,127,0.18)", borderRadius: 999, height: 8 }}>
                 <div
                   style={{
                     width: `${importProgress}%`,
@@ -2448,7 +2448,6 @@ function DataGlossaryPanel() {
 
 const shell: CSSProperties = {
   minHeight: "100%",
-  padding: "1.25rem clamp(1.5rem, 5vw, 4rem) 2.5rem",
 };
 
 const title: CSSProperties = {
@@ -2516,7 +2515,7 @@ const input: CSSProperties = {
   padding: "0.5rem 0.65rem",
   borderRadius: 10,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.95)",
+  background: "var(--surface)",
   color: "var(--text)",
   width: "100%",
 };
@@ -2552,16 +2551,16 @@ const btnSm: CSSProperties = {
   fontWeight: 600,
   borderRadius: 8,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.95)",
+  background: "var(--surface)",
   cursor: "pointer",
   transition: "background 0.12s ease",
 };
 
 const btnDangerSm: CSSProperties = {
   ...btnSm,
-  borderColor: "#fecaca",
+  borderColor: "rgba(239, 68, 68, 0.24)",
   color: "var(--danger)",
-  background: "#fef2f2",
+  background: "rgba(239, 68, 68, 0.08)",
 };
 
 const tbl: CSSProperties = {

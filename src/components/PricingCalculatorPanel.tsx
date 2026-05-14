@@ -154,7 +154,7 @@ export function PricingCalculatorPanel({
   }, [onApply, setOpErr, setOpOk]);
 
   return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
+    <section className="admin-panel admin-panel--editor admin-pricing-calculator" style={panel}>
       <h2 style={h2}>Pricing calculator</h2>
       <p className="admin-intro" style={muted}>
         These parameters drive <strong>live sell-price math</strong> in Solutions Builder (pricing sections) and in{" "}
@@ -268,8 +268,8 @@ export function PricingCalculatorPanel({
         firstSectionMarginTop="1.35rem"
       />
 
-      <details style={{ marginTop: "1rem" }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.85rem" }}>
+      <details className="admin-pricing-calculator-details" style={{ marginTop: "1rem" }}>
+        <summary className="admin-pricing-calculator-details__summary" style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.85rem" }}>
           Compact trace (same numbers as above)
         </summary>
         <textarea
@@ -312,8 +312,9 @@ export function PricingCalculatorPanel({
             marginTop: "1.25rem",
             padding: "0.85rem 1rem",
             borderRadius: 10,
-            border: "1px solid rgba(226, 220, 211, 0.95)",
-            background: "rgba(255, 255, 255, 0.55)",
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            boxShadow: "var(--shadow-sm)",
             maxWidth: "min(68ch, 100%)",
           }}
         >
@@ -342,14 +343,19 @@ export function PricingCalculatorPanel({
         </div>
       ) : null}
 
-      <details style={{ marginTop: "1.25rem" }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Reference: default spreadsheet values</summary>
+      <details className="admin-pricing-calculator-details" style={{ marginTop: "1.25rem" }}>
+        <summary className="admin-pricing-calculator-details__summary" style={{ cursor: "pointer", fontWeight: 600 }}>
+          Reference: default spreadsheet values
+        </summary>
         <pre
+          className="admin-pricing-calculator-ref"
           style={{
             ...muted,
             marginTop: 8,
             padding: "0.75rem 0.85rem",
-            background: "rgba(13, 92, 77, 0.06)",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--border)",
+            color: "var(--text)",
             borderRadius: 8,
             fontSize: "0.78rem",
             overflow: "auto",

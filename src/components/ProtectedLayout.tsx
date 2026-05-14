@@ -15,6 +15,9 @@ import {
   upsertUserPresence,
 } from "../lib/userPresence";
 
+const THEME_STORAGE_KEY = "wgi-app-theme";
+type AppTheme = "light" | "dark";
+
 function AuthLoadingScreen() {
   return (
     <div className="auth-loading-screen" aria-busy aria-live="polite">
@@ -43,10 +46,41 @@ function SignOutButton() {
   );
 }
 
+function ThemeToggle({
+  theme,
+  onToggle,
+}: {
+  theme: AppTheme;
+  onToggle: () => void;
+}) {
+  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+
+  return (
+    <div className="app-theme-control">
+      <span className="app-theme-control__label">{label}</span>
+      <button
+        type="button"
+        className="app-user-menu__theme-toggle"
+        onClick={onToggle}
+        aria-label={label}
+        aria-pressed={theme === "dark"}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}
+      >
+        <span className="app-user-menu__theme-toggle-track" aria-hidden>
+          <span className="app-user-menu__theme-toggle-thumb">
+            {theme === "dark" ? "☾" : "☀"}
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
 export function ProtectedLayout() {
   const { session, loading, configured, profileLoading, isAdmin } = useAuth();
   const location = useLocation();
   const agencyTabActive = isAgencyRoute(location.pathname);
+  const [theme, setTheme] = useState<AppTheme>(() => readInitialTheme());
 
   useEffect(() => {
     const client = getSupabase();
@@ -70,6 +104,15 @@ export function ProtectedLayout() {
       window.removeEventListener("focus", onFocus);
     };
   }, [location.pathname, session?.user]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage failures; theme still applies for the current session.
+    }
+  }, [theme]);
 
   if (!configured) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -128,7 +171,8 @@ export function ProtectedLayout() {
           </nav>
 
           <div className="app-top-bar__account">
-            <div className="app-user-menu">
+            <div className="app-top-bar__account-controls">
+              <div className="app-user-menu">
               <span className="app-user-menu__avatar" aria-hidden>
                 {(email || "?").slice(0, 1).toUpperCase()}
               </span>
@@ -139,6 +183,11 @@ export function ProtectedLayout() {
                 </span>
               </span>
               <SignOutButton />
+              </div>
+              <ThemeToggle
+                theme={theme}
+                onToggle={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              />
             </div>
           </div>
         </div>
@@ -146,4 +195,15 @@ export function ProtectedLayout() {
       <Outlet />
     </div>
   );
+}
+
+function readInitialTheme(): AppTheme {
+  if (typeof window === "undefined") return "light";
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // Ignore storage failures and fall back to system preference.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }

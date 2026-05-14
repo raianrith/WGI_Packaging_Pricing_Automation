@@ -275,8 +275,8 @@ const formSectionBox: CSSProperties = {
   padding: "1rem 1.15rem 1.2rem",
   borderRadius: 14,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.96)",
-  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+  background: "var(--surface)",
+  boxShadow: "var(--shadow-sm)",
 };
 
 const formSectionHeading: CSSProperties = {
@@ -302,8 +302,8 @@ const idLegendBar: CSSProperties = {
   marginBottom: "0.85rem",
   padding: "0.5rem 0.65rem",
   borderRadius: 10,
-  background: "rgba(13, 92, 77, 0.06)",
-  border: "1px solid rgba(13, 92, 77, 0.12)",
+  background: "var(--accent-soft)",
+  border: "1px solid var(--border)",
   lineHeight: 1.45,
 };
 
@@ -319,10 +319,12 @@ const choiceCard: CSSProperties = {
   padding: "1rem 1.1rem",
   borderRadius: 12,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.75)",
+  background: "var(--surface)",
   textAlign: "left" as const,
   cursor: "pointer",
   font: "inherit",
+  color: "var(--text)",
+  boxShadow: "var(--shadow-sm)",
 };
 
 export function SolutionsBuilderPanel({

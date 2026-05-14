@@ -102,7 +102,9 @@ const slotCard: CSSProperties = {
   padding: "1rem",
   borderRadius: 12,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.96)",
+  background: "var(--surface)",
+  color: "var(--text)",
+  boxShadow: "var(--shadow-sm)",
   cursor: "pointer",
   font: "inherit",
 };
@@ -110,7 +112,7 @@ const slotCard: CSSProperties = {
 const slotCardActive: CSSProperties = {
   ...slotCard,
   borderColor: "var(--accent)",
-  boxShadow: "0 0 0 2px rgba(13, 92, 77, 0.18)",
+  boxShadow: "0 0 0 2px rgba(74, 179, 155, 0.18)",
 };
 
 const meterWrap: CSSProperties = {
@@ -118,13 +120,14 @@ const meterWrap: CSSProperties = {
   padding: "0.85rem 1rem",
   borderRadius: 12,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.96)",
+  background: "var(--surface)",
 };
 
 const overlay: CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,0.5)",
+  background: "rgba(4, 8, 12, 0.65)",
+  backdropFilter: "blur(8px)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -137,10 +140,11 @@ const dialog: CSSProperties = {
   width: "100%",
   maxHeight: "min(90vh, 900px)",
   overflow: "auto",
-  background: "var(--panel, #fffdf9)",
+  background: "var(--surface)",
+  color: "var(--text)",
   borderRadius: 14,
   padding: "1.25rem 1.35rem",
-  boxShadow: "0 12px 48px rgba(0,0,0,0.18)",
+  boxShadow: "var(--shadow-lg)",
   border: "1px solid var(--border)",
 };
 
@@ -149,6 +153,8 @@ const inputBase: CSSProperties = {
   padding: "0.45rem 0.55rem",
   borderRadius: 8,
   border: "1px solid var(--border)",
+  background: "var(--surface)",
+  color: "var(--text)",
   font: "inherit",
 };
 
@@ -174,6 +180,7 @@ const secondaryBtn: CSSProperties = {
   borderRadius: 10,
   border: "1px solid var(--border)",
   background: "transparent",
+  color: "var(--text)",
   fontWeight: 600,
   cursor: "pointer",
 };

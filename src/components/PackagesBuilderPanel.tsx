@@ -186,8 +186,8 @@ const tierSectionBox: CSSProperties = {
   padding: "1rem 1.15rem 1.2rem",
   borderRadius: 14,
   border: "1px solid var(--border)",
-  background: "rgba(255, 252, 247, 0.96)",
-  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+  background: "var(--surface)",
+  boxShadow: "var(--shadow-sm)",
 };
 
 const sectionTitle: CSSProperties = {
@@ -1212,7 +1212,7 @@ export function PackagesBuilderPanel({
       : null;
 
   return (
-    <section className="admin-panel admin-panel--editor" style={panel}>
+    <section className="admin-panel admin-panel--editor admin-packages-builder" style={panel}>
       <div className="admin-editor-layout">
         <h2 style={h2}>Package Builder</h2>
         {subTab === "create" ? (
@@ -1315,11 +1315,12 @@ export function PackagesBuilderPanel({
             {pkgEditTierId && (
               <div style={{ marginTop: 12 }}>
                 <div
+                  className="admin-packages-builder__sell-banner"
                   style={{
                     padding: "0.65rem 0.75rem",
                     borderRadius: 10,
-                    background: "rgba(13, 92, 77, 0.06)",
-                    border: "1px solid rgba(13, 92, 77, 0.15)",
+                    background: "rgba(74, 179, 155, 0.08)",
+                    border: "1px solid rgba(74, 179, 155, 0.18)",
                     marginBottom: 12,
                   }}
                 >
@@ -1332,7 +1333,9 @@ export function PackagesBuilderPanel({
                       <>
                         {" · "}
                         Change:{" "}
-                        <strong style={{ color: delta > 0 ? "var(--danger)" : delta < 0 ? "#065f46" : "inherit" }}>
+                        <strong
+                          style={{ color: delta > 0 ? "var(--danger)" : delta < 0 ? "var(--accent)" : "inherit" }}
+                        >
                           {delta >= 0 ? "+" : ""}
                           {fmtMoney(delta)}
                         </strong>
@@ -1353,7 +1356,7 @@ export function PackagesBuilderPanel({
                   ))}
                 </datalist>
 
-                <div style={tierSectionBox}>
+                <div className="admin-packages-builder__tier-section" style={tierSectionBox}>
                   <h3 className="admin-sb-subhead" style={sectionTitle}>
                     Section 1 — Tier (package overlay)
                   </h3>
@@ -1415,7 +1418,7 @@ export function PackagesBuilderPanel({
                   />
                 </div>
 
-                <div style={{ ...tierSectionBox, marginTop: "1.25rem" }}>
+                <div className="admin-packages-builder__tier-section" style={{ ...tierSectionBox, marginTop: "1.25rem" }}>
                   <h3 className="admin-sb-subhead" style={sectionTitle}>
                     Section 2 — Tasks &amp; pricing (package overlay)
                   </h3>
@@ -1427,7 +1430,10 @@ export function PackagesBuilderPanel({
                   </p>
 
                   {taskGroups.length > 0 ? (
-                    <div style={{ ...tierSectionBox, marginTop: 12, marginBottom: 12 }}>
+                    <div
+                      className="admin-packages-builder__tier-section"
+                      style={{ ...tierSectionBox, marginTop: 12, marginBottom: 12 }}
+                    >
                       <p style={{ ...sectionTitle, marginBottom: 6 }}>Add tasks from a task group</p>
                       <label style={{ ...lbl, maxWidth: 420, display: "block" }}>
                         <FieldCaption>Task group</FieldCaption>
@@ -1459,7 +1465,10 @@ export function PackagesBuilderPanel({
                   ) : null}
 
                   {pkgEditTierId && tiers.some((t) => t.solution_tier_id !== pkgEditTierId) ? (
-                    <div style={{ ...tierSectionBox, marginTop: 12, marginBottom: 12 }}>
+                    <div
+                      className="admin-packages-builder__tier-section"
+                      style={{ ...tierSectionBox, marginTop: 12, marginBottom: 12 }}
+                    >
                       <p style={{ ...sectionTitle, marginBottom: 6 }}>Add tasks from another tier&apos;s vault</p>
                       <p style={{ ...muted, marginTop: 0, marginBottom: 8, maxWidth: "58ch", fontSize: "0.86rem" }}>
                         Appends package-only extras that mirror vault tasks from the tier you choose (editable before save).

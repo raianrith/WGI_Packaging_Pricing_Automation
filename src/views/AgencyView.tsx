@@ -2056,12 +2056,22 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               Duration
                             </th>
                             <th scope="col">Dependencies</th>
-                            <th scope="col">Notes</th>
                           </tr>
                         </thead>
                         <tbody>
                           {tasksForTierDisplay.map((t) => (
-                            <tr key={t.task_id}>
+                            <tr
+                              key={t.task_id}
+                              className={
+                                t.task_implementer == null &&
+                                t.task_time == null &&
+                                t.task_duration == null &&
+                                t.task_dependencies == null &&
+                                t.task_notes == null
+                                  ? "agency-task-table__group-row"
+                                  : undefined
+                              }
+                            >
                               <td>
                                 <span className="agency-task-table__name">{t.task_name}</span>
                               </td>
@@ -2077,9 +2087,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               <td className="agency-task-table__td--meta">
                                 {t.task_dependencies ?? "—"}
                               </td>
-                              <td className="agency-task-table__td--meta">
-                                {t.task_notes ?? "—"}
-                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -2093,7 +2100,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 {formatKpiNumber(taskTableTotals.accountMgmtAddonHours)}
                               </td>
                               <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
-                              <td colSpan={2} className="agency-task-table__td--meta agency-task-table__addon-muted">
+                              <td className="agency-task-table__td--meta agency-task-table__addon-muted">
                                 Included in tier pricing (Admin)
                               </td>
                             </tr>
@@ -2112,7 +2119,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 ? formatKpiNumber(taskTableTotals.sumDuration)
                                 : "—"}
                             </td>
-                            <td colSpan={2} className="agency-task-table__totals-meta">
+                            <td className="agency-task-table__totals-meta">
                               {tasksForTierDisplay.length} task{tasksForTierDisplay.length === 1 ? "" : "s"}
                             </td>
                           </tr>
@@ -2169,7 +2176,7 @@ const navHeading: CSSProperties = {
   fontSize: "0.69rem",
   textTransform: "uppercase" as const,
   letterSpacing: "0.13em",
-  color: "rgba(13, 92, 77, 0.9)",
+  color: "var(--accent)",
   fontWeight: 800,
 };
 

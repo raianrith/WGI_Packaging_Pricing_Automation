@@ -14,6 +14,8 @@ import {
 } from "../lib/packageTierLinkPersistence";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
+import { loadTierPricingMathConfigFromStorage, normalizeTierPricingMathConfig } from "../lib/tierPricingMath";
+import { computePackageWorkspaceFormMetrics } from "../lib/packageWorkspaceMetrics";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -22,6 +24,7 @@ import {
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { useToast } from "../context/ToastContext";
 import type {
+  ImplementerHourGroupRow,
   Package,
   PackageBuilderSlotTemplate,
   PackageSolutionTier,
@@ -196,6 +199,7 @@ export function AgencyPackagesHub() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [pricing, setPricing] = useState<SolutionTierPricing[]>([]);
   const [packageTiers, setPackageTiers] = useState<PackageSolutionTier[]>([]);
+  const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
   const [slots, setSlots] = useState<PackageBuilderSlotTemplate[]>(() =>
     defaultPackageBuilderSlots().map((r) => ({ ...r }))
   );
@@ -231,13 +235,14 @@ export function AgencyPackagesHub() {
     setLoading(true);
     setLoadErr(null);
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, slotPack] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
       client.from("tasks").select("*").order("task_id"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
-      client.from("package_solution_tiers").select("package_id, solution_tier_id").order("package_id"),
+      client.from("package_solution_tiers").select("*").order("package_id"),
+      client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
       fetchPackageBuilderSlots(client),
     ]);
 
@@ -274,6 +279,7 @@ export function AgencyPackagesHub() {
     setTasks(nextTasks);
     setPricing(nextPricing);
     setPackageTiers(nextPackageTiers);
+    setImplementerHourGroups(implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]));
     setSlots(slotPack.rows.map((r) => ({ ...r })));
     setLoading(false);
   }, []);
@@ -327,6 +333,39 @@ export function AgencyPackagesHub() {
     }
     return m;
   }, [packages, packageTiers, pricingByTierId, tasks]);
+
+  const pkgWorkspaceById = useMemo(() => {
+    const math =
+      typeof globalThis.window !== "undefined"
+        ? normalizeTierPricingMathConfig(loadTierPricingMathConfigFromStorage())
+        : normalizeTierPricingMathConfig(null);
+    const m = new Map<
+      string,
+      ReturnType<typeof computePackageWorkspaceFormMetrics>
+    >();
+    const tiersByPkg = new Map<string, PackageSolutionTier[]>();
+    for (const row of packageTiers) {
+      const prev = tiersByPkg.get(row.package_id) ?? [];
+      prev.push(row);
+      tiersByPkg.set(row.package_id, prev);
+    }
+    for (const pkg of packages) {
+      const links = tiersByPkg.get(pkg.package_id) ?? [];
+      const ids = [...new Set(links.map((r) => r.solution_tier_id))].sort(sortId);
+      m.set(
+        pkg.package_id,
+        computePackageWorkspaceFormMetrics({
+          pkg,
+          tierIdsSorted: ids,
+          packageTierLinksForPackage: links,
+          vaultTasks: tasks,
+          implementerHourGroups,
+          mathConfig: math,
+        })
+      );
+    }
+    return m;
+  }, [packages, packageTiers, tasks, implementerHourGroups]);
 
   const filteredPackages = useMemo(() => {
     const q = pkgFilter.trim().toLowerCase();
@@ -539,18 +578,28 @@ export function AgencyPackagesHub() {
                     hoursPartial: false,
                     pricePartial: false,
                   };
+                  const ws = pkgWorkspaceById.get(p.package_id);
+                  const wsOk = ws?.ok === true;
                   const tierLabel =
                     rollup.tierCount === 0
                       ? "No tiers"
                       : rollup.tierCount === 1
                         ? "1 tier"
                         : `${rollup.tierCount} tiers`;
-                  const hoursDisplay =
+                  const vaultHoursDisplay =
                     rollup.tierCount === 0
                       ? "—"
                       : `${fmtHoursTotal(rollup.hoursSum)} h${rollup.hoursPartial ? " *" : ""}`;
-                  const priceDisplay =
+                  const vaultPriceDisplay =
                     rollup.tierCount === 0 ? "—" : fmtUsd(rollup.priceSum) + (rollup.pricePartial ? " *" : "");
+                  const workspaceHoursDisplay =
+                    rollup.tierCount === 0
+                      ? "—"
+                      : wsOk
+                        ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} h`
+                        : "—";
+                  const workspaceSellDisplay =
+                    rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
                   const partialNote =
                     rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
                       ? "* Some linked tiers have no hours or sell price in the vault."
@@ -561,10 +610,14 @@ export function AgencyPackagesHub() {
                     rollup.tierCount === 0
                       ? "No linked tiers"
                       : [
-                          `${fmtHoursTotal(rollup.hoursSum)} hours from vault`,
-                          rollup.hoursPartial ? "hours incomplete" : null,
-                          `${fmtUsd(rollup.priceSum)} sell total from vault`,
-                          rollup.pricePartial ? "pricing incomplete" : null,
+                          wsOk
+                            ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} workspace hours after hour discount`
+                            : null,
+                          wsOk ? `${fmtUsd(Math.round(ws.netSellAfterSellDiscount))} workspace net sell` : null,
+                          `Σ vault ${fmtHoursTotal(rollup.hoursSum)} hours`,
+                          rollup.hoursPartial ? "vault hours incomplete" : null,
+                          `Σ vault sell ${fmtUsd(rollup.priceSum)}`,
+                          rollup.pricePartial ? "vault pricing incomplete" : null,
                         ]
                           .filter(Boolean)
                           .join(", "),
@@ -592,22 +645,34 @@ export function AgencyPackagesHub() {
                               {tierLabel}
                             </span>
                           </div>
-                          <div className="agency-pkg-hub__card-stats" aria-label="Vault totals for linked tiers">
+                          <div
+                            className="agency-pkg-hub__card-stats"
+                            aria-label="Package workspace totals from Package Builder pricing"
+                          >
                             <div className="agency-pkg-hub__stat agency-pkg-hub__stat--hours">
                               <div className="agency-pkg-hub__stat-inner">
                                 <span className="agency-pkg-hub__stat-label">Hours</span>
-                                <span className="agency-pkg-hub__stat-hint">Vault · linked tiers</span>
-                                <span className="agency-pkg-hub__stat-value">{hoursDisplay}</span>
+                                <span className="agency-pkg-hub__stat-hint">Workspace · after hour discount %</span>
+                                <span className="agency-pkg-hub__stat-value">{workspaceHoursDisplay}</span>
                               </div>
                             </div>
                             <div className="agency-pkg-hub__stat agency-pkg-hub__stat--sell">
                               <div className="agency-pkg-hub__stat-inner">
-                                <span className="agency-pkg-hub__stat-label">Sell total</span>
-                                <span className="agency-pkg-hub__stat-hint">Vault · USD</span>
-                                <span className="agency-pkg-hub__stat-value">{priceDisplay}</span>
+                                <span className="agency-pkg-hub__stat-label">Net sell</span>
+                                <span className="agency-pkg-hub__stat-hint">Workspace · after sell discount %</span>
+                                <span className="agency-pkg-hub__stat-value">{workspaceSellDisplay}</span>
                               </div>
                             </div>
                           </div>
+                          {rollup.tierCount > 0 ? (
+                            <p className="agency-pkg-hub__vault-mini">
+                              Σ vault tiers (catalog){rollup.hoursPartial || rollup.pricePartial ? " *" : ""}:{" "}
+                              {vaultHoursDisplay} · {vaultPriceDisplay}
+                            </p>
+                          ) : null}
+                          {rollup.tierCount > 0 && !wsOk ? (
+                            <p className="agency-pkg-hub__card-partial">Workspace totals could not be calculated.</p>
+                          ) : null}
                           {partialNote ? (
                             <p className="agency-pkg-hub__card-partial">{partialNote}</p>
                           ) : null}

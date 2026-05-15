@@ -27,6 +27,7 @@ import {
   type RiskStrategicScore,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
+import { PKG_AGGREGATE_SYNTHETIC_TIER_ID } from "../lib/packageAggregatePricing";
 import { pricingHourGroupLabel } from "../lib/pricingHourGroups";
 import type { PricingHourGroupKey, SolutionTier, SolutionTierPricing } from "../types";
 
@@ -44,6 +45,13 @@ function parseNum(s: string): number | null {
   if (t === "" || t.toLowerCase() === "n/a") return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Package sell / hour discount fields: 0–100, non-finite → 0 */
+function parsePct0to100(raw: string | null | undefined): number {
+  const n = Number(String(raw ?? "").trim());
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(100, n);
 }
 
 function AdminFieldCaption({ children }: { children: ReactNode }) {
@@ -189,6 +197,12 @@ type Props = {
   onPackagePricingDraft?: (row: SolutionTierPricing) => void;
   /** When `persistTarget` is `draft`, receive the live draft pricing row for a parent wizard save. */
   onDraftPricingDraft?: (row: SolutionTierPricing) => void;
+  /** Package aggregate: hour discount % beside hour groups in Hours. */
+  packageHourDiscountPct?: string | null;
+  onPackageHourDiscountPctChange?: (value: string) => void;
+  /** Package aggregate: sell discount % after modeled sell price. */
+  packageSellDiscountPct?: string | null;
+  onPackageSellDiscountPctChange?: (value: string) => void;
 };
 
 export function PricingPanel({
@@ -222,6 +236,10 @@ export function PricingPanel({
   packagePricingSeed = null,
   onPackagePricingDraft,
   onDraftPricingDraft,
+  packageHourDiscountPct = null,
+  onPackageHourDiscountPctChange,
+  packageSellDiscountPct = null,
+  onPackageSellDiscountPctChange,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [scope, setScope] = useState("");
@@ -275,6 +293,16 @@ export function PricingPanel({
       ),
     [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore, tierPricingMathConfig]
   );
+
+  const parsedPackageSellDiscountPct = useMemo(
+    () => parsePct0to100(packageSellDiscountPct),
+    [packageSellDiscountPct]
+  );
+
+  const netSellAfterPackageDiscount = useMemo(() => {
+    if (persistTarget !== "package") return derived.sellPrice;
+    return derived.sellPrice * (1 - parsedPackageSellDiscountPct / 100);
+  }, [persistTarget, derived.sellPrice, parsedPackageSellDiscountPct]);
 
   const percentFromOld = useMemo(
     () => percentChangeFromSellAndOld(derived.sellPrice, oldPrice),
@@ -641,9 +669,10 @@ export function PricingPanel({
       <p className="admin-intro admin-intro--tight" style={muted}>
         {persistTarget === "package" ? (
           <>
-            Same pricing form as <strong>Solutions Builder</strong>. Edits are stored on the <strong>package–tier</strong>{" "}
-            link when you click <strong>Save package</strong> (vault <code style={{ fontSize: "0.85em" }}>solution_tier_pricing</code>{" "}
-            is not updated here).
+            Same math as <strong>Solutions Builder → pricing</strong>. Hour buckets are combined from all tiers in this
+            package after the <strong>hour discount %</strong> you set in Package Builder; multipliers and overrides are
+            stored on the <strong>packages</strong> row as <code style={{ fontSize: "0.85em" }}>package_pricing_overrides</code>{" "}
+            (vault <code style={{ fontSize: "0.85em" }}>solution_tier_pricing</code> is not modified here).
           </>
         ) : persistTarget === "draft" ? (
           <>
@@ -720,30 +749,23 @@ export function PricingPanel({
         <>
           {subTab === "update" && editingTierId ? (
             <h3 className="admin-editing-heading">
-              Editing <code style={{ fontSize: "0.9em" }}>{editingTierId}</code>
+              {editingTierId === PKG_AGGREGATE_SYNTHETIC_TIER_ID ? (
+                <>Package aggregate pricing</>
+              ) : (
+                <>
+                  Editing <code style={{ fontSize: "0.9em" }}>{editingTierId}</code>
+                </>
+              )}
             </h3>
           ) : null}
 
-      {(subTab === "create" || !editingTierId) && (
+      {persistTarget === "package" && editingTierId ? (
         <div className="admin-pricing-section">
-          <h3 className="admin-pricing-section__title">Tier &amp; scope</h3>
+          <h3 className="admin-pricing-section__title">Scope (package aggregate)</h3>
+          <p className="admin-intro admin-intro--tight" style={{ ...muted, marginTop: 0 }}>
+            Stored on the package as sparse pricing overrides (scope, notes, scores, etc.).
+          </p>
           <div className="admin-form-stack" style={formGrid}>
-            <label style={lbl}>
-              <AdminFieldCaption>Solution tier</AdminFieldCaption>
-              <select
-                style={input}
-                value={tierPick}
-                disabled={tierSelectLocked}
-                onChange={(e) => setTierPick(e.target.value)}
-              >
-                <option value="">Select tier…</option>
-                {tiersScoped.map((t) => (
-                  <option key={t.solution_tier_id} value={t.solution_tier_id}>
-                    {t.solution_tier_id} — {t.solution_tier_name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label style={{ ...lbl, gridColumn: "1 / -1" }}>
               <AdminFieldCaption>Scope</AdminFieldCaption>
               <textarea
@@ -755,6 +777,39 @@ export function PricingPanel({
             </label>
           </div>
         </div>
+      ) : (
+        (subTab === "create" || !editingTierId) && (
+          <div className="admin-pricing-section">
+            <h3 className="admin-pricing-section__title">Tier &amp; scope</h3>
+            <div className="admin-form-stack" style={formGrid}>
+              <label style={lbl}>
+                <AdminFieldCaption>Solution tier</AdminFieldCaption>
+                <select
+                  style={input}
+                  value={tierPick}
+                  disabled={tierSelectLocked}
+                  onChange={(e) => setTierPick(e.target.value)}
+                >
+                  <option value="">Select tier…</option>
+                  {tiersScoped.map((t) => (
+                    <option key={t.solution_tier_id} value={t.solution_tier_id}>
+                      {t.solution_tier_id} — {t.solution_tier_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                <AdminFieldCaption>Scope</AdminFieldCaption>
+                <textarea
+                  style={textarea}
+                  rows={3}
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+        )
       )}
 
       <div className="admin-pricing-section">
@@ -823,6 +878,21 @@ export function PricingPanel({
               value={fmtDerivedHours(derived.hoursForExpectedEffort)}
             />
           </label>
+          {persistTarget === "package" && onPackageHourDiscountPctChange ? (
+            <label
+              style={{ ...lbl, gridColumn: "1 / -1" }}
+              className="admin-pricing-package-discount-field"
+            >
+              <AdminFieldCaption>Hour discount %</AdminFieldCaption>
+              <input
+                style={input}
+                inputMode="decimal"
+                value={packageHourDiscountPct ?? ""}
+                onChange={(e) => onPackageHourDiscountPctChange(e.target.value)}
+                title="Applied evenly across all hour groups before expected effort pricing (package-level)."
+              />
+            </label>
+          ) : null}
         </div>
       </div>
 
@@ -932,15 +1002,58 @@ export function PricingPanel({
             />
           </label>
           <label style={lbl}>
-            <AdminFieldCaption>Sell price</AdminFieldCaption>
+            <AdminFieldCaption>
+              {persistTarget === "package" && onPackageSellDiscountPctChange ? (
+                <>
+                  Modeled sell <span style={{ fontWeight: 500 }}>(before package discount)</span>
+                </>
+              ) : (
+                "Sell price"
+              )}
+            </AdminFieldCaption>
             <input
               className="admin-pricing-readonly"
               style={readonlyInput}
               readOnly
               tabIndex={-1}
+              title={
+                persistTarget === "package" && onPackageSellDiscountPctChange
+                  ? "Ceiling from the risk + strategic multipliers. Package sell discount % is applied separately (see below)."
+                  : undefined
+              }
               value={`$${Math.round(derived.sellPrice).toLocaleString()}`}
             />
           </label>
+          {persistTarget === "package" && onPackageSellDiscountPctChange ? (
+            <label
+              style={{ ...lbl, gridColumn: "1 / -1" }}
+              className="admin-pricing-package-discount-field admin-pricing-package-discount-field--net"
+            >
+              <AdminFieldCaption>
+                Net sell <span style={{ fontWeight: 500 }}>(after package discount)</span>
+              </AdminFieldCaption>
+              <input
+                className="admin-pricing-readonly"
+                style={{ ...readonlyInput, fontWeight: 700, fontSize: "1.05em" }}
+                readOnly
+                tabIndex={-1}
+                title="Modeled sell × (1 − sell price discount % ÷ 100). Updates as you type the discount."
+                value={`$${Math.round(netSellAfterPackageDiscount).toLocaleString()}`}
+              />
+            </label>
+          ) : null}
+          {persistTarget === "package" && onPackageSellDiscountPctChange ? (
+            <label style={{ ...lbl, gridColumn: "1 / -1" }} className="admin-pricing-package-discount-field">
+              <AdminFieldCaption>Sell price discount %</AdminFieldCaption>
+              <input
+                style={input}
+                inputMode="decimal"
+                value={packageSellDiscountPct ?? ""}
+                onChange={(e) => onPackageSellDiscountPctChange(e.target.value)}
+                title="Applied after modeled sell price (package-level). Lower the net sell dollar amount above."
+              />
+            </label>
+          ) : null}
         </div>
       </div>
 

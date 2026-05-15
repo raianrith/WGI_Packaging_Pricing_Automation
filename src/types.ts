@@ -3,6 +3,31 @@ export type Package = {
   package_name: string;
   package_create_date: string;
   package_modified_date: string;
+  /** Below: Package Builder narrative + aggregate pricing (see `supabase/packages_builder_v2_fields.sql`). */
+  package_category?: string | null;
+  package_owner?: string | null;
+  package_overview?: string | null;
+  package_overview_link?: string | null;
+  package_direction?: string | null;
+  package_what_is_it?: string | null;
+  package_why_is_it_valuable?: string | null;
+  package_when_should_it_be_used?: string | null;
+  package_assumption_prerequisites?: string | null;
+  package_in_scope?: string | null;
+  package_out_of_scope?: string | null;
+  package_final_deliverable?: string | null;
+  package_how_do_we_get_this_work_done?: string | null;
+  package_sop?: string | null;
+  package_resources?: string | null;
+  package_resource_templates?: string | null;
+  package_resource_tools?: string | null;
+  package_resource_examples?: TierResourceExampleRow[] | null;
+  /** Uniform scale on summed hour buckets across all tiers in this package (0–100). */
+  package_hour_discount_pct?: number | null;
+  /** Applied to modeled sell price (0–100); stored overrides keep pre-discount sell. */
+  package_sell_discount_pct?: number | null;
+  package_pricing_overrides?: PackagePricingOverrides | null;
+  package_combined_tasks?: unknown | null;
 };
 
 /** Admin-editable ceilings for the agency “Build a Package” flow. See `package_builder_slot_templates`. */

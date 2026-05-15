@@ -24,6 +24,7 @@ import {
   parseTierOverrides,
 } from "../lib/packageTierOverrides";
 import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
+import { anchorTierForPackage } from "../lib/packageCombinedTasks";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
 import {
   effectiveResourceExamples,
@@ -33,7 +34,15 @@ import {
   tierTemplatesForProposalDisplay,
 } from "../lib/tierResourceFields";
 import { compareTasksByOrder } from "../lib/taskOrder";
-import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "../lib/tierPricingMath";
+import {
+  computePackageUnifiedTaskRows,
+  computePackageWorkspaceFormMetrics,
+} from "../lib/packageWorkspaceMetrics";
+import {
+  ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  loadTierPricingMathConfigFromStorage,
+  normalizeTierPricingMathConfig,
+} from "../lib/tierPricingMath";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -42,6 +51,7 @@ import {
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
 import type {
+  ImplementerHourGroupRow,
   Package,
   PackageSolutionTier,
   Solution,
@@ -62,6 +72,7 @@ type LoadState =
       packageTiers: PackageSolutionTier[];
       tasks: TaskRow[];
       pricing: SolutionTierPricing[];
+      implementerHourGroups: ImplementerHourGroupRow[];
     };
 
 function sortId(a: string, b: string): number {
@@ -180,6 +191,42 @@ function AgencyTierSubsection({
   );
 }
 
+function packageHasResourceNarrative(p: Package): boolean {
+  return Boolean(
+    p.package_resource_templates?.trim() ||
+      p.package_resource_tools?.trim() ||
+      p.package_resources?.trim() ||
+      p.package_resource_examples?.some((r) => r.example.trim() || r.date.trim())
+  );
+}
+
+function firstPackageNarrativeCategory(
+  p: Package
+): "overview" | "desc" | "scope" | "process" | "res" | null {
+  if (
+    p.package_overview?.trim() ||
+    p.package_overview_link?.trim() ||
+    p.package_direction?.trim()
+  )
+    return "overview";
+  if (
+    p.package_what_is_it?.trim() ||
+    p.package_why_is_it_valuable?.trim() ||
+    p.package_when_should_it_be_used?.trim()
+  )
+    return "desc";
+  if (
+    p.package_assumption_prerequisites?.trim() ||
+    p.package_in_scope?.trim() ||
+    p.package_out_of_scope?.trim() ||
+    p.package_final_deliverable?.trim()
+  )
+    return "scope";
+  if (p.package_how_do_we_get_this_work_done?.trim() || p.package_sop?.trim()) return "process";
+  if (packageHasResourceNarrative(p)) return "res";
+  return null;
+}
+
 function firstTierCategory(
   t: SolutionTier
 ): "desc" | "scope" | "process" | "res" | null {
@@ -267,18 +314,19 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
       client.from("tasks").select("*").order("task_id"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
+      client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
     ]);
 
     const err =
-      pRes.error || sRes.error || tRes.error || kRes.error || ptRes.error
-        ? [pRes.error, sRes.error, tRes.error, kRes.error, ptRes.error].find(Boolean)
+      pRes.error || sRes.error || tRes.error || kRes.error || prRes.error || ptRes.error
+        ? [pRes.error, sRes.error, tRes.error, kRes.error, prRes.error, ptRes.error].find(Boolean)
         : null;
 
     if (err) {
@@ -314,7 +362,16 @@ export function AgencyView({ mode }: AgencyViewProps) {
       return compareTasksByOrder(a, b);
     });
 
-    setState({ status: "ok", packages, solutions, tiers, packageTiers, tasks, pricing });
+    setState({
+      status: "ok",
+      packages,
+      solutions,
+      tiers,
+      packageTiers,
+      tasks,
+      pricing,
+      implementerHourGroups: implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]),
+    });
 
     if (mode === "package") {
       return;
@@ -428,17 +485,8 @@ export function AgencyView({ mode }: AgencyViewProps) {
         : data.packages.some((p) => p.package_id === next);
     if (!ok) return;
     setPkgId(next);
-    const pkgTiers =
-      next === STANDALONE_PACKAGE_NAV_ID
-        ? data.tiers
-            .filter((t) => !assignedTierIdSet(data.packageTiers).has(t.solution_tier_id))
-            .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))
-        : data.tiers
-            .filter((t) => tierIdsForPackage(data.packageTiers, next).has(t.solution_tier_id))
-            .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    const firstTier = pkgTiers[0] ?? null;
-    setTierId(firstTier?.solution_tier_id ?? null);
-    setSolId(firstTier?.solution_id ?? null);
+    setTierId(null);
+    setSolId(null);
   }, [data, mode, packageIdParam]);
 
   const solutionsVisible = useMemo(() => {
@@ -576,6 +624,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return m;
   }, [data, mode, pkgId]);
 
+  const packageExtrasAnchorTierId = useMemo(() => {
+    if (!data || mode !== "package" || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) return null;
+    return anchorTierForPackage([...tierIdsForPackage(data.packageTiers, pkgId)]);
+  }, [data, mode, pkgId]);
+
   const tiersNavList = useMemo(() => {
     const base =
       mode === "package" && pkgId != null ? tiersForWorkspacePackage : tiersForSolution;
@@ -628,8 +681,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
       vaultTasks: data.tasks,
       taskOverrides: parseTaskOverridesMap(link.task_overrides),
       taskExtensions: parseTaskExtensions(link.task_extensions),
+      packageExtrasAnchorTierId,
     });
-  }, [data, tierId, packageWorkspaceLinkByTierId]);
+  }, [data, tierId, packageWorkspaceLinkByTierId, packageExtrasAnchorTierId]);
 
   /** Sums for the tier tasks table footer (Time + Duration columns). */
   const taskTableTotals = useMemo(() => {
@@ -873,6 +927,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
     const useMergedPackage =
       mode === "package" && pkgId != null && pkgId !== STANDALONE_PACKAGE_NAV_ID;
 
+    const extrasAnchorTier =
+      useMergedPackage && tiersInPkg.length > 0
+        ? anchorTierForPackage(tiersInPkg.map((t) => t.solution_tier_id))
+        : null;
+
     let sellSum = 0;
     let pricedCount = 0;
     if (useMergedPackage) {
@@ -923,6 +982,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
             vaultTasks: data.tasks,
             taskOverrides: taskPatchByTier.get(t.solution_tier_id),
             taskExtensions: taskExtByTier.get(t.solution_tier_id),
+            packageExtrasAnchorTierId: extrasAnchorTier,
           })
         : data.tasks
             .filter((tk) => tk.solution_tier_id === t.solution_tier_id)
@@ -940,10 +1000,43 @@ export function AgencyView({ mode }: AgencyViewProps) {
         ? "Standalone solutions"
         : data.packages.find((p) => p.package_id === pkgId)?.package_name ?? "Package";
 
+    const vaultSellTotalDisplay = pricedCount > 0 ? formatUsd(sellSum) : "—";
+
+    const workspaceTotals =
+      pkgId === STANDALONE_PACKAGE_NAV_ID
+        ? ({ ok: false } as ReturnType<typeof computePackageWorkspaceFormMetrics>)
+        : (() => {
+            const pkgObj = data.packages.find((p) => p.package_id === pkgId);
+            if (!pkgObj) return { ok: false } as ReturnType<typeof computePackageWorkspaceFormMetrics>;
+            const pkgLinks = data.packageTiers.filter((r) => r.package_id === pkgId);
+            const sortedTierIds = [...new Set(pkgLinks.map((r) => r.solution_tier_id))].sort(sortId);
+            return computePackageWorkspaceFormMetrics({
+              pkg: pkgObj,
+              tierIdsSorted: sortedTierIds,
+              packageTierLinksForPackage: pkgLinks,
+              vaultTasks: data.tasks,
+              implementerHourGroups: data.implementerHourGroups,
+              mathConfig:
+                typeof globalThis.window !== "undefined"
+                  ? loadTierPricingMathConfigFromStorage()
+                  : normalizeTierPricingMathConfig(null),
+            });
+          })();
+
+    const useWorkspaceTotals = workspaceTotals.ok === true;
+
     return {
       title,
       tiersCount: tiersInPkg.length,
-      sellTotalDisplay: pricedCount > 0 ? formatUsd(sellSum) : "—",
+      sellTotalDisplay: useWorkspaceTotals
+        ? formatUsd(Math.round(workspaceTotals.netSellAfterSellDiscount))
+        : vaultSellTotalDisplay,
+      vaultSellTotalDisplay,
+      vaultSumTaskTime: sumTime,
+      useWorkspaceTotals,
+      workspaceHoursDisplay: useWorkspaceTotals
+        ? formatKpiNumber(workspaceTotals.totalResourceHoursAfterDiscount)
+        : null,
       distinctImplementers: roles.size,
       sumTaskTime: sumTime,
     };
@@ -957,6 +1050,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
         ? data.tiers.filter((t) => !assignedTierIdSet(data.packageTiers).has(t.solution_tier_id))
         : data.tiers.filter((t) => tierIdsForPackage(data.packageTiers, pkgId).has(t.solution_tier_id));
     const useMergedPackage = pkgId !== STANDALONE_PACKAGE_NAV_ID;
+    const pkTierIds = tierList.map((x) => x.solution_tier_id);
+    const extrasAnchor =
+      useMergedPackage && pkTierIds.length ? anchorTierForPackage(pkTierIds) : null;
     const bySol = new Map<string, SolutionTier[]>();
     for (const t of tierList) {
       const arr = bySol.get(t.solution_id) ?? [];
@@ -997,6 +1093,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
               vaultTasks: data.tasks,
               taskOverrides: parseTaskOverridesMap(link?.task_overrides),
               taskExtensions: parseTaskExtensions(link?.task_extensions),
+              packageExtrasAnchorTierId: extrasAnchor,
             })
           : data.tasks
               .filter((tk) => tk.solution_tier_id === t.solution_tier_id)
@@ -1026,6 +1123,69 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     return rows;
   }, [data, mode, pkgId]);
+
+  const packageWorkspacePkg = useMemo(() => {
+    if (!data || mode !== "package" || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) {
+      return null;
+    }
+    return data.packages.find((p) => p.package_id === pkgId) ?? null;
+  }, [data, mode, pkgId]);
+
+  const packageWorkspaceUnifiedRows = useMemo(() => {
+    if (!data || !packageWorkspacePkg || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) return [];
+    const pkgLinks = data.packageTiers.filter((r) => r.package_id === pkgId);
+    const sortedTierIds = [...new Set(pkgLinks.map((r) => r.solution_tier_id))].sort(sortId);
+    return computePackageUnifiedTaskRows({
+      pkg: packageWorkspacePkg,
+      tierIdsSorted: sortedTierIds,
+      packageTierLinksForPackage: pkgLinks,
+      vaultTasks: data.tasks,
+    });
+  }, [data, mode, pkgId, packageWorkspacePkg]);
+
+  const tierMetaByIdForPackageWorkspace = useMemo(() => {
+    const m = new Map<string, { tierName: string; solutionName: string }>();
+    if (!data || mode !== "package" || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) return m;
+    const ids = tierIdsForPackage(data.packageTiers, pkgId);
+    for (const t of data.tiers) {
+      if (!ids.has(t.solution_tier_id)) continue;
+      const sol = data.solutions.find((s) => s.solution_id === t.solution_id);
+      m.set(t.solution_tier_id, {
+        tierName: t.solution_tier_name,
+        solutionName: sol?.solution_name ?? t.solution_id,
+      });
+    }
+    return m;
+  }, [data, mode, pkgId]);
+
+  const packageUnifiedTaskTableTotals = useMemo(() => {
+    let sumTime = 0;
+    let sumDuration = 0;
+    let anyTime = false;
+    let anyDuration = false;
+    for (const t of packageWorkspaceUnifiedRows) {
+      if (t.task_time != null && Number.isFinite(Number(t.task_time))) {
+        sumTime += Number(t.task_time);
+        anyTime = true;
+      }
+      if (t.task_duration != null && Number.isFinite(Number(t.task_duration))) {
+        sumDuration += Number(t.task_duration);
+        anyDuration = true;
+      }
+    }
+    const accountMgmtAddonHours = anyTime ? sumTime * ACCOUNT_MGMT_HOURS_ADDON_RATE : 0;
+    const sumTimeWithAccountMgmt = sumTime + accountMgmtAddonHours;
+    return { sumTime, sumDuration, anyTime, anyDuration, accountMgmtAddonHours, sumTimeWithAccountMgmt };
+  }, [packageWorkspaceUnifiedRows]);
+
+  const showPackageTierPrompt = useMemo(
+    () =>
+      mode === "package" &&
+      pkgId != null &&
+      tierId == null &&
+      tiersForWorkspacePackage.length > 0,
+    [mode, pkgId, tierId, tiersForWorkspacePackage.length]
+  );
 
   useEffect(() => {
     if (mode === "catalog") return;
@@ -1070,10 +1230,13 @@ export function AgencyView({ mode }: AgencyViewProps) {
         if (solId !== null) setSolId(null);
         return;
       }
-      if (!tierId || !list.some((t) => t.solution_tier_id === tierId)) {
-        const pick = list[0];
-        setTierId(pick.solution_tier_id);
-        setSolId(pick.solution_id);
+      if (tierId == null) {
+        if (solId !== null) setSolId(null);
+        return;
+      }
+      if (!list.some((t) => t.solution_tier_id === tierId)) {
+        setTierId(null);
+        setSolId(null);
         return;
       }
       const match = list.find((t) => t.solution_tier_id === tierId);
@@ -1430,7 +1593,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
             )}
           </nav>
 
-          <main style={layout.main}>
+          <main
+            style={layout.main}
+            className={mode === "package" ? "agency-package-workspace-main" : undefined}
+          >
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/">
@@ -1455,7 +1621,20 @@ export function AgencyView({ mode }: AgencyViewProps) {
                   <p className="agency-kpi-panel__scope">
                     <strong>{selectedPackageOverview.title}</strong>
                     <br />
-                    Totals include every tier in this package.
+                    <span style={{ color: "var(--muted)", fontSize: "0.92rem" }}>
+                      {selectedPackageOverview.useWorkspaceTotals ? (
+                        <>
+                          Totals match <strong>Package Builder</strong>: resource hour buckets after hour discount %, then
+                          modeled sell and net sell after package sell discount %. They are not computed as simple “hours ×
+                          rate.”
+                        </>
+                      ) : (
+                        <>
+                          Sell total is the sum of each tier’s modeled sell (vault + link overrides when in package mode).
+                          Hours are the sum of task times in the checklist—they are not divided to get price.
+                        </>
+                      )}
+                    </span>
                   </p>
                 </div>
                 <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
@@ -1466,10 +1645,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--pricing">
-                    <span className="agency-kpi-card__label">Sell total (package)</span>
-                    <span className="agency-kpi-card__value">
-                      {selectedPackageOverview.sellTotalDisplay}
+                    <span className="agency-kpi-card__label">
+                      {selectedPackageOverview.useWorkspaceTotals ? "Net sell (workspace)" : "Sell total (Σ tiers)"}
                     </span>
+                    <span className="agency-kpi-card__value">{selectedPackageOverview.sellTotalDisplay}</span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--tasks">
                     <span className="agency-kpi-card__label">Distinct implementers</span>
@@ -1478,12 +1657,31 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--tasks">
-                    <span className="agency-kpi-card__label">Sum of task time</span>
+                    <span className="agency-kpi-card__label">
+                      {selectedPackageOverview.useWorkspaceTotals
+                        ? "Resource hours · after hour discount %"
+                        : "Sum of task time"}
+                    </span>
                     <span className="agency-kpi-card__value">
-                      {formatKpiNumber(selectedPackageOverview.sumTaskTime)}
+                      {selectedPackageOverview.workspaceHoursDisplay ??
+                        formatKpiNumber(selectedPackageOverview.sumTaskTime)}
                     </span>
                   </div>
                 </div>
+                {selectedPackageOverview.useWorkspaceTotals ? (
+                  <p
+                    style={{
+                      margin: "0.75rem 0 0",
+                      color: "var(--muted)",
+                      fontSize: "0.88rem",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    Catalog comparison: Σ tier vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
+                    summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong>
+                    .
+                  </p>
+                ) : null}
               </section>
             )}
 
@@ -1525,6 +1723,373 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 </div>
               </section>
             )}
+
+            {packageWorkspacePkg ? (
+              <>
+                <article className="agency-article agency-article--package" style={articleCard}>
+                  <header style={articleHead}>
+                    <h2 style={articleTitle}>{packageWorkspacePkg.package_name}</h2>
+                    {packageWorkspacePkg.package_owner?.trim() ? (
+                      <p style={ownerLine}>
+                        Owner: <strong>{packageWorkspacePkg.package_owner.trim()}</strong>
+                      </p>
+                    ) : null}
+                    {packageWorkspacePkg.package_category?.trim() ? (
+                      <p style={metaLine}>Category: {packageWorkspacePkg.package_category.trim()}</p>
+                    ) : null}
+                  </header>
+
+                  {(() => {
+                    const p = packageWorkspacePkg;
+                    const first = firstPackageNarrativeCategory(p);
+                    const hasOverview = Boolean(
+                      p.package_overview?.trim() ||
+                        p.package_direction?.trim() ||
+                        p.package_overview_link?.trim()
+                    );
+                    const hasDesc = Boolean(
+                      p.package_what_is_it?.trim() ||
+                        p.package_why_is_it_valuable?.trim() ||
+                        p.package_when_should_it_be_used?.trim()
+                    );
+                    const hasScope = Boolean(
+                      p.package_assumption_prerequisites?.trim() ||
+                        p.package_in_scope?.trim() ||
+                        p.package_out_of_scope?.trim() ||
+                        p.package_final_deliverable?.trim()
+                    );
+                    const hasProcess = Boolean(
+                      p.package_how_do_we_get_this_work_done?.trim() || p.package_sop?.trim()
+                    );
+                    const hasRes = packageHasResourceNarrative(p);
+                    const resTemplatesRaw = (p.package_resource_templates ?? "").trim();
+                    const resTemplates = stripRedundantResourceMarkdownHeading(resTemplatesRaw, "templates");
+                    const resToolsRaw = (p.package_resource_tools ?? "").trim();
+                    const resTools = stripRedundantResourceMarkdownHeading(resToolsRaw, "tools");
+                    const resLegacy = (p.package_resources ?? "").trim();
+                    const resExampleRows = (p.package_resource_examples ?? []).filter(
+                      (r) => r.example.trim() || r.date.trim()
+                    );
+
+                    if (!hasOverview && !hasDesc && !hasScope && !hasProcess && !hasRes) {
+                      return (
+                        <p style={{ ...emptyHint, margin: "0.25rem 0 0" }}>
+                          No package narrative saved yet. Edit details in{" "}
+                          <Link className="agency-hub__link" to="/packages">
+                            Packages
+                          </Link>
+                          .
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <>
+                        {hasOverview ? (
+                          <section
+                            className={
+                              first === "overview"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Overview</h3>
+                            {p.package_overview?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Package overview"
+                                text={p.package_overview.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_direction?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Direction"
+                                text={p.package_direction.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_overview_link?.trim() ? (
+                              <p style={{ ...metaLine, marginTop: "0.65rem" }}>
+                                Overview link:{" "}
+                                <a
+                                  className="agency-hub__link"
+                                  href={p.package_overview_link.trim()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {p.package_overview_link.trim()}
+                                </a>
+                              </p>
+                            ) : null}
+                          </section>
+                        ) : null}
+
+                        {hasDesc ? (
+                          <section
+                            className={
+                              first === "desc"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Description</h3>
+                            {p.package_what_is_it?.trim() ? (
+                              <AgencyTierSubsection
+                                title="What is it"
+                                text={p.package_what_is_it.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_why_is_it_valuable?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Why is it valuable"
+                                text={p.package_why_is_it_valuable.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_when_should_it_be_used?.trim() ? (
+                              <AgencyTierSubsection
+                                title="When should it be used"
+                                text={p.package_when_should_it_be_used.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
+
+                        {hasScope ? (
+                          <section
+                            className={
+                              first === "scope"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Scope</h3>
+                            {p.package_assumption_prerequisites?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Assumptions and prerequisites"
+                                text={p.package_assumption_prerequisites.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_in_scope?.trim() ? (
+                              <AgencyTierSubsection
+                                title="What is included in scope"
+                                text={p.package_in_scope.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_out_of_scope?.trim() ? (
+                              <AgencyTierSubsection
+                                title="What is not included in scope"
+                                text={p.package_out_of_scope.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_final_deliverable?.trim() ? (
+                              <AgencyTierSubsection
+                                title="What is the final deliverable"
+                                text={p.package_final_deliverable.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                          </section>
+                        ) : null}
+
+                        {hasProcess ? (
+                          <section
+                            className={
+                              first === "process"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Process</h3>
+                            {p.package_how_do_we_get_this_work_done?.trim() ? (
+                              <AgencyTierSubsection
+                                title="How we get this work done"
+                                text={p.package_how_do_we_get_this_work_done.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {p.package_sop?.trim() ? (
+                              <AgencyTierSubsection title="SOP" text={p.package_sop.trim()} blockTitle={blockTitle} />
+                            ) : null}
+                          </section>
+                        ) : null}
+
+                        {hasRes ? (
+                          <section
+                            className={
+                              first === "res"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Resources</h3>
+                            {resTemplates ? (
+                              <AgencyTierSubsection title="Templates" text={resTemplates} blockTitle={blockTitle} />
+                            ) : null}
+                            {resExampleRows.length > 0 ? (
+                              <div className="agency-tier-sub">
+                                <h4 className="agency-block-title" style={blockTitle}>
+                                  Examples with dates
+                                </h4>
+                                <TierResourceExamplesDisplay rows={resExampleRows} />
+                              </div>
+                            ) : null}
+                            {resTools ? (
+                              <AgencyTierSubsection title="Tools" text={resTools} blockTitle={blockTitle} />
+                            ) : null}
+                            {resLegacy ? (
+                              <AgencyTierSubsection title="Resources" text={resLegacy} blockTitle={blockTitle} />
+                            ) : null}
+                          </section>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </article>
+
+                <section className="agency-tasks-panel" style={tasksSection}>
+                  <h2 className="agency-tasks-panel__title" style={tasksTitle}>
+                    Package tasks ({packageWorkspaceUnifiedRows.length})
+                  </h2>
+                  <p
+                    style={{
+                      margin: "0 0 1rem",
+                      fontSize: "0.88rem",
+                      color: "var(--muted)",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    Combined checklist for every tier in this package (same ordering as Package Builder).
+                  </p>
+                  {packageWorkspaceUnifiedRows.length === 0 ? (
+                    <p style={emptyHint}>No tasks in this package checklist yet.</p>
+                  ) : (
+                    <div className="agency-task-table-wrap">
+                      <table className="agency-task-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Tier</th>
+                            <th scope="col">Task</th>
+                            <th scope="col">Implementer</th>
+                            <th scope="col" className="agency-task-table__th--num">
+                              Time
+                            </th>
+                            <th scope="col" className="agency-task-table__th--num">
+                              Duration
+                            </th>
+                            <th scope="col">Dependencies</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {packageWorkspaceUnifiedRows.map((t) => {
+                            const meta = tierMetaByIdForPackageWorkspace.get(t.solution_tier_id);
+                            return (
+                              <tr
+                                key={`${t.solution_tier_id}:${t.task_id}`}
+                                className={
+                                  t.task_implementer == null &&
+                                  t.task_time == null &&
+                                  t.task_duration == null &&
+                                  t.task_dependencies == null &&
+                                  t.task_notes == null
+                                    ? "agency-task-table__group-row"
+                                    : undefined
+                                }
+                              >
+                                <td>
+                                  {meta ? (
+                                    <>
+                                      <span className="agency-task-table__name">{meta.tierName}</span>
+                                      <div
+                                        style={{
+                                          fontSize: "0.82rem",
+                                          color: "var(--muted)",
+                                          marginTop: "0.2rem",
+                                        }}
+                                      >
+                                        {meta.solutionName}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="agency-task-table__name">{t.solution_tier_id}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <span className="agency-task-table__name">{t.task_name}</span>
+                                </td>
+                                <td>{t.task_implementer ?? "—"}</td>
+                                <td className="agency-task-table__td--num">
+                                  {t.task_time != null ? formatKpiNumber(Number(t.task_time)) : "—"}
+                                </td>
+                                <td className="agency-task-table__td--num">
+                                  {t.task_duration != null
+                                    ? formatKpiNumber(Number(t.task_duration))
+                                    : "—"}
+                                </td>
+                                <td className="agency-task-table__td--meta">
+                                  {t.task_dependencies ?? "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          {packageUnifiedTaskTableTotals.anyTime ? (
+                            <tr className="agency-task-table__addon-row">
+                              <td colSpan={3} className="agency-task-table__addon-label">
+                                Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
+                              </td>
+                              <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                {formatKpiNumber(packageUnifiedTaskTableTotals.accountMgmtAddonHours)}
+                              </td>
+                              <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                              <td className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                Included in tier pricing (Admin)
+                              </td>
+                            </tr>
+                          ) : null}
+                          <tr className="agency-task-table__totals-row">
+                            <td colSpan={3} className="agency-task-table__totals-label">
+                              Totals
+                            </td>
+                            <td className="agency-task-table__td--num agency-task-table__totals-value">
+                              {packageUnifiedTaskTableTotals.anyTime
+                                ? formatKpiNumber(packageUnifiedTaskTableTotals.sumTimeWithAccountMgmt)
+                                : "—"}
+                            </td>
+                            <td className="agency-task-table__td--num agency-task-table__totals-value">
+                              {packageUnifiedTaskTableTotals.anyDuration
+                                ? formatKpiNumber(packageUnifiedTaskTableTotals.sumDuration)
+                                : "—"}
+                            </td>
+                            <td className="agency-task-table__totals-meta">
+                              {packageWorkspaceUnifiedRows.length} task
+                              {packageWorkspaceUnifiedRows.length === 1 ? "" : "s"}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              </>
+            ) : null}
+
+            {showPackageTierPrompt ? (
+              <div className="agency-package-tier-prompt" role="status">
+                <p className="agency-package-tier-prompt__eyebrow">Solution tier detail</p>
+                <p className="agency-package-tier-prompt__title">Select a tier to continue</p>
+                <p className="agency-package-tier-prompt__text">
+                  Choose a solution tier in the left sidebar to open its narrative, scope, process, and task checklist
+                  for this package.
+                </p>
+              </div>
+            ) : null}
 
             {mode === "catalog" && (data.packages.length > 0 || data.solutions.length > 0) ? (
               <section
@@ -1836,9 +2401,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
             ) : null}
 
             {mode === "catalog" && catalogTierTableView ? null : !selectedTier || !selectedTierDisplay ? (
-              <p style={emptyHint}>Select a tier to view details.</p>
+              mode === "package" ? null : (
+                <p style={emptyHint}>Select a tier to view details.</p>
+              )
             ) : (
-              <>
+              <div className={mode === "package" ? "agency-package-tier-detail-region" : undefined}>
                 <div className="agency-breadcrumb" style={breadcrumb}>
                   {packageForSelectedTier ? (
                     <span>
@@ -2128,7 +2695,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </div>
                   )}
                 </section>
-              </>
+              </div>
             )}
           </main>
         </div>

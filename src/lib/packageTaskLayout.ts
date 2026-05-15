@@ -102,6 +102,8 @@ export function buildMergedTaskRowsForPackageTier(args: {
   vaultTasks: TaskRow[];
   taskOverrides: PackageTaskOverridesMap | null | undefined;
   taskExtensions: PackageTaskExtensions | null | undefined;
+  /** When set, package-only `extra_tasks` render only for this tier (catalog / agency). */
+  packageExtrasAnchorTierId?: string | null;
 }): TaskRow[] {
   const hidden = new Set(args.taskExtensions?.hidden_task_ids ?? []);
   const ov = args.taskOverrides ?? {};
@@ -109,7 +111,11 @@ export function buildMergedTaskRowsForPackageTier(args: {
     .filter((t) => t.solution_tier_id === args.tierId && !hidden.has(t.task_id))
     .sort(compareTasksByOrder)
     .map((t) => mergeTaskWithPackageOverride(t, ov[t.task_id]));
-  const extras = (args.taskExtensions?.extra_tasks ?? []).map((e) => extraTaskToTaskRow(args.tierId, e));
+  const showExtras =
+    args.packageExtrasAnchorTierId == null || args.packageExtrasAnchorTierId === args.tierId;
+  const extras = showExtras
+    ? (args.taskExtensions?.extra_tasks ?? []).map((e) => extraTaskToTaskRow(args.tierId, e))
+    : [];
   return [...base, ...extras];
 }
 

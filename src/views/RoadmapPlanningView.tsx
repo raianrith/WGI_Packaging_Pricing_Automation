@@ -2146,16 +2146,32 @@ export function RoadmapPlanningView() {
               }
               const renderRow = (c: RoadmapCard) => (
                 <tr key={c.key}>
-                  <td>
+                  <td className="roadmap-export-table__col roadmap-export-table__col--deliverable">
                     <div className="roadmap-export-table__deliverable">
-                      <strong>{c.headline.trim() || "(untitled)"}</strong>
-                      <span className="roadmap-export-table__scope">{c.scope}</span>
-                      {c.description.trim() ? <span>{descPreview(c.description, 180)}</span> : null}
+                      <div className="roadmap-export-table__deliverable-head">
+                        <strong className="roadmap-export-table__name">
+                          {c.headline.trim() || "(untitled)"}
+                        </strong>
+                        <span
+                          className={`roadmap-export-table__scope roadmap-export-table__scope--${c.scope}`}
+                        >
+                          {c.scope}
+                        </span>
+                      </div>
+                      {c.description.trim() ? (
+                        <p className="roadmap-export-table__desc">{descPreview(c.description, 140)}</p>
+                      ) : null}
                     </div>
                   </td>
-                  <td>{kindLabel(c.kind)}</td>
-                  <td>{effectiveHoursStr(c) || "—"}</td>
-                  <td>{effectivePriceStr(c, ctx, computeScratchSellPrice) || "—"}</td>
+                  <td className="roadmap-export-table__col roadmap-export-table__col--type">
+                    {kindLabel(c.kind)}
+                  </td>
+                  <td className="roadmap-export-table__col roadmap-export-table__col--num">
+                    {effectiveHoursStr(c) || "—"}
+                  </td>
+                  <td className="roadmap-export-table__col roadmap-export-table__col--num">
+                    {effectivePriceStr(c, ctx, computeScratchSellPrice) || "—"}
+                  </td>
                 </tr>
               );
               return (

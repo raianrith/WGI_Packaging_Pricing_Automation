@@ -1699,24 +1699,23 @@ export function RoadmapPlanningView() {
         <div className="roadmap-workspace">
           <aside className="roadmap-library" aria-label="Catalog library">
             <div className="roadmap-library__head">
-              <p className="roadmap-library__eyebrow">Add from catalog</p>
               <div className="roadmap-library__title-row">
-                <h2 className="roadmap-library__title">Library</h2>
-                <span className="roadmap-library__count">
+                <h2 className="roadmap-library__title">Catalog</h2>
+                <span className="roadmap-library__count" aria-live="polite">
                   {paletteTab === "packages" ? filteredPackages.length : filteredTiers.length}
                 </span>
               </div>
-              <p className="roadmap-muted roadmap-library__hint">
-                Choose which <strong>what-if</strong> column to add to, then tap <strong>+ Add</strong> on any row.
-              </p>
-              <div className="roadmap-library__target-card">
+
+              <section className="roadmap-library__target-card" aria-label="Target scenario">
                 <div className="roadmap-library__target-head">
-                  <span className="roadmap-field__cap">Add next item to</span>
+                  <span className="roadmap-library__target-label">Add to scenario</span>
                   {targetScenarioRollup ? (
-                    <span className="roadmap-library__target-kpi">{formatUsd(targetScenarioRollup.priceSubtotal)} included</span>
+                    <span className="roadmap-library__target-kpi" title="Included sell price in this scenario">
+                      {formatUsd(targetScenarioRollup.priceSubtotal)}
+                    </span>
                   ) : null}
                 </div>
-                <div className="roadmap-scenario-pick">
+                <div className="roadmap-scenario-pick roadmap-scenario-pick--compact">
                   {scenarios.map((s, i) => (
                     <button
                       key={s.id}
@@ -1725,49 +1724,46 @@ export function RoadmapPlanningView() {
                       onClick={() => setTargetScenarioId(s.id)}
                       title={s.title}
                     >
-                      {i + 1}. {s.title}
+                      <span className="roadmap-scenario-pill__index">{i + 1}</span>
+                      <span className="roadmap-scenario-pill__label">{s.title}</span>
                     </button>
                   ))}
                 </div>
-                <p className="roadmap-library__target-note">
-                  New items default into the first phase of the selected scenario, then can be moved on-card.
-                </p>
-              </div>
-              <label className="roadmap-field roadmap-field--search">
-                <span className="roadmap-field__cap" id={searchId}>
-                  Search
-                </span>
-                <input
-                  className="roadmap-input"
-                  aria-labelledby={searchId}
-                  value={paletteSearch}
-                  onChange={(e) => setPaletteSearch(e.target.value)}
-                  placeholder="Filter by name or id…"
-                />
-              </label>
-              <div className="roadmap-palette-tabs" role="tablist" aria-label="Library category">
-                {(
-                  [
-                    ["packages", "Packages"],
-                    ["tiers", "Tiers"],
-                  ] as const
-                ).map(([id, lab]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={paletteTab === id}
-                    className={`roadmap-palette-tab${paletteTab === id ? " is-active" : ""}`}
-                    onClick={() => setPaletteTab(id)}
-                  >
-                    {lab}
-                  </button>
-                ))}
-              </div>
-              <div className="roadmap-library__summary">
-                <span>{ctx.packages.length} packages</span>
-                <span>{ctx.tiers.length} tiers</span>
-                <span>Scratch tiers available</span>
+              </section>
+
+              <div className="roadmap-library__toolbar">
+                <label className="roadmap-library__search">
+                  <span className="visually-hidden" id={searchId}>
+                    Search catalog
+                  </span>
+                  <input
+                    className="roadmap-input roadmap-library__search-input"
+                    aria-labelledby={searchId}
+                    value={paletteSearch}
+                    onChange={(e) => setPaletteSearch(e.target.value)}
+                    placeholder="Search name or ID…"
+                  />
+                </label>
+                <div className="roadmap-palette-tabs" role="tablist" aria-label="Catalog category">
+                  {(
+                    [
+                      ["packages", "Packages", ctx.packages.length],
+                      ["tiers", "Tiers", ctx.tiers.length],
+                    ] as const
+                  ).map(([id, lab, total]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={paletteTab === id}
+                      className={`roadmap-palette-tab${paletteTab === id ? " is-active" : ""}`}
+                      onClick={() => setPaletteTab(id)}
+                    >
+                      {lab}
+                      <span className="roadmap-palette-tab__count">{total}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="roadmap-palette-scroll">
@@ -1775,20 +1771,21 @@ export function RoadmapPlanningView() {
                 <div className="roadmap-scratch-row">
                   <button
                     type="button"
-                    className="roadmap-btn roadmap-btn--sm"
+                    className="roadmap-scratch-row__btn"
                     disabled={!targetDefaultPhaseId}
                     onClick={() => {
                       if (!targetDefaultPhaseId) return;
                       addCard(cardForScratchTier(targetScenarioId, targetDefaultPhaseId, ctx));
                     }}
                   >
-                    + Scratch tier
+                    + Custom tier
                   </button>
-                  <span className="roadmap-muted roadmap-scratch-row__hint">
-                    Adds a temporary tier to the selected scenario. Use Details or Customize for title, manual hours,
-                    catalog tasks / group templates, blended $/hr, and risk / strategic multipliers — sell price is
-                    calculated for you.
-                  </span>
+                  <p
+                    className="roadmap-scratch-row__hint"
+                    title="Opens in the first phase of the selected scenario. Edit hours, tasks, and pricing in Details."
+                  >
+                    One-off tier for this scenario only.
+                  </p>
                 </div>
               ) : null}
               {paletteTab === "packages" &&
@@ -1798,28 +1795,31 @@ export function RoadmapPlanningView() {
                     <div key={p.package_id} className="roadmap-palette-row">
                       <div className="roadmap-palette-row__body">
                         <div className="roadmap-palette-row__head">
-                          <strong>{p.package_name}</strong>
-                          <code className="roadmap-palette-row__id">{p.package_id}</code>
+                          <strong className="roadmap-palette-row__title">{p.package_name}</strong>
+                          <button
+                            type="button"
+                            className="roadmap-palette-row__add"
+                            disabled={!targetDefaultPhaseId}
+                            onClick={() => {
+                              if (!targetDefaultPhaseId) return;
+                              addCard(cardForPackage(p, ctx, targetScenarioId, targetDefaultPhaseId));
+                            }}
+                          >
+                            Add
+                          </button>
                         </div>
-                        <div className="roadmap-palette-row__kpis">
-                          <span title="Rollup from linked tiers">{row.hours}</span>
-                          <span title="Rollup from linked tiers">{row.price}</span>
+                        <div className="roadmap-palette-row__meta">
+                          <span className="roadmap-palette-row__id" title={p.package_id}>
+                            {p.package_id}
+                          </span>
+                          <span className="roadmap-palette-row__kpi" title="Rollup from linked tiers">
+                            {row.hours}
+                          </span>
+                          <span className="roadmap-palette-row__kpi" title="Rollup from linked tiers">
+                            {row.price}
+                          </span>
                         </div>
-                        {row.description ? (
-                          <p className="roadmap-palette-row__desc">{descPreview(row.description, 240)}</p>
-                        ) : null}
                       </div>
-                      <button
-                        type="button"
-                        className="roadmap-btn roadmap-btn--sm"
-                        disabled={!targetDefaultPhaseId}
-                        onClick={() => {
-                          if (!targetDefaultPhaseId) return;
-                          addCard(cardForPackage(p, ctx, targetScenarioId, targetDefaultPhaseId));
-                        }}
-                      >
-                        + Add
-                      </button>
                     </div>
                   );
                 })}
@@ -1831,31 +1831,30 @@ export function RoadmapPlanningView() {
                     <div key={t.solution_tier_id} className="roadmap-palette-row">
                       <div className="roadmap-palette-row__body">
                         <div className="roadmap-palette-row__head">
-                          <strong>{t.solution_tier_name}</strong>
-                          <code className="roadmap-palette-row__id">{t.solution_tier_id}</code>
+                          <strong className="roadmap-palette-row__title">{t.solution_tier_name}</strong>
+                          <button
+                            type="button"
+                            className="roadmap-palette-row__add"
+                            disabled={!targetDefaultPhaseId}
+                            onClick={() => {
+                              if (!targetDefaultPhaseId) return;
+                              addCard(cardForTier(t, ctx, targetScenarioId, targetDefaultPhaseId));
+                            }}
+                          >
+                            Add
+                          </button>
                         </div>
                         <p className="roadmap-palette-row__context">
                           {sol ? sol.solution_name : "—"}
                         </p>
-                        <div className="roadmap-palette-row__kpis">
-                          <span>{row.hours}</span>
-                          <span>{row.price}</span>
+                        <div className="roadmap-palette-row__meta">
+                          <span className="roadmap-palette-row__id" title={t.solution_tier_id}>
+                            {t.solution_tier_id}
+                          </span>
+                          <span className="roadmap-palette-row__kpi">{row.hours}</span>
+                          <span className="roadmap-palette-row__kpi">{row.price}</span>
                         </div>
-                        {row.description ? (
-                          <p className="roadmap-palette-row__desc">{descPreview(row.description, 280)}</p>
-                        ) : null}
                       </div>
-                      <button
-                        type="button"
-                        className="roadmap-btn roadmap-btn--sm"
-                        disabled={!targetDefaultPhaseId}
-                        onClick={() => {
-                          if (!targetDefaultPhaseId) return;
-                          addCard(cardForTier(t, ctx, targetScenarioId, targetDefaultPhaseId));
-                        }}
-                      >
-                        + Add
-                      </button>
                     </div>
                   );
                 })}

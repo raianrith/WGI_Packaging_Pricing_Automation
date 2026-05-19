@@ -957,7 +957,7 @@ export function PackagesBuilderPanel({
             Name the bundle, pick solution tiers, then fill in <strong>package-level</strong> copy, reorder or remove vault
             tasks, add package-only rows, tune combined pricing (hour buckets roll up from those tasks, then discounts), and
             create once. Vault tier descriptions are edited only in Solutions Builder. Build-a-Package ceilings live under{" "}
-            <strong>Edit Tier Slot Ceilings</strong>.
+            <strong>Build-a-Package configuration</strong>.
           </p>
         ) : (
           <p className="admin-intro" style={muted}>

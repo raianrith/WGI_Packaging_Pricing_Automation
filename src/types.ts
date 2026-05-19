@@ -30,13 +30,28 @@ export type Package = {
   package_combined_tasks?: unknown | null;
 };
 
-/** Admin-editable ceilings for the agency “Build a Package” flow. See `package_builder_slot_templates`. */
-export type PackageBuilderSlotTemplate = {
+/** Admin-editable package type for Build a Package (e.g. Market Position Guide). */
+export type PackageBuilderPackageType = {
   id: string;
   sort_order: number;
+  name: string;
+  updated_at?: string | null;
+};
+
+/** Tier slot under a package type — optional hour/price ceilings and/or solution tier count limit. */
+export type PackageBuilderSlotTemplate = {
+  id: string;
+  package_type_id: string;
+  sort_order: number;
   label: string;
-  hour_ceiling: number;
-  price_ceiling: number;
+  /** When set, vault hour total for selected tiers must not exceed this. */
+  hour_ceiling: number | null;
+  /** When set, vault sell sum for selected tiers must not exceed this (USD). */
+  price_ceiling: number | null;
+  /** When set, at most this many solution tiers may be selected. */
+  solution_tier_limit: number | null;
+  /** Empty = any vault tier allowed; otherwise only listed solution_tier_id values. */
+  allowed_solution_tier_ids: string[];
   updated_at?: string | null;
 };
 

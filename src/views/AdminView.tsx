@@ -507,7 +507,7 @@ export function AdminView() {
                     setOpOk(null);
                   }}
                 >
-                  Edit Tier Slot Ceilings
+                  Build-a-Package configuration
                 </button>
               )}
             </div>
@@ -515,8 +515,7 @@ export function AdminView() {
 
           {tab === "packages" && adminSubTab === "build_slots" && (
             <section className="admin-panel admin-panel--editor" style={panel}>
-              <div className="admin-editor-layout">
-                <h2 style={h2}>Edit Tier Slot Ceilings (Build a Package)</h2>
+              <div className="admin-editor-layout admin-editor-layout--wide">
                 <PackageBuilderSlotLimitsPanel
                   muted={muted}
                   input={input}

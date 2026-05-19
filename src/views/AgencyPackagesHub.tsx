@@ -15,6 +15,7 @@ import {
   slotEnforcesHourCeiling,
   slotEnforcesPriceCeiling,
   slotEnforcesTierCountLimit,
+  slotTierNotes,
   slotsForPackageType,
 } from "../lib/packageBuilderSlots";
 import {
@@ -131,6 +132,23 @@ function WizardStepper({ step }: { step: 1 | 2 | 3 }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function PackageTierDisclaimer({ notes }: { notes: string | null }) {
+  if (!notes) return null;
+  return (
+    <div className="agency-pkg-wizard__disclaimer" role="note" aria-live="polite">
+      <div className="agency-pkg-wizard__disclaimer-inner">
+        <span className="agency-pkg-wizard__disclaimer-icon" aria-hidden>
+          !
+        </span>
+        <div className="agency-pkg-wizard__disclaimer-body">
+          <span className="agency-pkg-wizard__disclaimer-label">Important</span>
+          <p className="agency-pkg-wizard__disclaimer-text">{notes}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -816,6 +834,7 @@ export function AgencyPackagesHub() {
                   <p className="agency-pkg-wizard__lead">
                     Pick a tier level. Each option can enforce hour, price, and vault tier limits.
                   </p>
+                  <div className="agency-pkg-wizard__tier-pick-block">
                   <div className="agency-pkg-wizard__choice-grid">
                     {slotsForSelectedType.map((s) => {
                       const active = selectedSlot?.id === s.id;
@@ -848,6 +867,10 @@ export function AgencyPackagesHub() {
                       );
                     })}
                   </div>
+                  <PackageTierDisclaimer
+                    notes={selectedSlot ? slotTierNotes(selectedSlot) : null}
+                  />
+                  </div>
                 </>
               )}
 
@@ -859,9 +882,12 @@ export function AgencyPackagesHub() {
                       {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
                     </span>
                   </div>
+                  <div className="agency-pkg-wizard__solution-step-block">
                   <p className="agency-pkg-wizard__lead">
                     Select vault solution tiers for this package. Running totals use catalog hours and sell prices.
                   </p>
+
+                  <PackageTierDisclaimer notes={slotTierNotes(selectedSlot)} />
 
                   <div className="agency-pkg-wizard__meters">
                     {slotEnforcesHourCeiling(selectedSlot) ? (
@@ -908,6 +934,7 @@ export function AgencyPackagesHub() {
                       You are over a configured limit. Remove tiers or go back and choose a different package tier.
                     </p>
                   )}
+                  </div>
 
                   <label className="agency-pkg-wizard__field">
                     <span className="agency-pkg-wizard__field-label">Package name</span>

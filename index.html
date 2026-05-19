@@ -1,6 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("wgi-app-theme");
+          document.documentElement.dataset.theme =
+            stored === "dark" || stored === "light" ? stored : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Weidert Group · Solutions Directory</title>

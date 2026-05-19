@@ -15,6 +15,12 @@ export const NAV_SOLUTIONS_OVERVIEW = "Solutions Overview";
 /** Top navigation: roadmap workspace (was “Roadmap planning”). */
 export const NAV_PROPOSAL_BUILDER = "Proposal Builder";
 
+/** Top navigation: opens the org Claude project in a new tab. */
+export const NAV_AI_CHAT = "AI Chat";
+
+export const CLAUDE_AI_CHAT_PROJECT_URL =
+  "https://claude.ai/project/019e413e-3386-70da-adaa-4d9d5e1ebc21";
+
 /** Shown on the Agency (read-only) view under the main title. */
 export const AGENCY_VIEW_DESCRIPTION =
   "A living reference for how we package and price work: programs, solutions, tier options, and the tasks teams use to deliver. Explore in read-only mode—use the sidebar to move through each level, and the main area fills in with KPIs, overviews, and task detail.";

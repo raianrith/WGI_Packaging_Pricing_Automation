@@ -52,6 +52,8 @@ export type PackageBuilderSlotTemplate = {
   solution_tier_limit: number | null;
   /** Empty = any vault tier allowed; otherwise only listed solution_tier_id values. */
   allowed_solution_tier_ids: string[];
+  /** Shown as a disclaimer when this tier is selected in Build a Package. */
+  tier_notes: string | null;
   updated_at?: string | null;
 };
 

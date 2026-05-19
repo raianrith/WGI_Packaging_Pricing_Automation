@@ -49,8 +49,17 @@ function normSlot(
     price_ceiling: parseOptionalNumber(r.price_ceiling),
     solution_tier_limit: parseOptionalNumber(r.solution_tier_limit),
     allowed_solution_tier_ids: allowedIds,
+    tier_notes:
+      r.tier_notes != null && String(r.tier_notes).trim() !== ""
+        ? String(r.tier_notes).trim()
+        : null,
     updated_at: r.updated_at != null ? String(r.updated_at) : null,
   };
+}
+
+export function slotTierNotes(slot: PackageBuilderSlotTemplate): string | null {
+  const t = slot.tier_notes?.trim();
+  return t ? t : null;
 }
 
 export function defaultPackageBuilderTypes(): PackageBuilderPackageType[] {
@@ -71,6 +80,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       price_ceiling: 50_000,
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
+      tier_notes: null,
       updated_at: null,
     },
     {
@@ -82,6 +92,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       price_ceiling: 100_000,
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
+      tier_notes: null,
       updated_at: null,
     },
     {
@@ -93,6 +104,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       price_ceiling: 200_000,
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
+      tier_notes: null,
       updated_at: null,
     },
   ];
@@ -114,7 +126,7 @@ export async function fetchPackageBuilderCatalog(
     client
       .from("package_builder_slot_templates")
       .select(
-        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,updated_at"
+        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,updated_at"
       )
       .order("package_type_id", { ascending: true })
       .order("sort_order", { ascending: true }),

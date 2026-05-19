@@ -194,6 +194,7 @@ export function PackageBuilderSlotLimitsPanel({
           price_ceiling: null,
           solution_tier_limit: null,
           allowed_solution_tier_ids: [],
+          tier_notes: null,
           updated_at: null,
         },
       ]);
@@ -234,6 +235,7 @@ export function PackageBuilderSlotLimitsPanel({
           price_ceiling: null,
           solution_tier_limit: null,
           allowed_solution_tier_ids: [],
+          tier_notes: null,
           updated_at: null,
         },
       ];
@@ -377,6 +379,7 @@ export function PackageBuilderSlotLimitsPanel({
           hour_ceiling: parseOptionalCeiling(s.hour_ceiling),
           price_ceiling: parseOptionalCeiling(s.price_ceiling),
           solution_tier_limit: parseOptionalTierLimit(s.solution_tier_limit),
+          tier_notes: s.tier_notes?.trim() || null,
         };
       });
 
@@ -430,6 +433,7 @@ export function PackageBuilderSlotLimitsPanel({
           hour_ceiling: s.hour_ceiling,
           price_ceiling: s.price_ceiling,
           solution_tier_limit: s.solution_tier_limit,
+          tier_notes: s.tier_notes,
           updated_at: nowIso,
         };
         if (isPersistedPackageBuilderId(s.id)) {
@@ -453,6 +457,7 @@ export function PackageBuilderSlotLimitsPanel({
             hour_ceiling: s.hour_ceiling,
             price_ceiling: s.price_ceiling,
             solution_tier_limit: s.solution_tier_limit,
+            tier_notes: s.tier_notes,
           })
           .select("id")
           .single();
@@ -734,6 +739,25 @@ export function PackageBuilderSlotLimitsPanel({
                             />
                           </label>
                         </div>
+
+                        <label className="admin-pkg-builder__field admin-pkg-builder__field--full">
+                          <span className="admin-pkg-builder__field-caption">
+                            Tier disclaimer note
+                          </span>
+                          <textarea
+                            className="admin-pkg-builder__notes-input"
+                            style={input}
+                            rows={3}
+                            value={r.tier_notes ?? ""}
+                            onChange={(e) =>
+                              setSlot(r.id, {
+                                tier_notes: e.target.value.length > 0 ? e.target.value : null,
+                              })
+                            }
+                            placeholder="Shown when users select this package tier in Build a Package (optional)."
+                            aria-label={`Tier ${r.sort_order} disclaimer note`}
+                          />
+                        </label>
 
                         <div className="admin-pkg-builder__vault-row">
                           <span className="admin-pkg-builder__vault-label">Allowed vault tiers</span>

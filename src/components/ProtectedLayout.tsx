@@ -4,6 +4,8 @@ import {
   APP_BRAND_NAME,
   APP_SCOPE_LABEL,
   APP_TITLE,
+  CLAUDE_AI_CHAT_PROJECT_URL,
+  NAV_AI_CHAT,
   NAV_PROPOSAL_BUILDER,
   NAV_SOLUTIONS_OVERVIEW,
 } from "../branding";
@@ -168,6 +170,15 @@ export function ProtectedLayout() {
                 Admin
               </NavLink>
             ) : null}
+            <a
+              className="app-module-tab app-module-tab--external"
+              href={CLAUDE_AI_CHAT_PROJECT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${NAV_AI_CHAT} (opens in a new tab)`}
+            >
+              {NAV_AI_CHAT}
+            </a>
           </nav>
 
           <div className="app-top-bar__account">
@@ -203,7 +214,7 @@ function readInitialTheme(): AppTheme {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (stored === "light" || stored === "dark") return stored;
   } catch {
-    // Ignore storage failures and fall back to system preference.
+    // Ignore storage failures; default to light below.
   }
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "light";
 }

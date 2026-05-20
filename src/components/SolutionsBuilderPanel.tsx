@@ -49,6 +49,8 @@ import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback
 import { PricingPanel } from "./PricingPanel";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
+import { TierCategorySelect } from "./TierCategorySelect";
+import { normalizeTierCategory } from "../lib/tierCategories";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 
 export { nextAutoSolutionId, nextAutoTierId, nextAutoTaskId };
@@ -587,7 +589,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: tierId,
       solution_id: solId,
       solution_tier_name: tierName,
-      solution_tier_category: blankToNull(tCategory),
+      solution_tier_category: normalizeTierCategory(tCategory),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -747,7 +749,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: id,
       solution_id: solId,
       solution_tier_name: name,
-      solution_tier_category: blankToNull(tCategory),
+      solution_tier_category: normalizeTierCategory(tCategory),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -859,9 +861,13 @@ export function SolutionsBuilderPanel({
         });
         localTasks.push(row);
       }
+      if (rowsToSave.length > 0) {
+        setDraftTasks([newDraftTaskRow()]);
+        setDraftTaskBulkSelectedKeys(new Set());
+      }
       setOpOk(
         rowsToSave.length > 0
-          ? `Saved ${rowsToSave.length} task(s). Fill in pricing next.`
+          ? `Saved ${rowsToSave.length} task(s) to Supabase. The draft table was cleared so you will not duplicate them on the next save. Continue to pricing below.`
           : "Continuing to pricing for tasks already on this tier."
       );
       setCreatePhase("pricing");
@@ -1150,7 +1156,7 @@ export function SolutionsBuilderPanel({
       solution_tier_id: draftPricingTierId,
       solution_id: previewSolutionId || "draft-solution",
       solution_tier_name: tName.trim() || "New tier",
-      solution_tier_category: blankToNull(tCategory),
+      solution_tier_category: normalizeTierCategory(tCategory),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: null,
       solution_tier_overview_link: null,
@@ -1484,7 +1490,7 @@ export function SolutionsBuilderPanel({
     const payload = {
       solution_id: updSolutionId,
       solution_tier_name: updTName.trim(),
-      solution_tier_category: blankToNull(updTCategory),
+      solution_tier_category: normalizeTierCategory(updTCategory),
       solution_tier_owner: blankToNull(updTOwner),
       solution_tier_overview: legU ? legU.solution_tier_overview : (prevTier?.solution_tier_overview ?? null),
       solution_tier_overview_link: legU
@@ -2222,7 +2228,7 @@ export function SolutionsBuilderPanel({
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Tier Category</AdminFieldCaption>
-        <input style={input} value={tCategory} onChange={(e) => setTCategory(e.target.value)} />
+        <TierCategorySelect inputStyle={input} value={tCategory} onChange={setTCategory} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
@@ -2305,7 +2311,7 @@ export function SolutionsBuilderPanel({
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Tier Category</AdminFieldCaption>
-        <input style={input} value={updTCategory} onChange={(e) => setUpdTCategory(e.target.value)} />
+        <TierCategorySelect inputStyle={input} value={updTCategory} onChange={setUpdTCategory} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
@@ -2603,7 +2609,7 @@ export function SolutionsBuilderPanel({
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Tier Category</AdminFieldCaption>
-                    <input style={input} value={tCategory} onChange={(e) => setTCategory(e.target.value)} />
+                    <TierCategorySelect inputStyle={input} value={tCategory} onChange={setTCategory} />
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Owner</AdminFieldCaption>

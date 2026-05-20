@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { PackageTierOverrideKey } from "../lib/packageTierOverrides";
 import { MarkdownTextarea } from "./MarkdownTextarea";
+import { TierCategorySelect } from "./TierCategorySelect";
 
 const formSubHeading: CSSProperties = {
   margin: "1rem 0 0.45rem",
@@ -43,10 +44,10 @@ export function SolutionTierFormUpdateBlock({ tierIdReadonly, values, onChange, 
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <span className="admin-field-caption">Tier category</span>
-        <input
-          style={input}
+        <TierCategorySelect
+          inputStyle={input}
           value={v("solution_tier_category")}
-          onChange={(e) => onChange("solution_tier_category", e.target.value)}
+          onChange={(val) => onChange("solution_tier_category", val)}
         />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>

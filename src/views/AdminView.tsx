@@ -22,10 +22,7 @@ import {
   normalizeTierPricingMathConfig,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
-import {
-  buildSolutionTierPricingMathUpdate,
-  storedTierPricingMathDiffersFromCompute,
-} from "../lib/recomputeStoredTierPricing";
+import { recomputeAllSavedTierPricing } from "../lib/recomputeAllSavedTierPricing";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { normalizeTierCategory, TIER_CATEGORY_OPTIONS } from "../lib/tierCategories";
 import { PricingCalculatorPanel } from "../components/PricingCalculatorPanel";
@@ -336,35 +333,21 @@ export function AdminView() {
     setOpOk(null);
     setRecalculateAllSavedPricingBusy(true);
     const math = normalizeTierPricingMathConfig(tierPricingMathConfig);
-    let updated = 0;
-    let skipped = 0;
-    const failures: string[] = [];
     try {
-      for (const row of tierPricing) {
-        if (!storedTierPricingMathDiffersFromCompute(row, math)) {
-          skipped++;
-          continue;
-        }
-        const payload = buildSolutionTierPricingMathUpdate(row, math);
-        const { solution_tier_id, ...rest } = payload;
-        const { error } = await client
-          .from("solution_tier_pricing")
-          .update(rest)
-          .eq("solution_tier_id", solution_tier_id);
-        if (error) {
-          failures.push(`${solution_tier_id}: ${friendlyMutationMessage(error.message)}`);
-          continue;
-        }
-        const after = { ...row, ...payload } as SolutionTierPricing;
-        await logAudit(client, {
-          entityType: "solution_tier_pricing",
-          entityId: solution_tier_id,
-          action: "update",
-          before: rowJson(row),
-          after: rowJson(after),
-        });
-        updated++;
-      }
+      const { updated, skipped, failures } = await recomputeAllSavedTierPricing({
+        client,
+        rows: tierPricing,
+        config: math,
+        onRowUpdated: async (before, after) => {
+          await logAudit(client, {
+            entityType: "solution_tier_pricing",
+            entityId: after.solution_tier_id,
+            action: "update",
+            before: rowJson(before),
+            after: rowJson(after),
+          });
+        },
+      });
       if (failures.length) {
         setOpErr(
           `Updated ${updated} row(s). Failed (${failures.length}): ${failures.slice(0, 3).join("; ")}${

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}"
+    "start": "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}",
+    "recompute-pricing": "npx tsx scripts/recompute-all-tier-pricing.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

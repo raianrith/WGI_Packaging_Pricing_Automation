@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE,
+  totalResourceHourAddonRate,
   cloneTierPricingMathConfig,
   computeTierPricing,
   DEFAULT_TIER_PRICING_MATH_CONFIG,
@@ -165,8 +167,10 @@ export function PricingCalculatorPanel({
 
       <div className="admin-pricing-calculator-summary">
         <p style={{ margin: 0 }}>
-          <strong>Big picture.</strong> Resource hours get an automatic <strong>{ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%</strong>{" "}
-          account-management add-on (billable hours), then you turn that into a labor dollar amount, grow it for{" "}
+          <strong>Big picture.</strong> Resource hours get automatic add-ons (
+          <strong>{ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%</strong> account management,{" "}
+          <strong>{CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%</strong> continuous improvement) for billable
+          hours, then you turn that into a labor dollar amount, grow it for{" "}
           <em>combined delivery risk</em>, grow it again for <em>strategic value</em>, then round the result{" "}
           <strong>up</strong> to the next multiple of your sell step (for example the next $100).
         </p>
@@ -174,6 +178,8 @@ export function PricingCalculatorPanel({
           <span className="admin-pricing-calculator-pipeline__box">resource hr</span>
           <span className="admin-pricing-calculator-pipeline__arrow">→</span>
           <span className="admin-pricing-calculator-pipeline__box">+ acct mgmt</span>
+          <span className="admin-pricing-calculator-pipeline__arrow">→</span>
+          <span className="admin-pricing-calculator-pipeline__box">+ CI</span>
           <span className="admin-pricing-calculator-pipeline__arrow">→</span>
           <span className="admin-pricing-calculator-pipeline__box">× rate</span>
           <span className="admin-pricing-calculator-pipeline__arrow">→</span>
@@ -191,7 +197,8 @@ export function PricingCalculatorPanel({
       <p style={{ ...muted, marginTop: 4, maxWidth: "68ch" }}>
         Sample tier: <strong>{preview.totalHours}</strong> resource hours (5 client + 3 copy + 2 design) →{" "}
         <strong>{preview.hoursForExpectedEffort.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>{" "}
-        billable (includes {ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% account mgmt). Each risk score <strong>1</strong> (so{" "}
+        billable (includes {ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% account mgmt +{" "}
+        {CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}% continuous improvement). Each risk score <strong>1</strong> (so{" "}
         <strong>S = 3</strong>), strategic score <strong>1</strong> <span>({STRATEGIC_VALUE_SCORE_NAMES[1]}).</span> The
         numbered steps use the same math as the app.
       </p>
@@ -201,9 +208,10 @@ export function PricingCalculatorPanel({
           <li>
             <strong>1 — Expected effort</strong>
             <div>
-              Add all hour buckets for <strong>resource hours</strong>. Account management is{" "}
-              <strong>{ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%</strong> of that total (automatic), then multiply{" "}
-              <strong>billable hours</strong> by <strong>${math.hourlyRate}</strong> per hour.
+              Add all hour buckets for <strong>resource hours</strong>. Add-ons are{" "}
+              <strong>{ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%</strong> account management and{" "}
+              <strong>{CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%</strong> continuous improvement (automatic), then
+              multiply <strong>billable hours</strong> by <strong>${math.hourlyRate}</strong> per hour.
             </div>
             <div className="admin-pricing-details__formula">
               {preview.totalHours} +{" "}
@@ -211,7 +219,12 @@ export function PricingCalculatorPanel({
                 maximumFractionDigits: 2,
                 minimumFractionDigits: 0,
               })}{" "}
-              ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%) ={" "}
+              ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%) +{" "}
+              {preview.continuousImprovementAddonHours.toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 0,
+              })}{" "}
+              ({CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%) ={" "}
               {preview.hoursForExpectedEffort.toLocaleString(undefined, { maximumFractionDigits: 2 })} billable hr
             </div>
             <div className="admin-pricing-details__formula">
@@ -285,7 +298,8 @@ export function PricingCalculatorPanel({
           value={[
             `Resource hours: ${preview.totalHours}`,
             `Account mgmt (+${ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%): ${preview.accountMgmtAddonHours.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-            `Billable hours: ${preview.hoursForExpectedEffort.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+            `Continuous improvement (+${CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%): ${preview.continuousImprovementAddonHours.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
+            `Billable hours (+${totalResourceHourAddonRate() * 100}% add-ons): ${preview.hoursForExpectedEffort.toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
             `Expected effort: ${fmtUsd(preview.expectedEffortBase)}`,
             `S = ${preview.riskScoreSum} → risk ×${preview.riskMultiplier}`,
             `Risk mitigated: ${fmtUsd(preview.riskMitigatedBase)}`,
@@ -323,8 +337,11 @@ export function PricingCalculatorPanel({
             Each row’s <strong>hour buckets</strong> and <strong>risk / strategic scores</strong> stay as stored. Derived
             columns (<code style={{ fontSize: "0.85em" }}>total_hours</code> roll-up, expected effort, multipliers,{" "}
             <code style={{ fontSize: "0.85em" }}>sell_price</code>, <code style={{ fontSize: "0.85em" }}>percent_change</code>
-            ) are recomputed with the <strong>current workspace math</strong> (this browser) and written back for every
-            tier that differs. Use after changing rate, risk bands, rounding step, or deploying a new pricing formula.
+            ) are recomputed with the <strong>current workspace math</strong> (this browser)—including{" "}
+            <strong>{ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%</strong> account mgmt and{" "}
+            <strong>{CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%</strong> continuous improvement on resource
+            hours—and written back for every tier that differs. Use after changing rate, risk bands, rounding step, or
+            add-on percentages.
           </p>
           <div className="admin-actions-row" style={{ marginTop: 0 }}>
             <button

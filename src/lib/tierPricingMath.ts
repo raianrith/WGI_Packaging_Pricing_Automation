@@ -1,6 +1,6 @@
 /**
  * Tier pricing math for admin (matches spreadsheet logic by default).
- * Resource hours = sum of hour buckets. Billable hours = resource × (1 + account-mgmt add-on rate).
+ * Resource hours = sum of hour buckets. Billable hours = resource + fixed add-ons (account mgmt, continuous improvement).
  * Expected effort base = billable hours × hourly rate.
  * Risk multiplier from sum of three 0–2 scores; risk mitigated = base × risk mult.
  * Strategic multiplier from strategic value score 0–2; sell = CEILING(riskMit × stratMult, step).
@@ -8,6 +8,26 @@
 
 /** Automatic account-management add-on applied to total resource hours before × hourly rate. */
 export const ACCOUNT_MGMT_HOURS_ADDON_RATE = 0.15;
+
+/** Automatic continuous-improvement add-on applied to total resource hours before × hourly rate. */
+export const CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE = 0.01;
+
+/** Fixed hour add-ons on resource hours (account mgmt + continuous improvement). */
+export function computeResourceHourAddons(resourceHours: number): {
+  accountMgmtAddonHours: number;
+  continuousImprovementAddonHours: number;
+  billableHours: number;
+} {
+  const accountMgmtAddonHours = resourceHours * ACCOUNT_MGMT_HOURS_ADDON_RATE;
+  const continuousImprovementAddonHours = resourceHours * CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE;
+  const billableHours = resourceHours + accountMgmtAddonHours + continuousImprovementAddonHours;
+  return { accountMgmtAddonHours, continuousImprovementAddonHours, billableHours };
+}
+
+/** Combined add-on rate for billable hours (e.g. 0.16 for 15% + 1%). */
+export function totalResourceHourAddonRate(): number {
+  return ACCOUNT_MGMT_HOURS_ADDON_RATE + CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE;
+}
 
 export type RiskStrategicScore = 0 | 1 | 2;
 
@@ -255,7 +275,9 @@ export type TierPricingDerived = {
   totalHours: number;
   /** Account-mgmt add-on hours (`totalHours` × `ACCOUNT_MGMT_HOURS_ADDON_RATE`). */
   accountMgmtAddonHours: number;
-  /** Resource hours + account-mgmt add-on — used for expected effort. */
+  /** Continuous-improvement add-on hours (`totalHours` × `CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE`). */
+  continuousImprovementAddonHours: number;
+  /** Resource hours + all fixed add-ons — used for expected effort. */
   hoursForExpectedEffort: number;
   expectedEffortBase: number;
   scopeRisk: RiskStrategicScore;
@@ -280,8 +302,8 @@ export function computeTierPricing(
   config: TierPricingMathConfig = DEFAULT_TIER_PRICING_MATH_CONFIG
 ): TierPricingDerived {
   const totalHours = sumHourBreakdown(input.hours);
-  const accountMgmtAddonHours = totalHours * ACCOUNT_MGMT_HOURS_ADDON_RATE;
-  const hoursForExpectedEffort = totalHours + accountMgmtAddonHours;
+  const { accountMgmtAddonHours, continuousImprovementAddonHours, billableHours: hoursForExpectedEffort } =
+    computeResourceHourAddons(totalHours);
   const expectedEffortBase = hoursForExpectedEffort * config.hourlyRate;
 
   const scopeRisk = clampScore012(input.scopeRisk);
@@ -298,6 +320,7 @@ export function computeTierPricing(
   return {
     totalHours,
     accountMgmtAddonHours,
+    continuousImprovementAddonHours,
     hoursForExpectedEffort,
     expectedEffortBase,
     scopeRisk,

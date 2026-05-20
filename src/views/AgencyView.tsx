@@ -40,6 +40,8 @@ import {
 } from "../lib/packageWorkspaceMetrics";
 import {
   ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE,
+  computeResourceHourAddons,
   loadTierPricingMathConfigFromStorage,
   normalizeTierPricingMathConfig,
 } from "../lib/tierPricingMath";
@@ -701,9 +703,18 @@ export function AgencyView({ mode }: AgencyViewProps) {
         anyDuration = true;
       }
     }
-    const accountMgmtAddonHours = anyTime ? sumTime * ACCOUNT_MGMT_HOURS_ADDON_RATE : 0;
-    const sumTimeWithAccountMgmt = sumTime + accountMgmtAddonHours;
-    return { sumTime, sumDuration, anyTime, anyDuration, accountMgmtAddonHours, sumTimeWithAccountMgmt };
+    const addons = anyTime
+      ? computeResourceHourAddons(sumTime)
+      : { accountMgmtAddonHours: 0, continuousImprovementAddonHours: 0, billableHours: 0 };
+    return {
+      sumTime,
+      sumDuration,
+      anyTime,
+      anyDuration,
+      accountMgmtAddonHours: addons.accountMgmtAddonHours,
+      continuousImprovementAddonHours: addons.continuousImprovementAddonHours,
+      sumBillableHours: addons.billableHours,
+    };
   }, [tasksForTierDisplay]);
 
   /** Catalog mode KPIs: selected tier’s tasks, or tasks matching sidebar search filters. */
@@ -1173,9 +1184,18 @@ export function AgencyView({ mode }: AgencyViewProps) {
         anyDuration = true;
       }
     }
-    const accountMgmtAddonHours = anyTime ? sumTime * ACCOUNT_MGMT_HOURS_ADDON_RATE : 0;
-    const sumTimeWithAccountMgmt = sumTime + accountMgmtAddonHours;
-    return { sumTime, sumDuration, anyTime, anyDuration, accountMgmtAddonHours, sumTimeWithAccountMgmt };
+    const addons = anyTime
+      ? computeResourceHourAddons(sumTime)
+      : { accountMgmtAddonHours: 0, continuousImprovementAddonHours: 0, billableHours: 0 };
+    return {
+      sumTime,
+      sumDuration,
+      anyTime,
+      anyDuration,
+      accountMgmtAddonHours: addons.accountMgmtAddonHours,
+      continuousImprovementAddonHours: addons.continuousImprovementAddonHours,
+      sumBillableHours: addons.billableHours,
+    };
   }, [packageWorkspaceUnifiedRows]);
 
   const showPackageTierPrompt = useMemo(
@@ -2040,18 +2060,35 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         </tbody>
                         <tfoot>
                           {packageUnifiedTaskTableTotals.anyTime ? (
-                            <tr className="agency-task-table__addon-row">
-                              <td colSpan={3} className="agency-task-table__addon-label">
-                                Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
-                              </td>
-                              <td className="agency-task-table__td--num agency-task-table__addon-time">
-                                {formatKpiNumber(packageUnifiedTaskTableTotals.accountMgmtAddonHours)}
-                              </td>
-                              <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
-                              <td className="agency-task-table__td--meta agency-task-table__addon-muted">
-                                Included in tier pricing (Admin)
-                              </td>
-                            </tr>
+                            <>
+                              <tr className="agency-task-table__addon-row">
+                                <td colSpan={3} className="agency-task-table__addon-label">
+                                  Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                  {formatKpiNumber(packageUnifiedTaskTableTotals.accountMgmtAddonHours)}
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                  Included in tier pricing (Admin)
+                                </td>
+                              </tr>
+                              <tr className="agency-task-table__addon-row">
+                                <td colSpan={3} className="agency-task-table__addon-label">
+                                  Continuous improvement add-on (
+                                  {CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}% of resource hours)
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                  {formatKpiNumber(
+                                    packageUnifiedTaskTableTotals.continuousImprovementAddonHours
+                                  )}
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                  Included in tier pricing (Admin)
+                                </td>
+                              </tr>
+                            </>
                           ) : null}
                           <tr className="agency-task-table__totals-row">
                             <td colSpan={3} className="agency-task-table__totals-label">
@@ -2059,7 +2096,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">
                               {packageUnifiedTaskTableTotals.anyTime
-                                ? formatKpiNumber(packageUnifiedTaskTableTotals.sumTimeWithAccountMgmt)
+                                ? formatKpiNumber(packageUnifiedTaskTableTotals.sumBillableHours)
                                 : "—"}
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">
@@ -2659,18 +2696,33 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         </tbody>
                         <tfoot>
                           {taskTableTotals.anyTime ? (
-                            <tr className="agency-task-table__addon-row">
-                              <td colSpan={2} className="agency-task-table__addon-label">
-                                Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
-                              </td>
-                              <td className="agency-task-table__td--num agency-task-table__addon-time">
-                                {formatKpiNumber(taskTableTotals.accountMgmtAddonHours)}
-                              </td>
-                              <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
-                              <td className="agency-task-table__td--meta agency-task-table__addon-muted">
-                                Included in tier pricing (Admin)
-                              </td>
-                            </tr>
+                            <>
+                              <tr className="agency-task-table__addon-row">
+                                <td colSpan={2} className="agency-task-table__addon-label">
+                                  Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                  {formatKpiNumber(taskTableTotals.accountMgmtAddonHours)}
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                  Included in tier pricing (Admin)
+                                </td>
+                              </tr>
+                              <tr className="agency-task-table__addon-row">
+                                <td colSpan={2} className="agency-task-table__addon-label">
+                                  Continuous improvement add-on (
+                                  {CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}% of resource hours)
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-time">
+                                  {formatKpiNumber(taskTableTotals.continuousImprovementAddonHours)}
+                                </td>
+                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
+                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
+                                  Included in tier pricing (Admin)
+                                </td>
+                              </tr>
+                            </>
                           ) : null}
                           <tr className="agency-task-table__totals-row">
                             <td colSpan={2} className="agency-task-table__totals-label">
@@ -2678,7 +2730,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">
                               {taskTableTotals.anyTime
-                                ? formatKpiNumber(taskTableTotals.sumTimeWithAccountMgmt)
+                                ? formatKpiNumber(taskTableTotals.sumBillableHours)
                                 : "—"}
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">

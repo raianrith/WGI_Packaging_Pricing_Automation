@@ -14,6 +14,8 @@ import { getSupabase } from "../lib/supabase";
 import { percentChangeFromSellAndOld } from "../lib/pricingPercentChange";
 import {
   ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE,
+  totalResourceHourAddonRate,
   CLIENT_REVISION_RISK_SCORE_HINTS,
   INTERNAL_COORDINATION_SCORE_HINTS,
   SCOPE_RISK_SCORE_HINTS,
@@ -101,7 +103,7 @@ function PricingSellCalcCompact({ mathConfig }: { mathConfig: TierPricingMathCon
         (this browser).
       </p>
       <p className="admin-pricing-details__formula admin-pricing-sell-calc__formula">
-        {`Expected effort = resource hours × (1 + ${ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%) × $${mathConfig.hourlyRate}/hr`}
+        {`Expected effort = resource hours × (1 + ${ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% + ${CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%) × $${mathConfig.hourlyRate}/hr`}
       </p>
       <table className="admin-pricing-details__table admin-pricing-sell-calc__table">
         <caption>Risk sum ranges → multiplier</caption>
@@ -869,7 +871,22 @@ export function PricingPanel({
             />
           </label>
           <label style={lbl}>
-            <AdminFieldCaption>Billable hours (resource + account mgmt)</AdminFieldCaption>
+            <AdminFieldCaption>
+              Continuous improvement add-on ({CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%)
+            </AdminFieldCaption>
+            <input
+              className="admin-pricing-readonly"
+              style={readonlyInput}
+              readOnly
+              tabIndex={-1}
+              title="Automatic: this percent of total resource hours, before hourly rate."
+              value={fmtDerivedHours(derived.continuousImprovementAddonHours)}
+            />
+          </label>
+          <label style={lbl}>
+            <AdminFieldCaption>
+              Billable hours (resource + {totalResourceHourAddonRate() * 100}% add-ons)
+            </AdminFieldCaption>
             <input
               className="admin-pricing-readonly"
               style={readonlyInput}
@@ -907,7 +924,7 @@ export function PricingPanel({
               style={readonlyInput}
               readOnly
               tabIndex={-1}
-              title="Billable hours (resource + account mgmt add-on) × hourly rate."
+              title="Billable hours (resource + account mgmt + continuous improvement add-ons) × hourly rate."
               value={`$${Math.round(derived.expectedEffortBase).toLocaleString()}`}
             />
           </label>

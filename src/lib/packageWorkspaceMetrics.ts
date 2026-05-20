@@ -62,7 +62,7 @@ export type PackageWorkspaceFormMetrics =
       ok: true;
       /** Sum of discounted hour buckets (matches Package Builder “Total resource hours”). */
       totalResourceHoursAfterDiscount: number;
-      /** Resource hours + account mgmt add-on (matches billable-hours pipeline input). */
+      /** Resource hours + fixed add-ons (account mgmt + continuous improvement; matches billable-hours pipeline). */
       billableHoursAfterDiscount: number;
       modeledSell: number;
       netSellAfterSellDiscount: number;

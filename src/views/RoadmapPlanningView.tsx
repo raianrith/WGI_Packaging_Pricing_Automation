@@ -478,7 +478,7 @@ function descPreview(text: string, max = 200): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
-const DEFAULT_SCENARIOS = ["What-if A — lean", "What-if B — balanced", "What-if C — full scope"];
+const DEFAULT_SCENARIOS = ["What-if A — lean"];
 
 function createInitialScenariosAndPhases(): { scenarios: RoadmapScenario[]; phases: RoadmapPhase[] } {
   const scenarios: RoadmapScenario[] = DEFAULT_SCENARIOS.map((title) => ({

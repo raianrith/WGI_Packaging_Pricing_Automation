@@ -197,9 +197,8 @@ type PackageCardRollup = {
 };
 
 const shell: CSSProperties = {
-  maxWidth: "var(--agency-page-max, 100rem)",
-  margin: "0 auto",
-  padding: "1.25rem var(--agency-page-pad-x, 1rem) 2.5rem",
+  width: "100%",
+  padding: "1.25rem 0 2.5rem",
 };
 
 const title: CSSProperties = {

@@ -14,8 +14,8 @@
   --shadow-lg: 0 8px 40px rgba(28, 25, 23, 0.08);
   --font-ui: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-body: "Literata", Georgia, serif;
-  --app-page-pad-x: clamp(1.25rem, 4vw, 2.5rem);
-  --app-page-max: min(116rem, calc(100vw - 2 * var(--app-page-pad-x)));
+  --app-page-pad-x: clamp(1.5rem, 5vw, 3rem);
+  --app-page-max: 116rem;
   /* Shared Agency column: KPI strip, tabs, hub, catalog, package workspace */
   --agency-page-max: var(--app-page-max);
   --agency-page-pad-x: var(--app-page-pad-x);
@@ -96,6 +96,15 @@ html[data-theme="dark"] .app-top-bar {
   max-width: var(--app-page-max);
   margin-inline: auto;
   padding-block: 0.82rem;
+  padding-inline: var(--app-page-pad-x);
+}
+
+/* Shared horizontal gutter for all authenticated pages (below top bar). */
+.app-main {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--app-page-max);
+  margin-inline: auto;
   padding-inline: var(--app-page-pad-x);
 }
 
@@ -1204,7 +1213,7 @@ button {
 
 .global-kpi-strip {
   margin-bottom: 1.5rem;
-  padding: 1.35rem var(--app-page-pad-x) 1.5rem;
+  padding: 1.35rem 0 1.5rem;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
@@ -2968,9 +2977,10 @@ button {
 /* —— Admin portal (data management) */
 .admin-page-shell {
   box-sizing: border-box;
-  max-width: var(--app-page-max);
-  margin-inline: auto;
-  padding: 1.25rem var(--app-page-pad-x) 2.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem 0 2.5rem;
 }
 
 .admin-page-header {
@@ -6134,19 +6144,20 @@ button {
 
 .agency-view-shell {
   box-sizing: border-box;
-  max-width: var(--agency-page-max);
-  margin-left: auto;
-  margin-right: auto;
-  padding: 1.25rem var(--agency-page-pad-x) 2.5rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem 0 2.5rem;
 }
 
 /* —— Agency tabs (Packages | Solutions) —— */
 
 .agency-tabs-shell__bar {
   box-sizing: border-box;
-  max-width: var(--agency-page-max);
-  margin: 0 auto;
-  padding: 0.55rem var(--agency-page-pad-x) 0.1rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0.55rem 0 0.1rem;
 }
 
 .agency-tabs-nav {
@@ -6264,9 +6275,10 @@ button {
   position: relative;
   z-index: 1;
   box-sizing: border-box;
-  max-width: var(--agency-page-max);
-  margin: 0 auto;
-  padding: 1.5rem var(--agency-page-pad-x) 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.5rem 0 0;
 }
 
 .agency-hub__hero {
@@ -6891,10 +6903,10 @@ button {
 
 .agency-route-error {
   box-sizing: border-box;
-  max-width: var(--agency-page-max);
-  margin-left: auto;
-  margin-right: auto;
-  padding: 1.25rem var(--agency-page-pad-x);
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem 0;
 }
 
 .agency-route-error__text {
@@ -7344,7 +7356,7 @@ button {
 /* —— Roadmap planning (sales / strategy) —— */
 .roadmap-page {
   min-height: calc(100vh - 4.5rem);
-  padding: 1.5rem var(--app-page-pad-x) 2.5rem;
+  padding: 1.5rem 0 2.5rem;
   background:
     radial-gradient(120% 80% at 100% 0%, rgba(13, 92, 77, 0.06), transparent 50%),
     linear-gradient(180deg, #faf8f4 0%, #f3f0ea 100%);

@@ -203,7 +203,9 @@ export function ProtectedLayout() {
           </div>
         </div>
       </header>
-      <Outlet />
+      <div className="app-main">
+        <Outlet />
+      </div>
     </div>
   );
 }

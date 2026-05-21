@@ -1877,7 +1877,10 @@ export function RoadmapPlanningView() {
                 </p>
               </div>
             </div>
-            <div className="roadmap-columns">
+            <div
+              className="roadmap-columns"
+              style={{ ["--roadmap-scenario-count" as string]: String(Math.max(scenarios.length, 1)) }}
+            >
               {scenarios.map((scenario, scenarioIdx) => {
                 const scenarioPhases = sortedPhasesForScenario(phases, scenario.id);
                 const rollup = scenarioRollups[scenarioIdx] ?? {

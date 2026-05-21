@@ -7964,9 +7964,12 @@ button {
 }
 
 .roadmap-columns {
+  --roadmap-scenario-count: 1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--roadmap-scenario-count), minmax(0, 1fr));
   gap: 0.85rem;
+  width: 100%;
+  align-items: stretch;
 }
 
 @media (max-width: 52rem) {
@@ -7982,6 +7985,7 @@ button {
     linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(249, 251, 250, 0.88) 100%);
   min-height: 12rem;
   min-width: 0;
+  width: 100%;
   padding: 0.8rem 0.8rem 0.72rem;
   display: flex;
   flex-direction: column;

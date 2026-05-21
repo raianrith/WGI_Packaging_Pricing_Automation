@@ -14,8 +14,8 @@
   --shadow-lg: 0 8px 40px rgba(28, 25, 23, 0.08);
   --font-ui: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-body: "Literata", Georgia, serif;
-  --app-page-max: min(116rem, calc(100vw - 0.05rem));
-  --app-page-pad-x: clamp(0.08rem, 0.35vw, 0.28rem);
+  --app-page-pad-x: clamp(1.25rem, 4vw, 2.5rem);
+  --app-page-max: min(116rem, calc(100vw - 2 * var(--app-page-pad-x)));
   /* Shared Agency column: KPI strip, tabs, hub, catalog, package workspace */
   --agency-page-max: var(--app-page-max);
   --agency-page-pad-x: var(--app-page-pad-x);
@@ -1204,7 +1204,7 @@ button {
 
 .global-kpi-strip {
   margin-bottom: 1.5rem;
-  padding: 1.35rem clamp(1.5rem, 5vw, 4rem) 1.5rem;
+  padding: 1.35rem var(--app-page-pad-x) 1.5rem;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }

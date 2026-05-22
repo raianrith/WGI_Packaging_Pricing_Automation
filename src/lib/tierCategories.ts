@@ -1,6 +1,7 @@
 /** Canonical solution tier categories (alphabetical). Used for dropdowns app-wide. */
 export const TIER_CATEGORY_OPTIONS = [
   "Asset Creation",
+  "Billing & Engagement Modifiers",
   "Brand & Style Foundation",
   "Core Market Presence",
   "Data & Tech Enablement",

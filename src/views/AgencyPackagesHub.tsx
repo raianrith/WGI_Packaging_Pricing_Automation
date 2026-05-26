@@ -34,6 +34,7 @@ import {
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { useToast } from "../context/ToastContext";
 import type {
+  AuditLogRow,
   ImplementerHourGroupRow,
   Package,
   PackageBuilderPackageType,
@@ -196,6 +197,8 @@ type PackageCardRollup = {
   pricePartial: boolean;
 };
 
+type PackageSourceFilter = "all" | "custom" | "prebuilt";
+
 const shell: CSSProperties = {
   width: "100%",
   padding: "1.25rem 0 2.5rem",
@@ -215,16 +218,6 @@ const subtitle: CSSProperties = {
   lineHeight: 1.55,
 };
 
-const primaryBtn: CSSProperties = {
-  padding: "0.55rem 1rem",
-  borderRadius: 10,
-  border: "none",
-  background: "var(--accent, #c45c26)",
-  color: "#fff",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
 export function AgencyPackagesHub() {
   const navigate = useNavigate();
   const { toastError, toastNote } = useToast();
@@ -236,6 +229,7 @@ export function AgencyPackagesHub() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [pricing, setPricing] = useState<SolutionTierPricing[]>([]);
   const [packageTiers, setPackageTiers] = useState<PackageSolutionTier[]>([]);
+  const [packageCreateAuditRows, setPackageCreateAuditRows] = useState<AuditLogRow[]>([]);
   const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
   const defaultTypeSeed = defaultPackageBuilderTypes()[0]!;
   const [packageTypes, setPackageTypes] = useState<PackageBuilderPackageType[]>(() =>
@@ -245,6 +239,8 @@ export function AgencyPackagesHub() {
     defaultPackageBuilderSlots(defaultTypeSeed.id).map((r) => ({ ...r }))
   );
   const [pkgFilter, setPkgFilter] = useState("");
+  const [packageSourceFilter, setPackageSourceFilter] = useState<PackageSourceFilter>("all");
+  const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizStep, setWizStep] = useState<1 | 2 | 3>(1);
@@ -277,7 +273,7 @@ export function AgencyPackagesHub() {
     setLoading(true);
     setLoadErr(null);
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, slotPack] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, auditRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -285,6 +281,13 @@ export function AgencyPackagesHub() {
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
+      client
+        .from("audit_log")
+        .select("id, entity_type, entity_id, action, before_data, after_data, created_at, changed_by_user_id, changed_by_email")
+        .eq("entity_type", "packages")
+        .eq("action", "insert")
+        .order("created_at", { ascending: false })
+        .limit(1000),
       fetchPackageBuilderCatalog(client),
     ]);
 
@@ -321,6 +324,7 @@ export function AgencyPackagesHub() {
     setTasks(nextTasks);
     setPricing(nextPricing);
     setPackageTiers(nextPackageTiers);
+    setPackageCreateAuditRows(auditRes.error ? [] : ((auditRes.data ?? []) as AuditLogRow[]));
     setImplementerHourGroups(implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]));
     setPackageTypes(slotPack.catalog.types.map((t) => ({ ...t })));
     setSlots(slotPack.catalog.slots.map((r) => ({ ...r })));
@@ -410,14 +414,53 @@ export function AgencyPackagesHub() {
     return m;
   }, [packages, packageTiers, tasks, implementerHourGroups]);
 
+  const packageTypeNameSet = useMemo(() => {
+    return new Set(packageTypes.map((pt) => pt.name.trim().toLowerCase()).filter(Boolean));
+  }, [packageTypes]);
+
+  const packageSourceCounts = useMemo(() => {
+    let custom = 0;
+    let prebuilt = 0;
+    for (const pkg of packages) {
+      const isCustom = packageTypeNameSet.has((pkg.package_category ?? "").trim().toLowerCase());
+      if (isCustom) custom += 1;
+      else prebuilt += 1;
+    }
+    return { all: packages.length, custom, prebuilt };
+  }, [packages, packageTypeNameSet]);
+
+  const packageCreatorById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of packageCreateAuditRows) {
+      const email = row.changed_by_email?.trim();
+      if (!email) continue;
+      if (!m.has(row.entity_id)) m.set(row.entity_id, email);
+    }
+    return m;
+  }, [packageCreateAuditRows]);
+
+  const packageCreatorOptions = useMemo(() => {
+    return [...new Set([...packageCreatorById.values()])].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [packageCreatorById]);
+
+  useEffect(() => {
+    if (packageCreatorFilter === "all") return;
+    if (!packageCreatorOptions.includes(packageCreatorFilter)) setPackageCreatorFilter("all");
+  }, [packageCreatorFilter, packageCreatorOptions]);
+
   const filteredPackages = useMemo(() => {
     const q = pkgFilter.trim().toLowerCase();
-    if (!q) return packages;
-    return packages.filter(
-      (p) =>
-        p.package_id.toLowerCase().includes(q) || (p.package_name ?? "").toLowerCase().includes(q)
-    );
-  }, [packages, pkgFilter]);
+    return packages.filter((p) => {
+      const isCustom = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
+      if (packageSourceFilter === "custom" && !isCustom) return false;
+      if (packageSourceFilter === "prebuilt" && isCustom) return false;
+      if (packageCreatorFilter !== "all" && packageCreatorById.get(p.package_id) !== packageCreatorFilter) return false;
+      if (!q) return true;
+      return p.package_id.toLowerCase().includes(q) || (p.package_name ?? "").toLowerCase().includes(q);
+    });
+  }, [packages, pkgFilter, packageSourceFilter, packageTypeNameSet, packageCreatorFilter, packageCreatorById]);
 
   const slotsForSelectedType = useMemo(() => {
     if (!selectedPackageType) return [];
@@ -483,14 +526,14 @@ export function AgencyPackagesHub() {
     !overTierCount &&
     !createBusy;
 
-  const openWizard = () => {
+  const beginPackageBuild = (packageType: PackageBuilderPackageType) => {
     setWizardOpen(true);
-    setWizStep(1);
-    setSelectedPackageType(null);
+    setWizStep(2);
+    setSelectedPackageType({ ...packageType });
     setSelectedSlot(null);
     setTierPickIds([]);
     setTierSearch("");
-    setPkgName("");
+    setPkgName(`${packageType.name} package`);
   };
 
   const closeWizard = () => {
@@ -608,41 +651,150 @@ export function AgencyPackagesHub() {
 
       {!loading && !loadErr && (
         <>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginTop: "0.5rem" }}>
-            <button type="button" style={primaryBtn} onClick={openWizard}>
-              Build a Package
-            </button>
-            <span style={{ color: "var(--muted)", fontSize: "0.92rem" }}>
-              Choose a package type and tier, then add vault solution tiers.
-            </span>
-          </div>
+          <section className="agency-pkg-build-start" aria-labelledby="pkg-build-start-title">
+            <div className="agency-pkg-build-start__copy">
+              <span className="agency-pkg-build-start__eyebrow">Build a Package</span>
+              <h2 id="pkg-build-start-title" className="agency-pkg-build-start__title">
+                Step 1: choose the kind of package you are building
+              </h2>
+              <p className="agency-pkg-build-start__lead">
+                Pick a package family below. We’ll open the tier setup next, then you can add vault solution tiers.
+                Limits are managed in{" "}
+                <Link className="agency-hub__link" to="/admin">
+                  Admin → Build-a-Package configuration
+                </Link>
+                .
+              </p>
+            </div>
 
-          <section style={{ marginTop: "1.75rem" }}>
-            <h2 style={{ ...title, fontSize: "1.15rem", marginBottom: "0.5rem" }}>Open a package</h2>
-            <div className="agency-nav-sol-filter" style={{ maxWidth: 420 }}>
-              <label className="agency-nav-sol-filter__label" htmlFor="hub-pkg-filter">
-                Search packages
-              </label>
-              <div className="agency-nav-sol-filter__row">
-                <input
-                  id="hub-pkg-filter"
-                  type="search"
-                  className="agency-nav-sol-filter__input"
-                  value={pkgFilter}
-                  onChange={(e) => setPkgFilter(e.target.value)}
-                  placeholder="Filter by name or id…"
-                  autoComplete="off"
-                />
-                {pkgFilter ? (
-                  <button type="button" className="agency-nav-sol-filter__clear" onClick={() => setPkgFilter("")}>
-                    Clear
-                  </button>
-                ) : null}
+            {packageTypes.length === 0 ? (
+              <p className="agency-pkg-build-start__empty">
+                No package types are configured yet.
+              </p>
+            ) : (
+              <div className="agency-pkg-build-start__grid">
+                {packageTypes.map((pt, index) => {
+                  const tierCount = slotsForPackageType(slots, pt.id).length;
+                  return (
+                    <button
+                      key={pt.id}
+                      type="button"
+                      className="agency-pkg-build-start__card"
+                      onClick={() => beginPackageBuild(pt)}
+                    >
+                      <span className="agency-pkg-build-start__card-num">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="agency-pkg-build-start__card-title">{pt.name}</span>
+                      <span className="agency-pkg-build-start__card-meta">
+                        {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                      </span>
+                      <span className="agency-pkg-build-start__card-cta">
+                        Choose type <span aria-hidden>→</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="agency-pkg-open-panel" aria-labelledby="pkg-open-title">
+            <div className="agency-pkg-open-panel__head">
+              <div>
+                <span className="agency-pkg-open-panel__eyebrow">Package Library</span>
+                <h2 id="pkg-open-title" className="agency-pkg-open-panel__title">
+                  Open a package
+                </h2>
+                <p className="agency-pkg-open-panel__lead">
+                  Jump back into a custom build, or open an Admin-built package.
+                </p>
+              </div>
+              <div className="agency-pkg-open-panel__controls">
+                <div className="agency-pkg-open-panel__search">
+                  <label className="agency-nav-sol-filter__label" htmlFor="hub-pkg-filter">
+                    Search packages
+                  </label>
+                  <div className="agency-nav-sol-filter__row">
+                    <input
+                      id="hub-pkg-filter"
+                      type="search"
+                      className="agency-nav-sol-filter__input"
+                      value={pkgFilter}
+                      onChange={(e) => setPkgFilter(e.target.value)}
+                      placeholder="Filter by name or id…"
+                      autoComplete="off"
+                    />
+                    {pkgFilter ? (
+                      <button type="button" className="agency-nav-sol-filter__clear" onClick={() => setPkgFilter("")}>
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="agency-pkg-open-panel__creator-filter">
+                  <label className="agency-nav-sol-filter__label" htmlFor="hub-pkg-creator-filter">
+                    Created by
+                  </label>
+                  <select
+                    id="hub-pkg-creator-filter"
+                    className="agency-pkg-open-panel__creator-select"
+                    value={packageCreatorFilter}
+                    onChange={(e) => setPackageCreatorFilter(e.target.value)}
+                  >
+                    <option value="all">All creators</option>
+                    {packageCreatorOptions.map((email) => (
+                      <option key={email} value={email}>
+                        {email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
+
+            <div className="agency-pkg-open-panel__filters" role="group" aria-label="Package source filter">
+              <button
+                type="button"
+                className={
+                  packageSourceFilter === "all"
+                    ? "agency-pkg-open-panel__filter is-active"
+                    : "agency-pkg-open-panel__filter"
+                }
+                onClick={() => setPackageSourceFilter("all")}
+              >
+                <span>All Packages</span>
+                <strong>{packageSourceCounts.all}</strong>
+              </button>
+              <button
+                type="button"
+                className={
+                  packageSourceFilter === "custom"
+                    ? "agency-pkg-open-panel__filter is-active"
+                    : "agency-pkg-open-panel__filter"
+                }
+                onClick={() => setPackageSourceFilter("custom")}
+              >
+                <span>Custom Built Packages</span>
+                <strong>{packageSourceCounts.custom}</strong>
+              </button>
+              <button
+                type="button"
+                className={
+                  packageSourceFilter === "prebuilt"
+                    ? "agency-pkg-open-panel__filter is-active"
+                    : "agency-pkg-open-panel__filter"
+                }
+                onClick={() => setPackageSourceFilter("prebuilt")}
+              >
+                <span>Admin Built Packages</span>
+                <strong>{packageSourceCounts.prebuilt}</strong>
+              </button>
+            </div>
+
             {filteredPackages.length === 0 ? (
-              <p style={{ color: "var(--muted)", marginTop: "0.75rem" }}>
-                {packages.length === 0 ? "No packages in the vault yet." : "No packages match this search."}
+              <p className="agency-pkg-open-panel__empty">
+                {packages.length === 0 ? "No packages in the vault yet." : "No packages match this filter."}
               </p>
             ) : (
               <ul className="agency-pkg-hub__grid" role="list" aria-label="Packages">
@@ -676,12 +828,17 @@ export function AgencyPackagesHub() {
                         : "—";
                   const workspaceSellDisplay =
                     rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
+                  const isCustomPackage = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
+                  const sourceLabel = isCustomPackage ? "Custom built" : "Admin built";
+                  const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
                   const partialNote =
                     rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
                       ? "* Some linked tiers have no hours or sell price in the vault."
                       : null;
                   const a11yLabel = [
                     p.package_name,
+                    sourceLabel,
+                    creatorEmail ? `Created by ${creatorEmail}` : null,
                     tierLabel,
                     rollup.tierCount === 0
                       ? "No linked tiers"
@@ -711,16 +868,30 @@ export function AgencyPackagesHub() {
                         <div className="agency-pkg-hub__card-body">
                           <div className="agency-pkg-hub__card-head">
                             <h3 className="agency-pkg-hub__card-title">{p.package_name}</h3>
-                            <span
-                              className={
-                                rollup.tierCount === 0
-                                  ? "agency-pkg-hub__tier-pill agency-pkg-hub__tier-pill--empty"
-                                  : "agency-pkg-hub__tier-pill"
-                              }
-                            >
-                              {tierLabel}
+                            <span className="agency-pkg-hub__pills">
+                              <span
+                                className={
+                                  isCustomPackage
+                                    ? "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom"
+                                    : "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--prebuilt"
+                                }
+                              >
+                                {sourceLabel}
+                              </span>
+                              <span
+                                className={
+                                  rollup.tierCount === 0
+                                    ? "agency-pkg-hub__tier-pill agency-pkg-hub__tier-pill--empty"
+                                    : "agency-pkg-hub__tier-pill"
+                                }
+                              >
+                                {tierLabel}
+                              </span>
                             </span>
                           </div>
+                          {creatorEmail ? (
+                            <p className="agency-pkg-hub__creator">Created by {creatorEmail}</p>
+                          ) : null}
                           <div
                             className="agency-pkg-hub__card-stats"
                             aria-label="Package workspace totals from Package Builder pricing"
@@ -1058,11 +1229,11 @@ export function AgencyPackagesHub() {
                     type="button"
                     className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
                     onClick={() => {
-                      setWizStep(1);
+                      setWizardOpen(false);
                       setSelectedSlot(null);
                     }}
                   >
-                    Back
+                    Change package type
                   </button>
                   <button
                     type="button"

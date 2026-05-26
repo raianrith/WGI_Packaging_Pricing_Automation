@@ -32,6 +32,7 @@ create table if not exists public.task_group_lines (
   task_name text not null,
   task_implementer text null,
   hours numeric(12, 2) null,
+  duration numeric(12, 2) null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint task_group_lines_shape_check check (
@@ -43,7 +44,7 @@ create table if not exists public.task_group_lines (
 create index if not exists task_group_lines_group_idx on public.task_group_lines (task_group_id, sort_order);
 
 comment on table public.task_group_lines is
-  'Definition line: archetype (name/hours only) or copy_from_task (clone from source_task_id at apply).';
+  'Definition line: archetype (name/hours/duration defaults) or copy_from_task (seeded from source_task_id).';
 
 create table if not exists public.solution_tier_task_group_applied (
   id uuid primary key default gen_random_uuid(),

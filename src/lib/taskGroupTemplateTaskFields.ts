@@ -18,10 +18,10 @@ export function resolveTemplateLineToTaskFields(
       };
     }
     return {
-      task_name: src.task_name,
-      task_implementer: src.task_implementer,
-      task_time: src.task_time,
-      task_duration: src.task_duration,
+      task_name: line.task_name?.trim() || src.task_name,
+      task_implementer: line.task_implementer?.trim() ? line.task_implementer.trim() : src.task_implementer,
+      task_time: line.hours ?? src.task_time,
+      task_duration: line.duration ?? src.task_duration,
       task_dependencies: src.task_dependencies,
       task_notes: src.task_notes,
     };
@@ -30,7 +30,7 @@ export function resolveTemplateLineToTaskFields(
     task_name: line.task_name.trim(),
     task_implementer: line.task_implementer?.trim() ? line.task_implementer.trim() : null,
     task_time: line.hours,
-    task_duration: null,
+    task_duration: line.duration,
     task_dependencies: null,
     task_notes: null,
   };

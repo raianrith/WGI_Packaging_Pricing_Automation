@@ -160,10 +160,10 @@ function draftRowsFromTaskGroupLines(
         const af = autofillFromTask(src);
         out.push({
           key,
-          name: src.task_name,
-          impl: af.impl,
-          time: af.time,
-          dur: af.dur,
+          name: (line.task_name ?? "").trim() || src.task_name,
+          impl: (line.task_implementer ?? "").trim() || af.impl,
+          time: line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : af.time,
+          dur: line.duration != null && Number.isFinite(line.duration) ? String(line.duration) : af.dur,
           dep: af.dep,
           notes: af.notes,
           source: `From Task Group: ${sourceTaskGroupName}`,
@@ -176,7 +176,7 @@ function draftRowsFromTaskGroupLines(
       name: (line.task_name ?? "").trim(),
       impl: (line.task_implementer ?? "").trim(),
       time: line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : "",
-      dur: "",
+      dur: line.duration != null && Number.isFinite(line.duration) ? String(line.duration) : "",
       dep: "",
       notes: "",
       source: `From Task Group: ${sourceTaskGroupName}`,
@@ -1015,6 +1015,16 @@ export function SolutionsBuilderPanel({
     return sum;
   }, [tasksOfFocusTier]);
 
+  const updTierTotalTaskDuration = useMemo(() => {
+    let sum = 0;
+    for (const t of tasksOfFocusTier) {
+      const n = t.task_duration;
+      if (n == null || !Number.isFinite(Number(n))) continue;
+      sum += Number(n);
+    }
+    return sum;
+  }, [tasksOfFocusTier]);
+
   const [updTaskBulkSelectedIds, setUpdTaskBulkSelectedIds] = useState<Set<string>>(new Set());
   const [updTaskBulkBusy, setUpdTaskBulkBusy] = useState(false);
   const [updTaskReorderBusy, setUpdTaskReorderBusy] = useState(false);
@@ -1061,6 +1071,7 @@ export function SolutionsBuilderPanel({
         return {
           ...k,
           task_time: optNum(updKTime),
+          task_duration: optNum(updKDur),
           task_implementer: updKImpl.trim() || k.task_implementer,
         };
       }
@@ -1075,7 +1086,7 @@ export function SolutionsBuilderPanel({
         task_name: d.name,
         task_implementer: d.impl.trim() || null,
         task_time: optNum(d.time),
-        task_duration: null,
+        task_duration: optNum(d.dur),
         task_dependencies: null,
         task_notes: null,
         task_create_date: today,
@@ -1088,6 +1099,7 @@ export function SolutionsBuilderPanel({
     tasksOfFocusTier,
     updTaskEditId,
     updKTime,
+    updKDur,
     updKImpl,
     updNewTaskDrafts,
   ]);
@@ -1112,7 +1124,7 @@ export function SolutionsBuilderPanel({
         task_name: d.name.trim(),
         task_implementer: d.impl.trim() || null,
         task_time: optNum(d.time),
-        task_duration: null,
+        task_duration: optNum(d.dur),
         task_dependencies: null,
         task_notes: null,
         task_create_date: today,
@@ -1138,7 +1150,7 @@ export function SolutionsBuilderPanel({
         task_name: d.name.trim(),
         task_implementer: d.impl.trim() || null,
         task_time: optNum(d.time),
-        task_duration: null,
+        task_duration: optNum(d.dur),
         task_dependencies: null,
         task_notes: null,
         task_create_date: today,
@@ -3906,6 +3918,7 @@ export function SolutionsBuilderPanel({
                           <th style={th}>Name</th>
                           <th style={th}>SOURCE</th>
                           <th style={th}>Hours</th>
+                          <th style={th}>Duration</th>
                           <th style={th} />
                         </tr>
                       </thead>
@@ -3955,6 +3968,11 @@ export function SolutionsBuilderPanel({
                                     ? "—"
                                     : String(k.task_time)}
                                 </td>,
+                                <td style={td} key="dur">
+                                  {k.task_duration == null || !Number.isFinite(Number(k.task_duration))
+                                    ? "—"
+                                    : String(k.task_duration)}
+                                </td>,
                                 <td style={td} key="act">
                                   <button type="button" style={btnSm} onClick={() => startEditTask(k)}>
                                     Edit
@@ -3976,6 +3994,7 @@ export function SolutionsBuilderPanel({
                           <td style={td} />
                           <td style={{ ...td, fontWeight: 700 }}>TOTAL</td>
                           <td style={{ ...td, fontWeight: 700 }}>{updTierTotalTaskHours}</td>
+                          <td style={{ ...td, fontWeight: 700 }}>{updTierTotalTaskDuration}</td>
                           <td style={td} />
                         </tr>
                       </tbody>

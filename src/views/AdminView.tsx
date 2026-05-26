@@ -1794,7 +1794,7 @@ const BULK_GLOSSARY: Record<
       {
         name: "line_type",
         description:
-          "archetype = name/implementer/hours only (new task shape at apply time); copy_from_task = clone settings from source_task_id.",
+          "archetype = name/implementer/hours/duration defaults (new task shape at apply time); copy_from_task = seed from source_task_id.",
       },
       {
         name: "source_task_id",
@@ -1806,7 +1806,8 @@ const BULK_GLOSSARY: Record<
         description: "Display name; required for archetype lines; can mirror the source task for copy lines.",
       },
       { name: "task_implementer", description: "Optional implementer label (maps to pricing hour buckets like vault tasks)." },
-      { name: "hours", description: "Optional numeric hours for archetype lines (pricing roll-up)." },
+      { name: "hours", description: "Optional numeric hours for template lines (pricing roll-up)." },
+      { name: "duration", description: "Optional numeric duration default for template lines." },
       {
         name: "created_at",
         description: "Row creation time (timestamptz).",

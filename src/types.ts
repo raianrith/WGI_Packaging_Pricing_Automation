@@ -157,6 +157,7 @@ export type TaskGroupLineRow = {
   task_name: string;
   task_implementer: string | null;
   hours: number | null;
+  duration: number | null;
   created_at?: string;
   updated_at?: string;
 };

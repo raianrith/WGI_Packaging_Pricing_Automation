@@ -975,6 +975,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
     const roles = new Set<string>();
     let sumTime = 0;
+    let sumDuration = 0;
     const taskPatchByTier = new Map<string, ReturnType<typeof parseTaskOverridesMap>>();
     const taskExtByTier = new Map<string, ReturnType<typeof parseTaskExtensions>>();
     if (useMergedPackage) {
@@ -1001,6 +1002,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
       for (const m of mergedList) {
         if (m.task_time != null && Number.isFinite(Number(m.task_time))) {
           sumTime += Number(m.task_time);
+        }
+        if (m.task_duration != null && Number.isFinite(Number(m.task_duration))) {
+          sumDuration += Number(m.task_duration);
         }
         if (m.task_implementer?.trim()) roles.add(m.task_implementer.trim());
       }
@@ -1044,12 +1048,14 @@ export function AgencyView({ mode }: AgencyViewProps) {
         : vaultSellTotalDisplay,
       vaultSellTotalDisplay,
       vaultSumTaskTime: sumTime,
+      vaultSumTaskDuration: sumDuration,
       useWorkspaceTotals,
       workspaceHoursDisplay: useWorkspaceTotals
         ? formatKpiNumber(workspaceTotals.totalResourceHoursAfterDiscount)
         : null,
       distinctImplementers: roles.size,
       sumTaskTime: sumTime,
+      sumTaskDuration: sumDuration,
     };
   }, [data, pkgId, mode]);
 
@@ -1657,7 +1663,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     </span>
                   </p>
                 </div>
-                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
+                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
                   <div className="agency-kpi-card agency-kpi-card--tasks">
                     <span className="agency-kpi-card__label">Tiers in package</span>
                     <span className="agency-kpi-card__value">
@@ -1687,6 +1693,12 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         formatKpiNumber(selectedPackageOverview.sumTaskTime)}
                     </span>
                   </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">Sum of task duration</span>
+                    <span className="agency-kpi-card__value">
+                      {formatKpiNumber(selectedPackageOverview.sumTaskDuration)}
+                    </span>
+                  </div>
                 </div>
                 {selectedPackageOverview.useWorkspaceTotals ? (
                   <p
@@ -1698,8 +1710,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
                     }}
                   >
                     Catalog comparison: Σ tier vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
-                    summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong>
-                    .
+                    summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong> ·
+                    summed checklist task duration{" "}
+                    <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskDuration)}</strong>.
                   </p>
                 ) : null}
               </section>
@@ -2175,7 +2188,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                   </div>
                 </div>
                 {!catalogTierTableView ? (
-                  <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
+                  <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
                     <div className="agency-kpi-card agency-kpi-card--pricing">
                       <span className="agency-kpi-card__label">Sell price</span>
                       <span className="agency-kpi-card__value">
@@ -2196,6 +2209,12 @@ export function AgencyView({ mode }: AgencyViewProps) {
                       <span className="agency-kpi-card__label">Sum of task time</span>
                       <span className="agency-kpi-card__value">
                         {formatKpiNumber(taskKpis.sumTime)}
+                      </span>
+                    </div>
+                    <div className="agency-kpi-card agency-kpi-card--tasks">
+                      <span className="agency-kpi-card__label">Sum of task duration</span>
+                      <span className="agency-kpi-card__value">
+                        {formatKpiNumber(taskKpis.sumDuration)}
                       </span>
                     </div>
                   </div>

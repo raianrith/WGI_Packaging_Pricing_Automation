@@ -77,7 +77,7 @@ type Props = {
 };
 
 type LineDraftItem =
-  | { key: string; line_type: "archetype"; name: string; implementer: string; hours: string }
+  | { key: string; line_type: "archetype"; name: string; implementer: string; hours: string; duration: string }
   | { key: string; line_type: "copy_from_task"; taskId: string };
 
 type AddLineMode = "archetype" | "copy_from_task";
@@ -253,6 +253,7 @@ export function TaskGroupBuilderPanel({
   const [archName, setArchName] = useState("");
   const [archImpl, setArchImpl] = useState("");
   const [archHours, setArchHours] = useState("");
+  const [archDuration, setArchDuration] = useState("");
   const [linkSearch, setLinkSearch] = useState("");
   const [linkPick, setLinkPick] = useState("");
 
@@ -263,6 +264,7 @@ export function TaskGroupBuilderPanel({
   const [editLineId, setEditLineId] = useState<string | null>(null);
   const [editImpl, setEditImpl] = useState("");
   const [editHours, setEditHours] = useState("");
+  const [editDuration, setEditDuration] = useState("");
 
   const [editGroupId, setEditGroupId] = useState<string | null>(null);
   const [editGroupName, setEditGroupName] = useState("");
@@ -284,7 +286,7 @@ export function TaskGroupBuilderPanel({
           task_name: line.task_name?.trim() || sid,
           task_implementer: line.task_implementer ?? null,
           task_time: line.hours ?? null,
-          task_duration: null,
+          task_duration: line.duration ?? null,
           task_dependencies: null,
           task_notes: null,
           task_create_date: "1970-01-01",
@@ -301,7 +303,7 @@ export function TaskGroupBuilderPanel({
           task_name: line.task_name.trim(),
           task_implementer: line.task_implementer ?? null,
           task_time: line.hours ?? null,
-          task_duration: null,
+          task_duration: line.duration ?? null,
           task_dependencies: null,
           task_notes: null,
           task_create_date: "1970-01-01",
@@ -526,6 +528,14 @@ export function TaskGroupBuilderPanel({
     return parts.reduce((a, b) => a + b, 0);
   }, [linesInSelected]);
 
+  const totalLineDuration = useMemo(() => {
+    const parts = linesInSelected
+      .map((l) => l.duration)
+      .filter((d): d is number => d != null && Number.isFinite(d));
+    if (parts.length === 0) return null;
+    return parts.reduce((a, b) => a + b, 0);
+  }, [linesInSelected]);
+
   const nextSortOrder = useCallback(
     (groupId: string) => {
       const lines = linesByGroup.get(groupId) ?? [];
@@ -560,11 +570,13 @@ export function TaskGroupBuilderPanel({
           name: archName.trim(),
           implementer: archImpl,
           hours: archHours,
+          duration: archDuration,
         },
       ]);
       setArchName("");
       setArchImpl("");
       setArchHours("");
+      setArchDuration("");
       setOpOk("Added to new-group draft.");
       return;
     }
@@ -590,6 +602,7 @@ export function TaskGroupBuilderPanel({
           name: src.task_name.trim() || "Task",
           implementer: src.task_implementer ?? "",
           hours: src.task_time == null ? "" : String(src.task_time),
+          duration: src.task_duration == null ? "" : String(src.task_duration),
         },
       ]);
       setLinkPick("");
@@ -599,7 +612,7 @@ export function TaskGroupBuilderPanel({
     setCreateLineDraft((d) => [...d, { key: crypto.randomUUID(), line_type: "copy_from_task", taskId: linkPick }]);
     setLinkPick("");
     setOpOk("Added to new-group draft.");
-  }, [addMode, archHours, archImpl, archName, createLineDraft, findPickerTask, linkPick, setOpErr, setOpOk]);
+  }, [addMode, archDuration, archHours, archImpl, archName, createLineDraft, findPickerTask, linkPick, setOpErr, setOpOk]);
 
   const createGroupWithDraft = useCallback(async () => {
     const n = newGroupName.trim();
@@ -652,6 +665,7 @@ export function TaskGroupBuilderPanel({
               task_name: d.name,
               task_implementer: d.implementer.trim() || null,
               hours: parseNum(d.hours),
+              duration: parseNum(d.duration),
             })
             .select("id")
             .single();
@@ -682,6 +696,7 @@ export function TaskGroupBuilderPanel({
               task_name: src.task_name,
               task_implementer: src.task_implementer,
               hours: src.task_time,
+              duration: src.task_duration,
             })
             .select("id")
             .single();
@@ -749,6 +764,7 @@ export function TaskGroupBuilderPanel({
             task_name: archName.trim(),
             task_implementer: archImpl.trim() || null,
             hours: parseNum(archHours),
+            duration: parseNum(archDuration),
           })
           .select("id")
           .single();
@@ -766,6 +782,7 @@ export function TaskGroupBuilderPanel({
         setArchName("");
         setArchImpl("");
         setArchHours("");
+        setArchDuration("");
       } else {
         if (linkPickAdd.startsWith(TASK_GROUP_TEMPLATE_LINE_PREFIX)) {
           const src = findPickerTask(linkPickAdd);
@@ -783,6 +800,7 @@ export function TaskGroupBuilderPanel({
               task_name: src.task_name.trim() || "Task",
               task_implementer: src.task_implementer?.trim() || null,
               hours: src.task_time ?? null,
+              duration: src.task_duration ?? null,
             })
             .select("id")
             .single();
@@ -818,6 +836,7 @@ export function TaskGroupBuilderPanel({
             task_name: src.task_name,
             task_implementer: src.task_implementer,
             hours: src.task_time,
+            duration: src.task_duration,
           })
           .select("id")
           .single();
@@ -842,6 +861,7 @@ export function TaskGroupBuilderPanel({
     }
   }, [
     addMode,
+    archDuration,
     archHours,
     archImpl,
     archName,
@@ -1031,6 +1051,7 @@ export function TaskGroupBuilderPanel({
             task_name: r.task_name,
             task_implementer: r.task_implementer,
             hours: r.hours,
+            duration: r.duration,
           })
           .select("id")
           .single();
@@ -1067,6 +1088,7 @@ export function TaskGroupBuilderPanel({
               name: d.name,
               implementer: d.implementer,
               hours: d.hours,
+              duration: d.duration,
             }
           : { key: crypto.randomUUID(), line_type: "copy_from_task", taskId: d.taskId };
       return [...list.slice(0, i + 1), copy, ...list.slice(i + 1)];
@@ -1125,6 +1147,7 @@ export function TaskGroupBuilderPanel({
     setEditName(r.task_name);
     setEditImpl(r.task_implementer ?? "");
     setEditHours(r.hours != null ? String(r.hours) : "");
+    setEditDuration(r.duration != null ? String(r.duration) : "");
   };
 
   const saveLine = useCallback(async () => {
@@ -1146,6 +1169,7 @@ export function TaskGroupBuilderPanel({
         task_name: n,
         task_implementer: editImpl.trim() || null,
         hours: parseNum(editHours),
+        duration: parseNum(editDuration),
       };
       const { error } = await client.from("task_group_lines").update(payload).eq("id", editLineId);
       if (error) {
@@ -1166,7 +1190,7 @@ export function TaskGroupBuilderPanel({
     } finally {
       setSaving(false);
     }
-  }, [editHours, editImpl, editLineId, editName, logAudit, onRefresh, setOpErr, setOpOk, taskGroupLines]);
+  }, [editDuration, editHours, editImpl, editLineId, editName, logAudit, onRefresh, setOpErr, setOpOk, taskGroupLines]);
 
   const dimOverlay = { opacity: 0.45, pointerEvents: "none" as const };
   const dimNewCardWhileEditing = editGroupId || editLineId ? dimOverlay : undefined;
@@ -1429,6 +1453,10 @@ export function TaskGroupBuilderPanel({
                   <span className="admin-field-caption">Hours</span>
                   <input style={input} value={archHours} onChange={(e) => setArchHours(e.target.value)} />
                 </label>
+                <label className="admin-tg-field" style={lbl}>
+                  <span className="admin-field-caption">Duration</span>
+                  <input style={input} value={archDuration} onChange={(e) => setArchDuration(e.target.value)} />
+                </label>
               </>
             ) : (
               <div className="admin-tg-field admin-tg-field--full" style={lbl}>
@@ -1503,6 +1531,10 @@ export function TaskGroupBuilderPanel({
                     <span className="admin-field-caption">Hours</span>
                     <input style={input} value={editHours} onChange={(e) => setEditHours(e.target.value)} />
                   </label>
+                  <label className="admin-tg-field" style={lbl}>
+                    <span className="admin-field-caption">Duration</span>
+                    <input style={input} value={editDuration} onChange={(e) => setEditDuration(e.target.value)} />
+                  </label>
                 </div>
                 <div className="admin-tg-card-actions">
                   <button type="button" className="admin-btn-primary" style={btnPrimary} onClick={() => void saveLine()} disabled={saving}>
@@ -1531,13 +1563,14 @@ export function TaskGroupBuilderPanel({
                     <th style={th}>Task name</th>
                     <th style={th}>Implementer</th>
                     <th style={th}>Hours</th>
+                    <th style={th}>Duration</th>
                     <th style={th} />
                   </tr>
                 </thead>
                 {linesInSelected.length === 0 ? (
                   <tbody>
                     <tr>
-                      <td colSpan={6} style={td}>
+                      <td colSpan={7} style={td}>
                         No lines. Add one below.
                       </td>
                     </tr>
@@ -1574,6 +1607,9 @@ export function TaskGroupBuilderPanel({
                             <td style={td} key="hours">
                               {formatTaskGroupLineHours(r.hours)}
                             </td>,
+                            <td style={td} key="duration">
+                              {formatTaskGroupLineHours(r.duration)}
+                            </td>,
                             <td style={td} key="actions">
                               <button type="button" style={btn} onClick={() => startEditLine(r)} disabled={saving}>
                                 Edit
@@ -1595,9 +1631,10 @@ export function TaskGroupBuilderPanel({
                   <tbody>
                     <tr style={{ fontWeight: 600, borderTop: "1px solid rgba(13, 92, 77, 0.2)" }}>
                       <td colSpan={4} style={td}>
-                        Total hours
+                        Totals
                       </td>
                       <td style={td}>{formatTaskGroupLineHours(totalLineHours)}</td>
+                      <td style={td}>{formatTaskGroupLineHours(totalLineDuration)}</td>
                       <td style={td} />
                     </tr>
                   </tbody>
@@ -1645,6 +1682,10 @@ export function TaskGroupBuilderPanel({
                 <label className="admin-tg-field" style={lbl}>
                   <span className="admin-field-caption">Hours</span>
                   <input style={input} value={archHours} onChange={(e) => setArchHours(e.target.value)} />
+                </label>
+                <label className="admin-tg-field" style={lbl}>
+                  <span className="admin-field-caption">Duration</span>
+                  <input style={input} value={archDuration} onChange={(e) => setArchDuration(e.target.value)} />
                 </label>
               </div>
             ) : (
@@ -1712,7 +1753,7 @@ export function TaskGroupBuilderPanel({
             </h3>
             <p className="admin-modal__lead" style={{ ...muted, marginTop: "0.35rem", fontSize: "0.86rem" }}>
               Choose which solution tiers should be updated to match the <strong>current</strong> template
-              (task name, implementer, hours, etc.). Copy-from-task lines use the latest source task data. Only tasks
+              (task name, implementer, hours, duration, etc.). Copy-from-task lines can be edited after they are seeded. Only tasks
               with template lineage can be updated.
             </p>
             <div className="admin-modal__checklist-tools" style={{ marginTop: "0.65rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

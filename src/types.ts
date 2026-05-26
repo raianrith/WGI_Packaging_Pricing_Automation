@@ -137,6 +137,22 @@ export type TaskRow = {
   spawned_from_task_group_line_id?: string | null;
 };
 
+/** Saved Proposal Builder snapshot (`public.roadmap_proposals`). */
+export type RoadmapProposalRow = {
+  id: string;
+  client_label: string;
+  roadmap_title: string;
+  horizon: string | null;
+  client_budget: string | null;
+  proposal_state: unknown;
+  created_by_user_id?: string | null;
+  created_by_email?: string | null;
+  updated_by_user_id?: string | null;
+  updated_by_email?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 /** Reusable task group template (library). Lines are in `task_group_lines`. */
 export type TaskGroupRow = {
   id: string;

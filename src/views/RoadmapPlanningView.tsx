@@ -20,6 +20,7 @@ import {
 } from "../lib/roadmapModel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import {
   effectiveResourceExamples,
   effectiveResourceTools,
@@ -29,6 +30,7 @@ import {
 import type {
   Package,
   PackageSolutionTier,
+  RoadmapProposalRow,
   Solution,
   SolutionTier,
   SolutionTierPricing,
@@ -62,6 +64,61 @@ type CatalogCtx = {
   pricingMap: Map<string, SolutionTierPricing>;
   groupLinesMap: Map<string, TaskGroupLineRow[]>;
 };
+
+type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
+
+type RoadmapProposalSnapshot = {
+  version: 1;
+  clientLabel: string;
+  roadmapTitle: string;
+  horizon: RoadmapHorizon;
+  clientBudget: string;
+  scenarios: RoadmapScenario[];
+  phases: RoadmapPhase[];
+  cards: RoadmapCard[];
+};
+
+function isRoadmapHorizon(value: unknown): value is RoadmapHorizon {
+  return value === "3" || value === "4" || value === "6" || value === "12" || value === "custom";
+}
+
+function asProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalSnapshot | null {
+  if (!row.proposal_state || typeof row.proposal_state !== "object") return null;
+  const raw = row.proposal_state as Partial<RoadmapProposalSnapshot>;
+  if (!Array.isArray(raw.scenarios) || !Array.isArray(raw.phases) || !Array.isArray(raw.cards)) return null;
+  return {
+    version: 1,
+    clientLabel: typeof raw.clientLabel === "string" ? raw.clientLabel : row.client_label,
+    roadmapTitle: typeof raw.roadmapTitle === "string" ? raw.roadmapTitle : row.roadmap_title,
+    horizon: isRoadmapHorizon(raw.horizon) ? raw.horizon : "6",
+    clientBudget: typeof raw.clientBudget === "string" ? raw.clientBudget : row.client_budget ?? "",
+    scenarios: raw.scenarios as RoadmapScenario[],
+    phases: raw.phases as RoadmapPhase[],
+    cards: raw.cards as RoadmapCard[],
+  };
+}
+
+function formatSavedProposalDate(value: string | null | undefined): string {
+  if (!value) return "Saved";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "Saved";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function clientInitials(label: string): string {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
+}
 
 function formatUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return "—";
@@ -998,13 +1055,22 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
 }
 
 export function RoadmapPlanningView() {
-  const { toastError } = useToast();
+  const { user } = useAuth();
+  const { toastError, toastNote, toastSuccess } = useToast();
   const searchId = useId();
   const [state, setState] = useState<LoadState>({ status: "idle" });
+  const [catalogReloading, setCatalogReloading] = useState(false);
+  const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
+  const [savedProposalsLoading, setSavedProposalsLoading] = useState(false);
+  const [savingProposal, setSavingProposal] = useState(false);
+  const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
+  const [selectedSavedClient, setSelectedSavedClient] = useState<string | null>(null);
+  const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
+  const savedProposalErrSeen = useRef<string | null>(null);
   const [clientLabel, setClientLabel] = useState("");
   const [roadmapTitle, setRoadmapTitle] = useState("");
-  const [horizon, setHorizon] = useState<"3" | "4" | "6" | "12" | "custom">("6");
+  const [horizon, setHorizon] = useState<RoadmapHorizon>("6");
   const [clientBudget, setClientBudget] = useState("");
   const [scenarios, setScenarios] = useState<RoadmapScenario[]>(() => INITIAL_SCENARIOS_AND_PHASES.scenarios);
   const [phases, setPhases] = useState<RoadmapPhase[]>(() => INITIAL_SCENARIOS_AND_PHASES.phases);
@@ -1024,22 +1090,28 @@ export function RoadmapPlanningView() {
   const [scratchTaskPickTick, setScratchTaskPickTick] = useState(0);
   const [scratchGroupPickTick, setScratchGroupPickTick] = useState(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preserveCurrentProposal = false) => {
     const keyErr = browserKeyConfigurationError();
     if (keyErr) {
-      setState({ status: "error", message: keyErr });
+      if (preserveCurrentProposal) toastError(keyErr);
+      else setState({ status: "error", message: keyErr });
       return;
     }
     const client = getSupabase();
     if (!client) {
-      setState({
-        status: "error",
-        message:
-          "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env and restart the dev server.",
-      });
+      const message =
+        "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env and restart the dev server.";
+      if (preserveCurrentProposal) toastError(message);
+      else {
+        setState({
+          status: "error",
+          message,
+        });
+      }
       return;
     }
-    setState({ status: "loading" });
+    if (preserveCurrentProposal) setCatalogReloading(true);
+    else setState({ status: "loading" });
     const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
@@ -1057,7 +1129,12 @@ export function RoadmapPlanningView() {
           )
         : null;
     if (err) {
-      setState({ status: "error", message: err.message });
+      if (preserveCurrentProposal) {
+        setCatalogReloading(false);
+        toastError(`Could not reload catalog data: ${err.message}`);
+      } else {
+        setState({ status: "error", message: err.message });
+      }
       return;
     }
     const packages = (pRes.data ?? []) as Package[];
@@ -1082,11 +1159,201 @@ export function RoadmapPlanningView() {
       tierPricing,
       taskGroupLines,
     });
-  }, []);
+    if (preserveCurrentProposal) {
+      setCatalogReloading(false);
+      toastSuccess("Catalog data reloaded. Your proposal stayed unchanged.");
+    }
+  }, [toastError, toastSuccess]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadSavedProposals = useCallback(async () => {
+    const client = getSupabase();
+    if (!client) return;
+    setSavedProposalsLoading(true);
+    const { data: rows, error } = await client
+      .from("roadmap_proposals")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    setSavedProposalsLoading(false);
+    if (error) {
+      if (savedProposalErrSeen.current !== error.message) {
+        savedProposalErrSeen.current = error.message;
+        toastError(`Saved proposals are not available yet: ${error.message}`);
+      }
+      return;
+    }
+    savedProposalErrSeen.current = null;
+    setSavedProposals((rows ?? []) as RoadmapProposalRow[]);
+  }, [toastError]);
+
+  useEffect(() => {
+    void loadSavedProposals();
+  }, [loadSavedProposals]);
+
+  useEffect(() => {
+    const clients = [...new Set(savedProposals.map((row) => row.client_label.trim() || "Unlabeled client"))];
+    if (clients.length === 0) {
+      setSelectedSavedClient(null);
+      return;
+    }
+    if (!selectedSavedClient || !clients.includes(selectedSavedClient)) {
+      setSelectedSavedClient(clients[0]!);
+    }
+  }, [savedProposals, selectedSavedClient]);
+
+  const currentProposalSnapshot = useCallback(
+    (): RoadmapProposalSnapshot => ({
+      version: 1,
+      clientLabel,
+      roadmapTitle,
+      horizon,
+      clientBudget,
+      scenarios,
+      phases,
+      cards,
+    }),
+    [cards, clientBudget, clientLabel, horizon, phases, roadmapTitle, scenarios]
+  );
+
+  const saveCurrentProposal = useCallback(async () => {
+    const client = getSupabase();
+    if (!client) return;
+    const clientName = clientLabel.trim();
+    const title = roadmapTitle.trim();
+    if (!clientName || !title) {
+      toastError("Add both Client / opportunity and Roadmap name before saving.");
+      return;
+    }
+    setSavingProposal(true);
+    const userId = user?.id ?? null;
+    const email = user?.email ?? null;
+    const snapshot = currentProposalSnapshot();
+    const payload = {
+      client_label: clientName,
+      roadmap_title: title,
+      horizon,
+      client_budget: clientBudget.trim() || null,
+      proposal_state: snapshot,
+      updated_by_user_id: userId,
+      updated_by_email: email,
+    };
+    const result = activeProposalId
+      ? await client
+          .from("roadmap_proposals")
+          .update(payload)
+          .eq("id", activeProposalId)
+          .select("*")
+          .maybeSingle()
+      : await client
+          .from("roadmap_proposals")
+          .insert({
+            ...payload,
+            created_by_user_id: userId,
+            created_by_email: email,
+          })
+          .select("*")
+          .single();
+    setSavingProposal(false);
+    if (result.error) {
+      toastError(`Could not save proposal: ${result.error.message}`);
+      return;
+    }
+    const saved = result.data as RoadmapProposalRow | null;
+    if (saved?.id) setActiveProposalId(saved.id);
+    toastSuccess(`Saved "${title}" under ${clientName}.`);
+    await loadSavedProposals();
+  }, [
+    activeProposalId,
+    clientBudget,
+    clientLabel,
+    currentProposalSnapshot,
+    horizon,
+    loadSavedProposals,
+    roadmapTitle,
+    toastError,
+    toastSuccess,
+    user?.email,
+    user?.id,
+  ]);
+
+  const startNewProposal = useCallback(() => {
+    const init = createInitialScenariosAndPhases();
+    setClientLabel("");
+    setRoadmapTitle("");
+    setClientBudget("");
+    setHorizon("6");
+    setScenarios(init.scenarios);
+    setPhases(init.phases);
+    setCards([]);
+    setTargetScenarioId(init.scenarios[0]!.id);
+    setActiveProposalId(null);
+    setDetailsModalKey(null);
+    setScratchDraft(null);
+    setScratchModalFocusCompose(false);
+    toastNote("Started a new proposal draft.");
+  }, [toastNote]);
+
+  const loadSavedProposalIntoBoard = useCallback(
+    (row: RoadmapProposalRow) => {
+      const snapshot = asProposalSnapshot(row);
+      if (!snapshot) {
+        toastError("This saved proposal could not be read.");
+        return;
+      }
+      const hasCurrentWork =
+        cards.length > 0 || clientLabel.trim() || roadmapTitle.trim() || clientBudget.trim();
+      if (hasCurrentWork && activeProposalId !== row.id) {
+        const ok = window.confirm(
+          "Open this saved proposal? Your current on-screen proposal will be replaced."
+        );
+        if (!ok) return;
+      }
+      const fallback = createInitialScenariosAndPhases();
+      const nextScenarios = snapshot.scenarios.length > 0 ? snapshot.scenarios : fallback.scenarios;
+      const nextPhases = snapshot.phases.length > 0 ? snapshot.phases : fallback.phases;
+      setClientLabel(snapshot.clientLabel);
+      setRoadmapTitle(snapshot.roadmapTitle);
+      setHorizon(snapshot.horizon);
+      setClientBudget(snapshot.clientBudget);
+      setScenarios(nextScenarios);
+      setPhases(nextPhases);
+      setCards(snapshot.cards);
+      setTargetScenarioId(nextScenarios[0]?.id ?? "");
+      setActiveProposalId(row.id);
+      setDetailsModalKey(null);
+      setScratchDraft(null);
+      setScratchModalFocusCompose(false);
+      toastSuccess(`Opened "${row.roadmap_title}".`);
+    },
+    [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, toastError, toastSuccess]
+  );
+
+  const deleteSavedProposal = useCallback(
+    async (row: RoadmapProposalRow) => {
+      const client = getSupabase();
+      if (!client) return;
+      const ok = window.confirm(
+        `Delete "${row.roadmap_title}" for ${row.client_label}? This cannot be undone.`
+      );
+      if (!ok) return;
+      setDeletingProposalId(row.id);
+      const { error } = await client.from("roadmap_proposals").delete().eq("id", row.id);
+      setDeletingProposalId(null);
+      if (error) {
+        toastError(`Could not delete proposal: ${error.message}`);
+        return;
+      }
+      if (activeProposalId === row.id) {
+        setActiveProposalId(null);
+      }
+      toastSuccess(`Deleted "${row.roadmap_title}".`);
+      await loadSavedProposals();
+    },
+    [activeProposalId, loadSavedProposals, toastError, toastSuccess]
+  );
 
   const errMsg = state.status === "error" ? state.message : null;
   useEffect(() => {
@@ -1434,14 +1701,6 @@ export function RoadmapPlanningView() {
     return lines.join("\n");
   }, [cards, clientBudget, clientLabel, budgetNumber, horizon, scenarios, phases, roadmapTitle, catalogCtx]);
 
-  const copySummary = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(summaryMarkdown);
-    } catch {
-      window.prompt("Copy this summary:", summaryMarkdown);
-    }
-  }, [summaryMarkdown]);
-
   const q = paletteSearch;
 
   const scenarioRollups = useMemo(() => {
@@ -1552,78 +1811,155 @@ export function RoadmapPlanningView() {
   const detailsCard = detailsModalKey ? cards.find((c) => c.key === detailsModalKey) ?? null : null;
   const palettePreviewScenarioId = scenarios[0]?.id ?? "";
   const palettePreviewPhaseId = sortedPhasesForScenario(phases, palettePreviewScenarioId)[0]?.id ?? "";
-  const targetScenario = scenarios.find((s) => s.id === targetScenarioId) ?? null;
   const targetScenarioIndex = scenarios.findIndex((s) => s.id === targetScenarioId);
   const targetScenarioRollup = targetScenarioIndex >= 0 ? (scenarioRollups[targetScenarioIndex] ?? null) : null;
   const totalOptionalCount = cards.filter((c) => c.scope === "optional").length;
   const totalDeferredCount = cards.filter((c) => c.scope === "deferred").length;
-  let budgetClosestLabel = "Add a budget to compare scenarios.";
-  if (budgetNumber != null) {
-    let bestRank = Number.POSITIVE_INFINITY;
-    let bestDelta = Number.POSITIVE_INFINITY;
-    scenarios.forEach((scenario, idx) => {
-      const subtotal = scenarioRollups[idx]?.priceSubtotal ?? 0;
-      const status = budgetVsScenarioStatus(subtotal, budgetNumber);
-      const delta = Math.abs(budgetNumber - subtotal);
-      const rank = status === "in_range" ? 0 : status === "under" ? 1 : 2;
-      if (rank < bestRank || (rank === bestRank && delta < bestDelta)) {
-        bestRank = rank;
-        bestDelta = delta;
-        budgetClosestLabel = `${scenario.title.trim() || "Scenario"}: ${
-          status === "over" ? `Over by ${formatUsd(delta)}` : status === "in_range" ? "Within range" : `${formatUsd(delta)} under`
-        }`;
-      }
-    });
-  }
+  const savedProposalGroups = savedProposals.reduce<Array<{ client: string; rows: RoadmapProposalRow[] }>>((acc, row) => {
+    const client = row.client_label.trim() || "Unlabeled client";
+    const group = acc.find((g) => g.client === client);
+    if (group) group.rows.push(row);
+    else acc.push({ client, rows: [row] });
+    return acc;
+  }, []);
+  const selectedSavedGroup =
+    savedProposalGroups.find((group) => group.client === selectedSavedClient) ?? savedProposalGroups[0] ?? null;
+  const savedProposalsPanel = (
+    <section className="roadmap-saved-sidebar" aria-label="Saved proposals">
+      <div className="roadmap-saved-sidebar__head">
+        <div>
+          <p className="roadmap-saved-sidebar__eyebrow">Client proposals</p>
+          <h2 className="roadmap-saved-sidebar__title">Saved proposals</h2>
+        </div>
+      </div>
+      <div className="roadmap-saved-sidebar__summary">
+        <span>{savedProposals.length} saved</span>
+        <button type="button" onClick={() => void loadSavedProposals()} disabled={savedProposalsLoading}>
+          {savedProposalsLoading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+      {savedProposalsLoading ? (
+        <p className="roadmap-muted roadmap-saved-sidebar__empty">Loading saved proposals…</p>
+      ) : savedProposalGroups.length === 0 ? (
+        <p className="roadmap-muted roadmap-saved-sidebar__empty">
+          No saved proposals yet. Add a client and roadmap name, then save this draft.
+        </p>
+      ) : (
+        <div className="roadmap-saved-browser">
+          <nav className="roadmap-saved-browser__icons" aria-label="Clients">
+            {savedProposalGroups.map((group) => (
+              <button
+                key={group.client}
+                type="button"
+                className={
+                  selectedSavedGroup?.client === group.client
+                    ? "roadmap-saved-client-icon roadmap-saved-client-icon--active"
+                    : "roadmap-saved-client-icon"
+                }
+                onClick={() => setSelectedSavedClient(group.client)}
+                title={group.client}
+                aria-label={`${group.client}, ${group.rows.length} saved proposal${group.rows.length === 1 ? "" : "s"}`}
+              >
+                {clientInitials(group.client)}
+              </button>
+            ))}
+          </nav>
+          <div className="roadmap-saved-browser__main">
+            <section className="roadmap-saved-section" aria-label="Clients">
+              <div className="roadmap-saved-section__label">
+                <span>Clients</span>
+                <small>Choose a client</small>
+              </div>
+              <div className="roadmap-saved-client-list" aria-label="Client list">
+                {savedProposalGroups.map((group) => (
+                  <button
+                    key={group.client}
+                    type="button"
+                    className={
+                      selectedSavedGroup?.client === group.client
+                        ? "roadmap-saved-client-row roadmap-saved-client-row--active"
+                        : "roadmap-saved-client-row"
+                    }
+                    onClick={() => setSelectedSavedClient(group.client)}
+                  >
+                    <span className="roadmap-saved-client-row__avatar">{clientInitials(group.client)}</span>
+                    <span className="roadmap-saved-client-row__body">
+                      <span className="roadmap-saved-client-row__name">{group.client}</span>
+                      <span className="roadmap-saved-client-row__count">
+                        {group.rows.length} proposal{group.rows.length === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="roadmap-saved-proposal-pane" aria-label="Proposal names for selected client">
+              <div className="roadmap-saved-section__label roadmap-saved-section__label--pane">
+                <span>Proposal Names</span>
+                <small>
+                  {selectedSavedGroup?.client ?? "Client"} · {selectedSavedGroup?.rows.length ?? 0} saved
+                </small>
+              </div>
+              <div className="roadmap-saved-proposal-pane__list">
+                {(selectedSavedGroup?.rows ?? []).map((row) => {
+                  const snapshot = asProposalSnapshot(row);
+                  const lineCount = snapshot?.cards.length ?? 0;
+                  const isDeleting = deletingProposalId === row.id;
+                  return (
+                    <div
+                      key={row.id}
+                      className={
+                        activeProposalId === row.id
+                          ? "roadmap-saved-card roadmap-saved-card--active"
+                          : "roadmap-saved-card"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="roadmap-saved-card__open"
+                        onClick={() => loadSavedProposalIntoBoard(row)}
+                      >
+                        <span className="roadmap-saved-card__title">{row.roadmap_title}</span>
+                        <span className="roadmap-saved-card__meta">
+                          {formatSavedProposalDate(row.updated_at)} · {lineCount} line{lineCount === 1 ? "" : "s"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="roadmap-saved-card__delete"
+                        onClick={() => void deleteSavedProposal(row)}
+                        disabled={isDeleting}
+                        aria-label={`Delete ${row.roadmap_title}`}
+                      >
+                        {isDeleting ? "…" : "Delete"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 
   return (
     <div className="roadmap-page">
       <div className="roadmap-page__inner roadmap-page__inner--wide">
         <header className="roadmap-hero roadmap-hero--builder">
           <div className="roadmap-hero__main">
-            <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
-            <h1 className="roadmap-hero__title">Proposal Builder</h1>
-            <p className="roadmap-hero__lead">
-              Compare scenarios in columns, organize each into <strong>phases</strong>, and mark line items as{" "}
-              <strong>included</strong>, <strong>optional</strong>, or <strong>deferred</strong>. Set a <strong>client budget</strong>{" "}
-              to see each scenario against plan (under / in range / over). Use optional <strong>hours and price overrides</strong>{" "}
-              for proposal-only tweaks without changing the catalog. Export groups by phase with optional add-ons separated. Nothing
-              here writes to the database — use <Link to="/admin">Admin</Link> for catalog data.
-            </p>
-          </div>
-          <div className="roadmap-hero__aside">
-            <div className="roadmap-hero__statgrid">
-              <div className="roadmap-hero-stat">
-                <span className="roadmap-hero-stat__label">Target scenario</span>
-                <strong>{targetScenario?.title?.trim() || "Select a scenario"}</strong>
-                <p>{targetDefaultPhaseId ? "New items land in its first phase." : "Create a phase to start adding items."}</p>
-              </div>
-              <div className="roadmap-hero-stat">
-                <span className="roadmap-hero-stat__label">Scenarios</span>
-                <strong>{scenarios.length}</strong>
-                <p>{cards.length} total line items on board</p>
-              </div>
-              <div className="roadmap-hero-stat">
-                <span className="roadmap-hero-stat__label">Target subtotal</span>
-                <strong>{targetScenarioRollup ? formatUsd(targetScenarioRollup.priceSubtotal) : "—"}</strong>
-                <p>{targetScenarioRollup?.includedCount ?? 0} included lines</p>
-              </div>
-              <div className="roadmap-hero-stat">
-                <span className="roadmap-hero-stat__label">Budget read</span>
-                <strong>{budgetNumber != null ? formatUsd(budgetNumber) : "Not set"}</strong>
-                <p>{budgetClosestLabel}</p>
-              </div>
-            </div>
-            <div className="roadmap-hero__actions">
-              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={addScenario}>
-                + Scenario
-              </button>
-              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={clearBoard}>
-                Clear board
-              </button>
-              <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={() => void copySummary()}>
-                Copy summary
-              </button>
+            <div className="roadmap-hero__copy">
+              <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
+              <h1 className="roadmap-hero__title">Proposal Builder</h1>
+              <p className="roadmap-hero__lead">
+                Compare scenarios in columns, organize each into <strong>phases</strong>, and mark line items as{" "}
+                <strong>included</strong>, <strong>optional</strong>, or <strong>deferred</strong>. Set a{" "}
+                <strong>client budget</strong> to see each scenario against plan (under / in range / over). Use optional{" "}
+                <strong>hours and price overrides</strong> for proposal-only tweaks without changing the catalog. Save client
+                proposals for later, then export groups by phase with optional add-ons separated. Use <Link to="/admin">Admin</Link>{" "}
+                for catalog data.
+              </p>
             </div>
           </div>
         </header>
@@ -1634,9 +1970,6 @@ export function RoadmapPlanningView() {
               <p className="roadmap-section-head__eyebrow">Proposal setup</p>
               <h2 className="roadmap-section-head__title">Context and guardrails</h2>
             </div>
-            <p className="roadmap-section-head__note">
-              These inputs shape the proposal narrative, budget comparison, and exported summary.
-            </p>
           </div>
           <div className="roadmap-meta-grid">
             <label className="roadmap-field">
@@ -1673,11 +2006,7 @@ export function RoadmapPlanningView() {
                 <span className="roadmap-budget-warn" role="status">
                   Could not read that as a number — try digits only, commas, or 150k.
                 </span>
-              ) : (
-                <span className="roadmap-muted roadmap-budget-hint">
-                  Budget bars use <strong>included</strong> lines only (plus effective price: overrides or catalog).
-                </span>
-              )}
+              ) : null}
             </label>
             <label className="roadmap-field">
               <span className="roadmap-field__cap">Pitch horizon</span>
@@ -1696,14 +2025,28 @@ export function RoadmapPlanningView() {
           </div>
         </section>
 
+        <aside className="roadmap-saved-dock" aria-label="Saved client proposals">
+          {savedProposalsPanel}
+        </aside>
+
         <div className="roadmap-workspace">
           <aside className="roadmap-library" aria-label="Catalog library">
             <div className="roadmap-library__head">
               <div className="roadmap-library__title-row">
                 <h2 className="roadmap-library__title">Catalog</h2>
-                <span className="roadmap-library__count" aria-live="polite">
-                  {paletteTab === "packages" ? filteredPackages.length : filteredTiers.length}
-                </span>
+                <div className="roadmap-library__title-actions">
+                  <button
+                    type="button"
+                    className="roadmap-library__reload"
+                    onClick={() => void load(true)}
+                    disabled={catalogReloading}
+                  >
+                    {catalogReloading ? "Reloading…" : "Reload data"}
+                  </button>
+                  <span className="roadmap-library__count" aria-live="polite">
+                    {paletteTab === "packages" ? filteredPackages.length : filteredTiers.length}
+                  </span>
+                </div>
               </div>
 
               <section className="roadmap-library__target-card" aria-label="Target scenario">
@@ -1875,6 +2218,41 @@ export function RoadmapPlanningView() {
                 <p className="roadmap-board__lead">
                   Compare included scope, optional upsell, deferred work, and phased sequencing side by side.
                 </p>
+              </div>
+              <div className="roadmap-board__proposal-actions" aria-label="Scenario and proposal actions">
+                <div className="roadmap-board__action-group">
+                  <button
+                    type="button"
+                    className="roadmap-btn roadmap-btn--primary roadmap-board__proposal-action"
+                    onClick={() => void saveCurrentProposal()}
+                    disabled={savingProposal}
+                  >
+                    {savingProposal ? "Saving…" : activeProposalId ? "Update Saved" : "Save Proposal"}
+                  </button>
+                  <button
+                    type="button"
+                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
+                    onClick={startNewProposal}
+                  >
+                    New Proposal
+                  </button>
+                </div>
+                <div className="roadmap-board__action-group">
+                  <button
+                    type="button"
+                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
+                    onClick={addScenario}
+                  >
+                    + Scenario
+                  </button>
+                  <button
+                    type="button"
+                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
+                    onClick={clearBoard}
+                  >
+                    Clear Board
+                  </button>
+                </div>
               </div>
             </div>
             <div

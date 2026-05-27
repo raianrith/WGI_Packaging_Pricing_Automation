@@ -172,3 +172,15 @@ export function computePackageWorkspaceFormMetrics(args: {
     netSellAfterSellDiscount,
   };
 }
+
+/** Catalog / proposal display: workspace resource hours and net sell (rounded), matching package hub cards. */
+export function computePackageWorkspaceCatalogNumbers(
+  args: Parameters<typeof computePackageWorkspaceFormMetrics>[0]
+): { resourceHours: number; netSellUsd: number } | null {
+  const ws = computePackageWorkspaceFormMetrics(args);
+  if (!ws.ok) return null;
+  return {
+    resourceHours: ws.totalResourceHoursAfterDiscount,
+    netSellUsd: Math.round(ws.netSellAfterSellDiscount),
+  };
+}

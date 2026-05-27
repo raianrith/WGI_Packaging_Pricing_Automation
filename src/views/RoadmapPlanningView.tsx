@@ -27,7 +27,14 @@ import {
   stripRedundantResourceMarkdownHeading,
   tierTemplatesForProposalDisplay,
 } from "../lib/tierResourceFields";
+import { computePackageWorkspaceCatalogNumbers } from "../lib/packageWorkspaceMetrics";
+import {
+  loadTierPricingMathConfigFromStorage,
+  normalizeTierPricingMathConfig,
+  type TierPricingMathConfig,
+} from "../lib/tierPricingMath";
 import type {
+  ImplementerHourGroupRow,
   Package,
   PackageSolutionTier,
   RoadmapProposalRow,
@@ -52,6 +59,7 @@ type LoadState =
       taskGroups: TaskGroupRow[];
       tierPricing: SolutionTierPricing[];
       taskGroupLines: TaskGroupLineRow[];
+      implementerHourGroups: ImplementerHourGroupRow[];
     };
 
 type CatalogCtx = {
@@ -63,6 +71,8 @@ type CatalogCtx = {
   taskGroups: TaskGroupRow[];
   pricingMap: Map<string, SolutionTierPricing>;
   groupLinesMap: Map<string, TaskGroupLineRow[]>;
+  implementerHourGroups: ImplementerHourGroupRow[];
+  tierPricingMathConfig: TierPricingMathConfig;
 };
 
 type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
@@ -417,9 +427,11 @@ function roadmapCardExportLines(c: RoadmapCard, ctx: CatalogCtx | null): string[
       const tierNames = tids
         .map((id) => ctx.tiers.find((tt) => tt.solution_tier_id === id)?.solution_tier_name)
         .filter(Boolean) as string[];
-      const roll = rollupHoursPrice(tids, ctx.pricingMap);
+      const catalog = packageHoursPriceForCatalog(p, ctx);
+      const vaultRoll = rollupHoursPrice(tids, ctx.pricingMap);
       out.push(`  - **Catalog:** **${p.package_name}** · ${tierNames.length} linked tier(s): ${tierNames.length ? tierNames.join(", ") : "—"}`);
-      out.push(`  - **Rollup from linked tiers (catalog):** ${roll.hours} · ${roll.price}`);
+      out.push(`  - **Package workspace (net sell):** ${catalog.hours} · ${catalog.price}`);
+      out.push(`  - **Σ vault tiers (reference):** ${vaultRoll.hours} · ${vaultRoll.price}`);
       out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
       appendCardNotesExport(out, c);
       break;
@@ -459,6 +471,26 @@ function tierIdsForSolution(tiers: SolutionTier[], solutionId: string): string[]
   return tiers.filter((t) => t.solution_id === solutionId).map((t) => t.solution_tier_id);
 }
 
+function packageHoursPriceForCatalog(p: Package, ctx: CatalogCtx): { hours: string; price: string } {
+  const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
+  const links = ctx.packageTiers.filter((row) => row.package_id === p.package_id);
+  const workspace = computePackageWorkspaceCatalogNumbers({
+    pkg: p,
+    tierIdsSorted: tids,
+    packageTierLinksForPackage: links,
+    vaultTasks: ctx.tasks,
+    implementerHourGroups: ctx.implementerHourGroups,
+    mathConfig: ctx.tierPricingMathConfig,
+  });
+  if (workspace) {
+    return {
+      hours: `${formatHoursShort(workspace.resourceHours)} h`,
+      price: formatUsd(workspace.netSellUsd),
+    };
+  }
+  return rollupHoursPrice(tids, ctx.pricingMap);
+}
+
 function rollupHoursPrice(tierIds: string[], pricingMap: Map<string, SolutionTierPricing>): { hours: string; price: string } {
   let th = 0;
   let hOk = false;
@@ -484,7 +516,7 @@ function rollupHoursPrice(tierIds: string[], pricingMap: Map<string, SolutionTie
 
 function cardForPackage(p: Package, ctx: CatalogCtx, scenarioId: string, phaseId: string): RoadmapCard {
   const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
-  const { hours, price } = rollupHoursPrice(tids, ctx.pricingMap);
+  const { hours, price } = packageHoursPriceForCatalog(p, ctx);
   const tierNames = tids
     .map((id) => ctx.tiers.find((t) => t.solution_tier_id === id)?.solution_tier_name)
     .filter(Boolean) as string[];
@@ -1112,7 +1144,7 @@ export function RoadmapPlanningView() {
     }
     if (preserveCurrentProposal) setCatalogReloading(true);
     else setState({ status: "loading" });
-    const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes, implRes] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -1121,9 +1153,17 @@ export function RoadmapPlanningView() {
       client.from("task_groups").select("*").order("name"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("task_group_lines").select("*").order("sort_order"),
+      client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
     ]);
     const err =
-      pRes.error || sRes.error || tRes.error || kRes.error || ptRes.error || tgRes.error || prRes.error || tglRes.error
+      pRes.error ||
+      sRes.error ||
+      tRes.error ||
+      kRes.error ||
+      ptRes.error ||
+      tgRes.error ||
+      prRes.error ||
+      tglRes.error
         ? [pRes.error, sRes.error, tRes.error, kRes.error, ptRes.error, tgRes.error, prRes.error, tglRes.error].find(
             Boolean
           )
@@ -1145,6 +1185,7 @@ export function RoadmapPlanningView() {
     const taskGroups = (tgRes.data ?? []) as TaskGroupRow[];
     const tierPricing = (prRes.data ?? []) as SolutionTierPricing[];
     const taskGroupLines = (tglRes.data ?? []) as TaskGroupLineRow[];
+    const implementerHourGroups = implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]);
     packages.sort((a, b) => sortId(a.package_id, b.package_id));
     solutions.sort((a, b) => sortId(a.solution_id, b.solution_id));
     tiers.sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
@@ -1158,6 +1199,7 @@ export function RoadmapPlanningView() {
       taskGroups,
       tierPricing,
       taskGroupLines,
+      implementerHourGroups,
     });
     if (preserveCurrentProposal) {
       setCatalogReloading(false);
@@ -1367,6 +1409,11 @@ export function RoadmapPlanningView() {
   }, [errMsg, toastError]);
 
   const data = state.status === "ok" ? state : null;
+  const tierPricingMathConfig = useMemo(
+    () => normalizeTierPricingMathConfig(loadTierPricingMathConfigFromStorage()),
+    []
+  );
+
   const catalogCtx = useMemo((): CatalogCtx | null => {
     if (!data) return null;
     const pricingMap = new Map<string, SolutionTierPricing>();
@@ -1387,8 +1434,10 @@ export function RoadmapPlanningView() {
       taskGroups: data.taskGroups,
       pricingMap,
       groupLinesMap,
+      implementerHourGroups: data.implementerHourGroups,
+      tierPricingMathConfig,
     };
-  }, [data]);
+  }, [data, tierPricingMathConfig]);
 
   const addCard = useCallback((c: RoadmapCard) => {
     setCards((prev) => [...prev, c]);
@@ -1752,10 +1801,7 @@ export function RoadmapPlanningView() {
   const filteredPackages = useMemo(() => {
     if (!catalogCtx) return [];
     return catalogCtx.packages.filter((p) => {
-      const { hours, price } = rollupHoursPrice(
-        tierIdsForPackage(catalogCtx.packageTiers, p.package_id),
-        catalogCtx.pricingMap
-      );
+      const { hours, price } = packageHoursPriceForCatalog(p, catalogCtx);
       return matches(`${p.package_id} ${p.package_name} ${hours} ${price}`, q);
     });
   }, [catalogCtx, q]);

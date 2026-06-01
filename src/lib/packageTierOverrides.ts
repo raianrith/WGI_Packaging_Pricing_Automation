@@ -3,7 +3,9 @@ import type { PackageTierOverrides, SolutionTier } from "../types";
 /** Text fields that may be overridden per package (vault tier row is unchanged). */
 export const PACKAGE_TIER_OVERRIDE_KEYS = [
   "solution_tier_name",
+  "solution_tier_phase",
   "solution_tier_category",
+  "solution_tier_tactic",
   "solution_tier_owner",
   "solution_tier_overview",
   "solution_tier_overview_link",
@@ -119,7 +121,9 @@ export const PACKAGE_TIER_FORM_FIELDS: {
   multiline?: boolean;
 }[] = [
   { key: "solution_tier_name", label: "Tier name" },
+  { key: "solution_tier_phase", label: "Tier phase" },
   { key: "solution_tier_category", label: "Tier category" },
+  { key: "solution_tier_tactic", label: "Tier tactic" },
   { key: "solution_tier_owner", label: "Owner" },
   { key: "solution_tier_overview", label: "Overview", multiline: true },
   { key: "solution_tier_overview_link", label: "Overview link (URL or label)" },

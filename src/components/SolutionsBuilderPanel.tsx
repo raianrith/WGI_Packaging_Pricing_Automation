@@ -50,7 +50,14 @@ import { PricingPanel } from "./PricingPanel";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import { TierCategorySelect } from "./TierCategorySelect";
-import { normalizeTierCategory } from "../lib/tierCategories";
+import { TierPhaseSelect } from "./TierPhaseSelect";
+import { TierTacticSelect } from "./TierTacticSelect";
+import {
+  normalizeTierPhase,
+  normalizeTierTactic,
+  normalizeTierTaxonomyLabel,
+  tierTaxonomyOptionsFromRows,
+} from "../lib/tierTaxonomy";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 
 export { nextAutoSolutionId, nextAutoTierId, nextAutoTaskId };
@@ -69,6 +76,47 @@ type SBInlineZone =
 
 function AdminFieldCaption({ children }: { children: ReactNode }) {
   return <span className="admin-field-caption">{children}</span>;
+}
+
+type TierTaxonomySelectLists = { phase: string[]; category: string[]; tactic: string[] };
+
+function TierTaxonomyFormFields({
+  lbl,
+  input,
+  phase,
+  setPhase,
+  category,
+  setCategory,
+  tactic,
+  setTactic,
+  taxonomy,
+}: {
+  lbl: CSSProperties;
+  input: CSSProperties;
+  phase: string;
+  setPhase: (v: string) => void;
+  category: string;
+  setCategory: (v: string) => void;
+  tactic: string;
+  setTactic: (v: string) => void;
+  taxonomy: TierTaxonomySelectLists;
+}) {
+  return (
+    <>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Tier Phase</AdminFieldCaption>
+        <TierPhaseSelect inputStyle={input} value={phase} onChange={setPhase} options={taxonomy.phase} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Tier Category</AdminFieldCaption>
+        <TierCategorySelect inputStyle={input} value={category} onChange={setCategory} options={taxonomy.category} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Tier Tactic</AdminFieldCaption>
+        <TierTacticSelect inputStyle={input} value={tactic} onChange={setTactic} options={taxonomy.tactic} />
+      </label>
+    </>
+  );
 }
 
 function sortId(a: string, b: string): number {
@@ -336,6 +384,7 @@ export function SolutionsBuilderPanel({
   tasks,
   tierPricing,
   tierPricingMathConfig,
+  tierTaxonomyOptions: tierTaxonomyOptionsProp,
   implementerHourGroups = [],
   taskGroups = [],
   taskGroupLines = [],
@@ -349,6 +398,7 @@ export function SolutionsBuilderPanel({
 }: {
   subTab: SolutionsBuilderSubTab;
   tierPricingMathConfig: TierPricingMathConfig;
+  tierTaxonomyOptions?: TierTaxonomySelectLists;
   solutions: Solution[];
   tiers: SolutionTier[];
   tasks: TaskRow[];
@@ -366,6 +416,17 @@ export function SolutionsBuilderPanel({
   styles: BuilderStyles;
 }) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnSm, btnDangerSm, tbl, th, td, h2, muted } = s;
+
+  const taxonomy = useMemo(
+    () => tierTaxonomyOptionsProp ?? tierTaxonomyOptionsFromRows([]),
+    [tierTaxonomyOptionsProp]
+  );
+  const normTierPhase = useCallback((v: string) => normalizeTierPhase(v, taxonomy.phase), [taxonomy.phase]);
+  const normTierCategory = useCallback(
+    (v: string) => normalizeTierTaxonomyLabel(v, taxonomy.category),
+    [taxonomy.category]
+  );
+  const normTierTactic = useCallback((v: string) => normalizeTierTactic(v, taxonomy.tactic), [taxonomy.tactic]);
 
   const [sbInlineFb, setSbInlineFb] = useState<{
     zone: SBInlineZone;
@@ -392,7 +453,9 @@ export function SolutionsBuilderPanel({
   const [solNameDraft, setSolNameDraft] = useState("");
 
   const [tName, setTName] = useState("");
+  const [tPhase, setTPhase] = useState("");
   const [tCategory, setTCategory] = useState("");
+  const [tTactic, setTTactic] = useState("");
   const [tOwner, setTOwner] = useState("");
   const [tSop, setTSop] = useState("");
   const [tWhatIsIt, setTWhatIsIt] = useState("");
@@ -505,7 +568,9 @@ export function SolutionsBuilderPanel({
     if (!t) return;
     setCreateAutofillFrom(t);
     setTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
+    setTPhase((prev) => (prev.trim() ? prev : (t.solution_tier_phase ?? "")));
     setTCategory((prev) => (prev.trim() ? prev : (t.solution_tier_category ?? "")));
+    setTTactic((prev) => (prev.trim() ? prev : (t.solution_tier_tactic ?? "")));
     setTOwner(t.solution_tier_owner ?? "");
     setTSop(t.solution_tier_sop ?? "");
     setTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -589,7 +654,9 @@ export function SolutionsBuilderPanel({
       solution_tier_id: tierId,
       solution_id: solId,
       solution_tier_name: tierName,
-      solution_tier_category: normalizeTierCategory(tCategory),
+      solution_tier_phase: normTierPhase(tPhase),
+      solution_tier_category: normTierCategory(tCategory),
+      solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -749,7 +816,9 @@ export function SolutionsBuilderPanel({
       solution_tier_id: id,
       solution_id: solId,
       solution_tier_name: name,
-      solution_tier_category: normalizeTierCategory(tCategory),
+      solution_tier_phase: normTierPhase(tPhase),
+      solution_tier_category: normTierCategory(tCategory),
+      solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: leg ? leg.solution_tier_overview : null,
       solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
@@ -959,7 +1028,9 @@ export function SolutionsBuilderPanel({
   const [updCopyTierPick, setUpdCopyTierPick] = useState("");
   const [updTierEditId, setUpdTierEditId] = useState<string | null>(null);
   const [updTName, setUpdTName] = useState("");
+  const [updTPhase, setUpdTPhase] = useState("");
   const [updTCategory, setUpdTCategory] = useState("");
+  const [updTTactic, setUpdTTactic] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
   const [updTSop, setUpdTSop] = useState("");
   const [updTWhatIsIt, setUpdTWhatIsIt] = useState("");
@@ -1168,7 +1239,9 @@ export function SolutionsBuilderPanel({
       solution_tier_id: draftPricingTierId,
       solution_id: previewSolutionId || "draft-solution",
       solution_tier_name: tName.trim() || "New tier",
-      solution_tier_category: normalizeTierCategory(tCategory),
+      solution_tier_phase: normTierPhase(tPhase),
+      solution_tier_category: normTierCategory(tCategory),
+      solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
       solution_tier_overview: null,
       solution_tier_overview_link: null,
@@ -1190,7 +1263,7 @@ export function SolutionsBuilderPanel({
       solution_tier_created_date: todayISODate(),
       solution_tier_modified_date: todayISODate(),
     }),
-    [draftPricingTierId, previewSolutionId, tName, tCategory, tOwner]
+    [draftPricingTierId, previewSolutionId, tName, tPhase, tCategory, tTactic, tOwner, normTierPhase, normTierCategory, normTierTactic]
   );
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
@@ -1213,7 +1286,9 @@ export function SolutionsBuilderPanel({
     if (updTierEditId && t.solution_tier_id === updTierEditId) return;
     setUpdAutofillFrom(t);
     setUpdTName((prev) => (prev.trim() ? prev : t.solution_tier_name));
+    setUpdTPhase(t.solution_tier_phase ?? "");
     setUpdTCategory(t.solution_tier_category ?? "");
+    setUpdTTactic(t.solution_tier_tactic ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -1253,7 +1328,9 @@ export function SolutionsBuilderPanel({
   const clearTierUpdateForm = () => {
     setUpdTierEditId(null);
     setUpdTName("");
+    setUpdTPhase("");
     setUpdTCategory("");
+    setUpdTTactic("");
     setUpdTOwner("");
     setUpdTSop("");
     setUpdTWhatIsIt("");
@@ -1324,7 +1401,9 @@ export function SolutionsBuilderPanel({
     setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
+    setUpdTPhase(t.solution_tier_phase ?? "");
     setUpdTCategory(t.solution_tier_category ?? "");
+    setUpdTTactic(t.solution_tier_tactic ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
@@ -1502,7 +1581,9 @@ export function SolutionsBuilderPanel({
     const payload = {
       solution_id: updSolutionId,
       solution_tier_name: updTName.trim(),
-      solution_tier_category: normalizeTierCategory(updTCategory),
+      solution_tier_phase: normTierPhase(updTPhase),
+      solution_tier_category: normTierCategory(updTCategory),
+      solution_tier_tactic: normTierTactic(updTTactic),
       solution_tier_owner: blankToNull(updTOwner),
       solution_tier_overview: legU ? legU.solution_tier_overview : (prevTier?.solution_tier_overview ?? null),
       solution_tier_overview_link: legU
@@ -1561,7 +1642,9 @@ export function SolutionsBuilderPanel({
       solution_tier_id: id,
       solution_id: updSolutionId,
       solution_tier_name: payload.solution_tier_name,
+      solution_tier_phase: payload.solution_tier_phase,
       solution_tier_category: payload.solution_tier_category,
+      solution_tier_tactic: payload.solution_tier_tactic,
       solution_tier_owner: payload.solution_tier_owner,
       solution_tier_overview: payload.solution_tier_overview,
       solution_tier_overview_link: payload.solution_tier_overview_link,
@@ -2238,10 +2321,17 @@ export function SolutionsBuilderPanel({
         <AdminFieldCaption>Tier name</AdminFieldCaption>
         <input style={input} value={tName} onChange={(e) => setTName(e.target.value)} />
       </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Tier Category</AdminFieldCaption>
-        <TierCategorySelect inputStyle={input} value={tCategory} onChange={setTCategory} />
-      </label>
+      <TierTaxonomyFormFields
+        lbl={lbl}
+        input={input}
+        phase={tPhase}
+        setPhase={setTPhase}
+        category={tCategory}
+        setCategory={setTCategory}
+        tactic={tTactic}
+        setTactic={setTTactic}
+        taxonomy={taxonomy}
+      />
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
         <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
@@ -2321,10 +2411,17 @@ export function SolutionsBuilderPanel({
         <AdminFieldCaption>Tier name</AdminFieldCaption>
         <input style={input} value={updTName} onChange={(e) => setUpdTName(e.target.value)} />
       </label>
-      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-        <AdminFieldCaption>Tier Category</AdminFieldCaption>
-        <TierCategorySelect inputStyle={input} value={updTCategory} onChange={setUpdTCategory} />
-      </label>
+      <TierTaxonomyFormFields
+        lbl={lbl}
+        input={input}
+        phase={updTPhase}
+        setPhase={setUpdTPhase}
+        category={updTCategory}
+        setCategory={setUpdTCategory}
+        tactic={updTTactic}
+        setTactic={setUpdTTactic}
+        taxonomy={taxonomy}
+      />
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <AdminFieldCaption>Owner</AdminFieldCaption>
         <input style={input} value={updTOwner} onChange={(e) => setUpdTOwner(e.target.value)} />
@@ -2619,10 +2716,17 @@ export function SolutionsBuilderPanel({
                     <AdminFieldCaption>Tier name</AdminFieldCaption>
                     <input style={input} value={tName} onChange={(e) => setTName(e.target.value)} />
                   </label>
-                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
-                    <AdminFieldCaption>Tier Category</AdminFieldCaption>
-                    <TierCategorySelect inputStyle={input} value={tCategory} onChange={setTCategory} />
-                  </label>
+                  <TierTaxonomyFormFields
+                    lbl={lbl}
+                    input={input}
+                    phase={tPhase}
+                    setPhase={setTPhase}
+                    category={tCategory}
+                    setCategory={setTCategory}
+                    tactic={tTactic}
+                    setTactic={setTTactic}
+                    taxonomy={taxonomy}
+                  />
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Owner</AdminFieldCaption>
                     <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />

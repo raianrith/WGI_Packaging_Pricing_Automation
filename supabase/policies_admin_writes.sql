@@ -138,6 +138,22 @@ drop policy if exists "Allow insert changelog" on public.audit_log;
 create policy "Allow read changelog" on public.audit_log for select using (true);
 create policy "Allow insert changelog" on public.audit_log for insert with check (true);
 
+-- After supabase/solution_tier_taxonomy.sql (table must exist)
+do $$
+begin
+  if to_regclass('public.solution_tier_taxonomy_options') is not null then
+    alter table public.solution_tier_taxonomy_options enable row level security;
+    execute 'drop policy if exists "Allow read solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options';
+    execute 'drop policy if exists "Allow insert solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options';
+    execute 'drop policy if exists "Allow update solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options';
+    execute 'drop policy if exists "Allow delete solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options';
+    execute 'create policy "Allow read solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options for select using (true)';
+    execute 'create policy "Allow insert solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options for insert with check (true)';
+    execute 'create policy "Allow update solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options for update using (true)';
+    execute 'create policy "Allow delete solution_tier_taxonomy_options" on public.solution_tier_taxonomy_options for delete using (true)';
+  end if;
+end $$;
+
 -- After supabase/implementer_pricing_hour_groups.sql (table must exist)
 alter table public.implementer_pricing_hour_groups enable row level security;
 drop policy if exists "Allow read implementer_pricing_hour_groups" on public.implementer_pricing_hour_groups;

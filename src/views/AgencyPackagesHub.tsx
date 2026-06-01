@@ -25,7 +25,11 @@ import {
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
 import { loadTierPricingMathConfigFromStorage, normalizeTierPricingMathConfig } from "../lib/tierPricingMath";
-import { computePackageWorkspaceFormMetrics } from "../lib/packageWorkspaceMetrics";
+import {
+  computePackageWizardDiscountPreview,
+  computePackageWorkspaceFormMetrics,
+  parsePackageDiscountPct,
+} from "../lib/packageWorkspaceMetrics";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -108,11 +112,14 @@ function slotLimitTags(slot: PackageBuilderSlotTemplate): string[] {
   return tags;
 }
 
-function WizardStepper({ step }: { step: 1 | 2 | 3 }) {
+type WizardStep = 1 | 2 | 3 | 4;
+
+function WizardStepper({ step }: { step: WizardStep }) {
   const steps = [
     { n: 1 as const, label: "Package type" },
     { n: 2 as const, label: "Package tier" },
     { n: 3 as const, label: "Solution tiers" },
+    { n: 4 as const, label: "Discounts" },
   ];
   return (
     <ol className="agency-pkg-wizard__steps" aria-label="Progress">
@@ -243,7 +250,9 @@ export function AgencyPackagesHub() {
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
 
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizStep, setWizStep] = useState<1 | 2 | 3>(1);
+  const [wizStep, setWizStep] = useState<WizardStep>(1);
+  const [hourDiscountPctStr, setHourDiscountPctStr] = useState("0");
+  const [sellDiscountPctStr, setSellDiscountPctStr] = useState("0");
   const [selectedPackageType, setSelectedPackageType] = useState<PackageBuilderPackageType | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<PackageBuilderSlotTemplate | null>(null);
   const [tierPickIds, setTierPickIds] = useState<string[]>([]);
@@ -516,15 +525,35 @@ export function AgencyPackagesHub() {
     ceiling != null &&
     slotEnforcesTierCountLimit(ceiling) &&
     tierPickIds.length > (ceiling.solution_tier_limit ?? 0);
-  const canCreate =
+  const tierStepValid =
     ceiling != null &&
     selectedPackageType != null &&
     pkgName.trim().length > 0 &&
     tierPickIds.length > 0 &&
     !overHours &&
     !overPrice &&
-    !overTierCount &&
-    !createBusy;
+    !overTierCount;
+
+  const canCreate = tierStepValid && !createBusy;
+
+  const discountPreview = useMemo(() => {
+    return computePackageWizardDiscountPreview({
+      tierIdsSorted: [...tierPickIds].sort(sortId),
+      pricingRows: pricing,
+      vaultTasks: tasks,
+      catalogHours: usage.hours,
+      catalogSell: usage.price,
+      missingHours: usage.missingHours,
+      missingPrice: usage.missingPrice,
+      hourPct: parsePackageDiscountPct(hourDiscountPctStr),
+      sellPct: parsePackageDiscountPct(sellDiscountPctStr),
+    });
+  }, [hourDiscountPctStr, sellDiscountPctStr, usage, tierPickIds, pricing, tasks]);
+
+  const resetWizardDiscounts = () => {
+    setHourDiscountPctStr("0");
+    setSellDiscountPctStr("0");
+  };
 
   const beginPackageBuild = (packageType: PackageBuilderPackageType) => {
     setWizardOpen(true);
@@ -534,11 +563,13 @@ export function AgencyPackagesHub() {
     setTierPickIds([]);
     setTierSearch("");
     setPkgName(`${packageType.name} package`);
+    resetWizardDiscounts();
   };
 
   const closeWizard = () => {
     if (createBusy) return;
     setWizardOpen(false);
+    resetWizardDiscounts();
   };
 
   const toggleTierPick = (tierId: string, on: boolean) => {
@@ -579,12 +610,16 @@ export function AgencyPackagesHub() {
     try {
       const today = todayISODate();
       const newId = nextAutoPackageId(packages);
+      const hourPct = parsePackageDiscountPct(hourDiscountPctStr);
+      const sellPct = parsePackageDiscountPct(sellDiscountPctStr);
       const row: Package = {
         package_id: newId,
         package_name: name,
         package_create_date: today,
         package_modified_date: today,
         package_category: selectedPackageType?.name?.trim() || null,
+        package_hour_discount_pct: hourPct,
+        package_sell_discount_pct: sellPct,
       };
       const { error: insErr } = await client.from("packages").insert(row);
       if (insErr) {
@@ -946,7 +981,7 @@ export function AgencyPackagesHub() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="pkg-wiz-title"
-            className={wizStep === 3 ? "agency-pkg-wizard agency-pkg-wizard--wide" : "agency-pkg-wizard"}
+            className={wizStep >= 3 ? "agency-pkg-wizard agency-pkg-wizard--wide" : "agency-pkg-wizard"}
             onClick={(e) => e.stopPropagation()}
           >
             <header className="agency-pkg-wizard__header">
@@ -1198,6 +1233,124 @@ export function AgencyPackagesHub() {
                   </div>
                 </>
               )}
+
+              {wizStep === 4 && selectedSlot && selectedPackageType && (
+                <>
+                  <div className="agency-pkg-wizard__context">
+                    <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
+                    <span className="agency-pkg-wizard__chip">
+                      {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
+                    </span>
+                    <span className="agency-pkg-wizard__chip">{tierPickIds.length} tiers</span>
+                  </div>
+                  <p className="agency-pkg-wizard__lead">
+                    Optional package-level discounts. Leave at 0% if you do not need them — you can change these later in
+                    Package Builder.
+                  </p>
+
+                  <div className="agency-pkg-wizard__discount-grid">
+                    <div className="agency-pkg-wizard__discount-card">
+                      <div className="agency-pkg-wizard__discount-card-head">
+                        <h3 className="agency-pkg-wizard__discount-title">Hour Discount</h3>
+                        <p className="agency-pkg-wizard__discount-hint">
+                          Lowers catalog hours and scales each tier’s sell in proportion (same totals as step 3).
+                        </p>
+                      </div>
+                      <label className="agency-pkg-wizard__discount-field">
+                        <span className="agency-pkg-wizard__discount-field-label">Discount %</span>
+                        <div className="agency-pkg-wizard__discount-input-wrap">
+                          <input
+                            className="agency-pkg-wizard__field-input agency-pkg-wizard__discount-input"
+                            inputMode="decimal"
+                            value={hourDiscountPctStr}
+                            onChange={(e) => setHourDiscountPctStr(e.target.value)}
+                            aria-label="Hour discount percent"
+                          />
+                          <span className="agency-pkg-wizard__discount-suffix" aria-hidden>
+                            %
+                          </span>
+                        </div>
+                      </label>
+                      <p className="agency-pkg-wizard__discount-result">
+                        Hours{" "}
+                        {usage.missingHours ? (
+                          <strong>—</strong>
+                        ) : (
+                          <>
+                            <span className="agency-pkg-wizard__discount-was">{fmtHoursTotal(discountPreview.catalogHours)} h</span>
+                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
+                              →
+                            </span>
+                            <strong>{fmtHoursTotal(discountPreview.hoursAfter ?? 0)} h</strong>
+                          </>
+                        )}
+                      </p>
+                      <p className="agency-pkg-wizard__discount-result">
+                        Catalog sell{" "}
+                        {discountPreview.modeledSellBeforeHourDiscount == null ? (
+                          <strong>—</strong>
+                        ) : (
+                          <>
+                            <span className="agency-pkg-wizard__discount-was">
+                              {fmtUsd(discountPreview.modeledSellBeforeHourDiscount)}
+                            </span>
+                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
+                              →
+                            </span>
+                            <strong>{fmtUsd(discountPreview.modeledSellAfterHourDiscount ?? 0)}</strong>
+                          </>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="agency-pkg-wizard__discount-card">
+                      <div className="agency-pkg-wizard__discount-card-head">
+                        <h3 className="agency-pkg-wizard__discount-title">Sell Price Discount</h3>
+                        <p className="agency-pkg-wizard__discount-hint">
+                          Taken off modeled sell after any hour discount. Does not change hour buckets.
+                        </p>
+                      </div>
+                      <label className="agency-pkg-wizard__discount-field">
+                        <span className="agency-pkg-wizard__discount-field-label">Discount %</span>
+                        <div className="agency-pkg-wizard__discount-input-wrap">
+                          <input
+                            className="agency-pkg-wizard__field-input agency-pkg-wizard__discount-input"
+                            inputMode="decimal"
+                            value={sellDiscountPctStr}
+                            onChange={(e) => setSellDiscountPctStr(e.target.value)}
+                            aria-label="Sell price discount percent"
+                          />
+                          <span className="agency-pkg-wizard__discount-suffix" aria-hidden>
+                            %
+                          </span>
+                        </div>
+                      </label>
+                      <p className="agency-pkg-wizard__discount-result">
+                        Net sell{" "}
+                        {discountPreview.modeledSellAfterHourDiscount == null ||
+                        discountPreview.netSellAfterSellDiscount == null ? (
+                          <strong>—</strong>
+                        ) : (
+                          <>
+                            <span className="agency-pkg-wizard__discount-was">
+                              {fmtUsd(discountPreview.modeledSellAfterHourDiscount)}
+                            </span>
+                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
+                              →
+                            </span>
+                            <strong>{fmtUsd(discountPreview.netSellAfterSellDiscount)}</strong>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="agency-pkg-wizard__discount-footnote">
+                    Estimates use vault tier totals from your selection. Package Builder refines totals from the full task
+                    checklist.
+                  </p>
+                </>
+              )}
             </div>
 
             <footer className="agency-pkg-wizard__footer">
@@ -1268,6 +1421,34 @@ export function AgencyPackagesHub() {
                     className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
                     disabled={createBusy}
                     onClick={() => setWizStep(2)}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
+                    disabled={!tierStepValid || createBusy}
+                    onClick={() => setWizStep(4)}
+                  >
+                    Next: package discounts
+                  </button>
+                </>
+              )}
+              {wizStep === 4 && selectedSlot && selectedPackageType && (
+                <>
+                  <button
+                    type="button"
+                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
+                    disabled={createBusy}
+                    onClick={closeWizard}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
+                    disabled={createBusy}
+                    onClick={() => setWizStep(3)}
                   >
                     Back
                   </button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -24,7 +24,14 @@ import {
 } from "../lib/tierPricingMath";
 import { recomputeAllSavedTierPricing } from "../lib/recomputeAllSavedTierPricing";
 import { compareTasksByOrder } from "../lib/taskOrder";
-import { normalizeTierCategory, TIER_CATEGORY_OPTIONS } from "../lib/tierCategories";
+import { TIER_CATEGORY_OPTIONS } from "../lib/tierCategories";
+import {
+  normalizeTierPhase,
+  normalizeTierTactic,
+  normalizeTierTaxonomyLabel,
+  tierTaxonomyOptionsFromRows,
+} from "../lib/tierTaxonomy";
+import { TierTaxonomyListsPanel } from "../components/TierTaxonomyListsPanel";
 import { PricingCalculatorPanel } from "../components/PricingCalculatorPanel";
 import { ActiveUsersPanel } from "../components/ActiveUsersPanel";
 import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
@@ -42,6 +49,7 @@ import type {
   PackageSolutionTier,
   Solution,
   SolutionTier,
+  SolutionTierTaxonomyOptionRow,
   SolutionTierPricing,
   SolutionTierTaskGroupApplied,
   TaskGroupLineRow,
@@ -53,6 +61,7 @@ type AdminTab =
   | "packages"
   | "solutions_builder"
   | "task_group_builder"
+  | "tier_taxonomy_lists"
   | "active_users"
   | "pricing_calculator"
   | "glossary"
@@ -101,6 +110,8 @@ export function AdminView() {
   const [taskGroupLines, setTaskGroupLines] = useState<TaskGroupLineRow[]>([]);
   const [taskGroupApplied, setTaskGroupApplied] = useState<SolutionTierTaskGroupApplied[]>([]);
   const [taskGroupDataLoadNote, setTaskGroupDataLoadNote] = useState<string | null>(null);
+  const [tierTaxonomyOptions, setTierTaxonomyOptions] = useState<SolutionTierTaxonomyOptionRow[]>([]);
+  const [tierTaxonomyLoadNote, setTierTaxonomyLoadNote] = useState<string | null>(null);
   const [tierPricingMathConfig, setTierPricingMathConfig] = useState<TierPricingMathConfig>(() =>
     loadTierPricingMathConfigFromStorage()
   );
@@ -113,6 +124,7 @@ export function AdminView() {
   const prevAuditNote = useRef<string | null>(null);
   const prevImplNote = useRef<string | null>(null);
   const prevTgNote = useRef<string | null>(null);
+  const prevTaxonomyNote = useRef<string | null>(null);
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
@@ -121,6 +133,7 @@ export function AdminView() {
     setPricingLoadNote(null);
     setImplementerMappingLoadNote(null);
     setTaskGroupDataLoadNote(null);
+    setTierTaxonomyLoadNote(null);
     const keyErr = browserKeyConfigurationError();
     if (keyErr) {
       setLoadErr(keyErr);
@@ -236,6 +249,23 @@ export function AdminView() {
       setTaskGroupApplied((tga.data ?? []) as SolutionTierTaskGroupApplied[]);
     }
 
+    const taxRes = await client
+      .from("solution_tier_taxonomy_options")
+      .select("*")
+      .order("kind")
+      .order("label");
+    if (taxRes.error) {
+      setTierTaxonomyOptions([]);
+      setTierTaxonomyLoadNote(
+        taxRes.error.message.includes("solution_tier_taxonomy_options") || taxRes.error.code === "PGRST205"
+          ? "Run supabase/solution_tier_taxonomy.sql in the SQL Editor to enable phase, category, and tactic lists."
+          : taxRes.error.message
+      );
+    } else {
+      setTierTaxonomyLoadNote(null);
+      setTierTaxonomyOptions((taxRes.data ?? []) as SolutionTierTaxonomyOptionRow[]);
+    }
+
     setLoading(false);
     notifyPackagingDataChanged();
   }, []);
@@ -299,6 +329,21 @@ export function AdminView() {
     prevTgNote.current = taskGroupDataLoadNote;
     toastNote(taskGroupDataLoadNote);
   }, [loadErr, taskGroupDataLoadNote, toastNote]);
+
+  useEffect(() => {
+    if (loadErr || !tierTaxonomyLoadNote) {
+      if (!tierTaxonomyLoadNote) prevTaxonomyNote.current = null;
+      return;
+    }
+    if (prevTaxonomyNote.current === tierTaxonomyLoadNote) return;
+    prevTaxonomyNote.current = tierTaxonomyLoadNote;
+    toastNote(tierTaxonomyLoadNote);
+  }, [loadErr, tierTaxonomyLoadNote, toastNote]);
+
+  const tierTaxonomySelectOptions = useMemo(
+    () => tierTaxonomyOptionsFromRows(tierTaxonomyOptions),
+    [tierTaxonomyOptions]
+  );
 
   const logAudit = useCallback(
     async (
@@ -409,6 +454,7 @@ export function AdminView() {
                 ["packages", "Package Builder"],
                 ["solutions_builder", "Solutions Builder"],
                 ["task_group_builder", "Task-Group Builder"],
+                ["tier_taxonomy_lists", "Phase, Category & Tactic Lists"],
                 ["implementer_mapping", "Implementer-Pricing Mapping"],
                 ["pricing_calculator", "Pricing Calculator"],
                 ["glossary", "Data Glossary"],
@@ -439,7 +485,8 @@ export function AdminView() {
             tab !== "implementer_mapping" &&
             tab !== "pricing_calculator" &&
             tab !== "active_users" &&
-            tab !== "task_group_builder" && (
+            tab !== "task_group_builder" &&
+            tab !== "tier_taxonomy_lists" && (
             <div
               className="admin-subtabs"
               role="tablist"
@@ -556,6 +603,7 @@ export function AdminView() {
             <SolutionsBuilderPanel
               subTab={adminSubTab === "create" ? "create" : "update"}
               tierPricingMathConfig={tierPricingMathConfig}
+              tierTaxonomyOptions={tierTaxonomySelectOptions}
               solutions={solutions}
               tiers={tiers}
               tasks={tasks}
@@ -585,6 +633,28 @@ export function AdminView() {
                 h2,
                 muted,
               }}
+            />
+          )}
+          {tab === "tier_taxonomy_lists" && (
+            <TierTaxonomyListsPanel
+              rows={tierTaxonomyOptions}
+              tiers={tiers}
+              loadNote={tierTaxonomyLoadNote}
+              onRefresh={refreshAfterSave}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              panel={panel}
+              h2={h2}
+              muted={muted}
+              formGrid={formGrid}
+              lbl={lbl}
+              input={input}
+              btn={btn}
+              btnPrimary={btnPrimary}
+              btnDangerSm={btnDangerSm}
+              tbl={tbl}
+              th={th}
+              td={td}
             />
           )}
           {tab === "task_group_builder" && (
@@ -753,7 +823,13 @@ function normBool(v: unknown, fallback = false): boolean {
   return fallback;
 }
 
-function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig): BulkPreview {
+type TierTaxonomySelectLists = { phase: string[]; category: string[]; tactic: string[] };
+
+function buildBulkPreview(
+  doc: BulkImportDoc,
+  mathConfig: TierPricingMathConfig,
+  taxonomy: TierTaxonomySelectLists
+): BulkPreview {
   const today = todayISODate();
   const packages: Package[] = (doc.packages ?? [])
     .map((r) => {
@@ -790,7 +866,9 @@ function buildBulkPreview(doc: BulkImportDoc, mathConfig: TierPricingMathConfig)
         solution_tier_id: id,
         solution_id: solutionId,
         solution_tier_name: normStr(r.solution_tier_name) || id,
-        solution_tier_category: normalizeTierCategory(r.solution_tier_category),
+        solution_tier_phase: normalizeTierPhase(r.solution_tier_phase, taxonomy.phase),
+        solution_tier_category: normalizeTierTaxonomyLabel(r.solution_tier_category, taxonomy.category),
+        solution_tier_tactic: normalizeTierTactic(r.solution_tier_tactic, taxonomy.tactic),
         solution_tier_owner: normOptStr(r.solution_tier_owner),
         solution_tier_overview: normOptStr(r.solution_tier_overview),
         solution_tier_overview_link: normOptStr(r.solution_tier_overview_link),
@@ -1304,7 +1382,9 @@ async function downloadBulkTemplateWorkbook(data: {
       "solution_tier_id",
       "solution_id",
       "solution_tier_name",
+      "solution_tier_phase",
       "solution_tier_category",
+      "solution_tier_tactic",
       "solution_tier_owner",
       "solution_tier_overview",
       "solution_tier_overview_link",
@@ -1487,8 +1567,16 @@ const BULK_GLOSSARY: Record<
         description: "Tier name users see (for example: Basic, Standard, Advanced).",
       },
       {
+        name: "solution_tier_phase",
+        description: "Tier phase (admin-managed list; for example: Foundational, Growth Engine, Other).",
+      },
+      {
         name: "solution_tier_category",
-        description: `Tier category — one of: ${TIER_CATEGORY_OPTIONS.join("; ")}.`,
+        description: `Tier category (admin-managed list; defaults include: ${TIER_CATEGORY_OPTIONS.join("; ")}).`,
+      },
+      {
+        name: "solution_tier_tactic",
+        description: "Tier tactic (admin-managed list; optional).",
       },
       { name: "solution_tier_owner", description: "Owner of this tier (person or role)." },
       { name: "solution_tier_overview", description: "Overview text shown in Agency mode." },
@@ -1846,6 +1934,7 @@ export function BulkImportPanel({
   pricing,
   packageTiers,
   tierPricingMathConfig,
+  tierTaxonomySelectOptions,
   onSaved,
   setOpErr,
   setOpOk,
@@ -1857,6 +1946,7 @@ export function BulkImportPanel({
   pricing: SolutionTierPricing[];
   packageTiers: PackageSolutionTier[];
   tierPricingMathConfig: TierPricingMathConfig;
+  tierTaxonomySelectOptions: TierTaxonomySelectLists;
   onSaved: () => Promise<void>;
   setOpErr: (s: string | null) => void;
   setOpOk: (s: string | null) => void;
@@ -1879,7 +1969,7 @@ export function BulkImportPanel({
       return;
     }
     try {
-      const p = buildBulkPreview(uploadedDoc, tierPricingMathConfig);
+      const p = buildBulkPreview(uploadedDoc, tierPricingMathConfig, tierTaxonomySelectOptions);
       const errs = validateBulkPreview(p, { packages, solutions, tiers });
       setPreview(p);
       setValidErrs(errs);

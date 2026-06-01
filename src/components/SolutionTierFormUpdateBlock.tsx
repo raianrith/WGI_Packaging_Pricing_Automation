@@ -2,6 +2,8 @@ import type { CSSProperties, ReactNode } from "react";
 import type { PackageTierOverrideKey } from "../lib/packageTierOverrides";
 import { MarkdownTextarea } from "./MarkdownTextarea";
 import { TierCategorySelect } from "./TierCategorySelect";
+import { TierPhaseSelect } from "./TierPhaseSelect";
+import { TierTacticSelect } from "./TierTacticSelect";
 
 const formSubHeading: CSSProperties = {
   margin: "1rem 0 0.45rem",
@@ -25,10 +27,18 @@ type Props = {
   onChange: (key: PackageTierOverrideKey, value: string) => void;
   autofillBlock: ReactNode;
   styles: SolutionTierFormUpdateBlockStyles;
+  taxonomyOptions?: { phase: string[]; category: string[]; tactic: string[] };
 };
 
 /** Same field layout as Solutions Builder → Update → tier form (vault tier editor). Used for package-tier overrides. */
-export function SolutionTierFormUpdateBlock({ tierIdReadonly, values, onChange, autofillBlock, styles: s }: Props) {
+export function SolutionTierFormUpdateBlock({
+  tierIdReadonly,
+  values,
+  onChange,
+  autofillBlock,
+  styles: s,
+  taxonomyOptions,
+}: Props) {
   const { lbl, input, textarea, formGrid } = s;
   const v = (k: PackageTierOverrideKey) => values[k] ?? "";
 
@@ -43,11 +53,30 @@ export function SolutionTierFormUpdateBlock({ tierIdReadonly, values, onChange, 
         <input style={input} value={v("solution_tier_name")} onChange={(e) => onChange("solution_tier_name", e.target.value)} />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Tier phase</span>
+        <TierPhaseSelect
+          inputStyle={input}
+          value={v("solution_tier_phase")}
+          onChange={(val) => onChange("solution_tier_phase", val)}
+          options={taxonomyOptions?.phase}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <span className="admin-field-caption">Tier category</span>
         <TierCategorySelect
           inputStyle={input}
           value={v("solution_tier_category")}
           onChange={(val) => onChange("solution_tier_category", val)}
+          options={taxonomyOptions?.category}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Tier tactic</span>
+        <TierTacticSelect
+          inputStyle={input}
+          value={v("solution_tier_tactic")}
+          onChange={(val) => onChange("solution_tier_tactic", val)}
+          options={taxonomyOptions?.tactic}
         />
       </label>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>

@@ -67,11 +67,23 @@ export type Solution = {
 /** One dated example pair for structured tier resources (`solution_tier_resource_examples`). */
 export type TierResourceExampleRow = { example: string; date: string };
 
+export type TierTaxonomyKind = "phase" | "category" | "tactic";
+
+export type SolutionTierTaxonomyOptionRow = {
+  id: string;
+  kind: TierTaxonomyKind;
+  label: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type SolutionTier = {
   solution_tier_id: string;
   solution_id: string;
   solution_tier_name: string;
+  solution_tier_phase: string | null;
   solution_tier_category: string | null;
+  solution_tier_tactic: string | null;
   solution_tier_owner: string | null;
   solution_tier_overview: string | null;
   solution_tier_overview_link: string | null;
@@ -101,7 +113,9 @@ export type PackageTierOverrides = Partial<
   Pick<
     SolutionTier,
     | "solution_tier_name"
+    | "solution_tier_phase"
     | "solution_tier_category"
+    | "solution_tier_tactic"
     | "solution_tier_owner"
     | "solution_tier_overview"
     | "solution_tier_overview_link"

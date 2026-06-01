@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
@@ -14,10 +14,19 @@ import {
   type RoadmapLineScope,
   type RoadmapPhase,
   type RoadmapScenario,
+  sortedPhasesForScenario,
   scratchEffectiveHoursBreakdown,
   tryParseRoadmapHours,
   tryParseUsdRough,
 } from "../lib/roadmapModel";
+import type { CatalogTierTableRow } from "../components/CatalogTierTable";
+import { ProposalBuilderModeTabs, type ProposalBuilderMode } from "../components/proposal-builder/ProposalBuilderModeTabs";
+import { ProposalSavedProposalsPanel } from "../components/proposal-builder/ProposalSavedProposalsPanel";
+import { ProposalBuilderSteps, type ProposalBuilderStep } from "../components/proposal-builder/ProposalBuilderSteps";
+import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav";
+import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOrganizePanel";
+import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
+import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
@@ -33,6 +42,14 @@ import {
   normalizeTierPricingMathConfig,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
+import { downloadProposalPdf } from "../lib/proposalPdfExport";
+import {
+  cloneProposalStructure,
+  parseProposalSnapshot,
+  type RoadmapHorizon,
+  type RoadmapProposalSnapshot,
+} from "../lib/roadmapProposalSnapshot";
+import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
 import type {
   ImplementerHourGroupRow,
   Package,
@@ -75,61 +92,6 @@ type CatalogCtx = {
   tierPricingMathConfig: TierPricingMathConfig;
 };
 
-type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
-
-type RoadmapProposalSnapshot = {
-  version: 1;
-  clientLabel: string;
-  roadmapTitle: string;
-  horizon: RoadmapHorizon;
-  clientBudget: string;
-  scenarios: RoadmapScenario[];
-  phases: RoadmapPhase[];
-  cards: RoadmapCard[];
-};
-
-function isRoadmapHorizon(value: unknown): value is RoadmapHorizon {
-  return value === "3" || value === "4" || value === "6" || value === "12" || value === "custom";
-}
-
-function asProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalSnapshot | null {
-  if (!row.proposal_state || typeof row.proposal_state !== "object") return null;
-  const raw = row.proposal_state as Partial<RoadmapProposalSnapshot>;
-  if (!Array.isArray(raw.scenarios) || !Array.isArray(raw.phases) || !Array.isArray(raw.cards)) return null;
-  return {
-    version: 1,
-    clientLabel: typeof raw.clientLabel === "string" ? raw.clientLabel : row.client_label,
-    roadmapTitle: typeof raw.roadmapTitle === "string" ? raw.roadmapTitle : row.roadmap_title,
-    horizon: isRoadmapHorizon(raw.horizon) ? raw.horizon : "6",
-    clientBudget: typeof raw.clientBudget === "string" ? raw.clientBudget : row.client_budget ?? "",
-    scenarios: raw.scenarios as RoadmapScenario[],
-    phases: raw.phases as RoadmapPhase[],
-    cards: raw.cards as RoadmapCard[],
-  };
-}
-
-function formatSavedProposalDate(value: string | null | undefined): string {
-  if (!value) return "Saved";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "Saved";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(d);
-}
-
-function clientInitials(label: string): string {
-  const words = label
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
-}
-
 function formatUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(Number(n))) return "—";
   return new Intl.NumberFormat(undefined, {
@@ -139,13 +101,18 @@ function formatUsd(n: number | null | undefined): string {
   }).format(Number(n));
 }
 
-function sellPriceLine(pricing: SolutionTierPricing | null): string {
-  if (!pricing) return "—";
+function sellPriceNumber(pricing: SolutionTierPricing | null): number | null {
+  if (!pricing) return null;
   const primary = pricing.sell_price;
+  if (primary != null && Number.isFinite(Number(primary))) return Number(primary);
   const fallback = pricing.standalone_sell_price;
-  if (primary != null && Number.isFinite(Number(primary))) return formatUsd(primary);
-  if (fallback != null && Number.isFinite(Number(fallback))) return formatUsd(fallback);
-  return "—";
+  if (fallback != null && Number.isFinite(Number(fallback))) return Number(fallback);
+  return null;
+}
+
+function sellPriceLine(pricing: SolutionTierPricing | null): string {
+  const n = sellPriceNumber(pricing);
+  return n != null ? formatUsd(n) : "—";
 }
 
 function tierHoursLine(pricing: SolutionTierPricing | null): string {
@@ -567,7 +534,7 @@ function descPreview(text: string, max = 200): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
-const DEFAULT_SCENARIOS = ["What-if A — lean"];
+const DEFAULT_SCENARIOS = ["Scenario 1"];
 
 function createInitialScenariosAndPhases(): { scenarios: RoadmapScenario[]; phases: RoadmapPhase[] } {
   const scenarios: RoadmapScenario[] = DEFAULT_SCENARIOS.map((title) => ({
@@ -586,10 +553,6 @@ function createInitialScenariosAndPhases(): { scenarios: RoadmapScenario[]; phas
 
 const INITIAL_SCENARIOS_AND_PHASES = createInitialScenariosAndPhases();
 
-function sortedPhasesForScenario(phases: RoadmapPhase[], scenarioId: string): RoadmapPhase[] {
-  return phases.filter((p) => p.scenarioId === scenarioId).sort((a, b) => a.sortOrder - b.sortOrder);
-}
-
 function exportScopeSuffix(scope: RoadmapLineScope): string {
   if (scope === "optional") return " · _optional add-on_";
   if (scope === "deferred") return " · _deferred (not in core proposal)_";
@@ -605,12 +568,6 @@ function sortId(a: string, b: string): number {
     if (na !== nb) return na - nb;
   }
   return a.localeCompare(b);
-}
-
-function matches(hay: string, q: string): boolean {
-  const t = q.trim().toLowerCase();
-  if (!t) return true;
-  return hay.toLowerCase().includes(t);
 }
 
 function kindLabel(k: RoadmapCardKind): string {
@@ -641,201 +598,6 @@ function numOrDash(n: number | null | undefined): string {
 function formatHoursShort(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return String(Number(n.toFixed(2)));
-}
-
-type RoadmapCardBlockProps = {
-  c: RoadmapCard;
-  ctx: CatalogCtx;
-  phaseChoices: RoadmapPhase[];
-  onPatch: (key: string, patch: Partial<RoadmapCard>) => void;
-  onRemove: (key: string) => void;
-  onDetails: (c: RoadmapCard) => void;
-  onScratchCustomize: (c: RoadmapCard) => void;
-};
-
-function RoadmapCardBlock({
-  c,
-  ctx,
-  phaseChoices,
-  onPatch,
-  onRemove,
-  onDetails,
-  onScratchCustomize,
-}: RoadmapCardBlockProps) {
-  const effPrice = effectivePriceStr(c, ctx, computeScratchSellPrice);
-  const effHours = effectiveHoursStr(c);
-  return (
-    <li
-      className={`roadmap-card${c.scope !== "included" ? " roadmap-card--scope-secondary" : ""}`}
-    >
-      <div className="roadmap-card__toolbar">
-        <div className="roadmap-card__toolbar-meta">
-          <span className={`roadmap-card__kind roadmap-card__kind--${c.kind}`}>{kindLabel(c.kind)}</span>
-          <p className="roadmap-card__ref">
-            <code>{c.refId}</code>
-          </p>
-        </div>
-        <div className="roadmap-card__toolbar-controls">
-          <label className="roadmap-card__inline-field">
-            <span className="roadmap-card__cap">Scope</span>
-            <select
-              className="roadmap-input roadmap-select roadmap-select--sm"
-              value={c.scope}
-              onChange={(e) => onPatch(c.key, { scope: e.target.value as RoadmapLineScope })}
-              aria-label="Line scope"
-            >
-              <option value="included">Included</option>
-              <option value="optional">Optional</option>
-              <option value="deferred">Deferred</option>
-            </select>
-          </label>
-          <label className="roadmap-card__inline-field">
-            <span className="roadmap-card__cap">Phase</span>
-            <select
-              className="roadmap-input roadmap-select roadmap-select--sm"
-              value={c.phaseId}
-              onChange={(e) => onPatch(c.key, { phaseId: e.target.value })}
-              aria-label="Move to phase"
-            >
-              {phaseChoices.map((ph) => (
-                <option key={ph.id} value={ph.id}>
-                  {ph.title.trim() || "Phase"}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-      <label className="roadmap-card__field-label">
-        <span className="roadmap-card__cap">Title</span>
-        <input
-          className="roadmap-input roadmap-card__headline"
-          value={c.headline}
-          onChange={(e) => onPatch(c.key, { headline: e.target.value })}
-        />
-      </label>
-      <div className="roadmap-card__snapshot">
-        <div className="roadmap-card__snapshot-item">
-          <span className="roadmap-card__snapshot-label">Effective hours</span>
-          <strong>{effHours ? `${effHours} h` : "—"}</strong>
-        </div>
-        <div className="roadmap-card__snapshot-item">
-          <span className="roadmap-card__snapshot-label">Effective price</span>
-          <strong>{effPrice || "—"}</strong>
-        </div>
-      </div>
-      <div className="roadmap-card__statgrid">
-        <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Catalog hours</span>
-          <input
-            className="roadmap-input"
-            value={c.hours}
-            onChange={(e) => onPatch(c.key, { hours: e.target.value })}
-            placeholder={c.kind === "custom_tier" ? "e.g. 66 or 66 h" : "e.g. 120 h"}
-          />
-        </label>
-        <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Proposal hours</span>
-          <input
-            className="roadmap-input"
-            value={c.hoursOverride ?? ""}
-            placeholder="optional"
-            onChange={(e) => onPatch(c.key, { hoursOverride: e.target.value.trim() ? e.target.value : null })}
-          />
-        </label>
-      </div>
-      <div className="roadmap-card__statgrid">
-        <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">{c.kind === "custom_tier" ? "Computed price" : "Catalog price"}</span>
-          {c.kind === "custom_tier" ? (
-            <div
-              className="roadmap-card__price-readonly"
-              title="Override below, or edit multipliers in Details / Customize"
-            >
-              {effPrice}
-            </div>
-          ) : (
-            <input
-              className="roadmap-input"
-              value={c.price}
-              onChange={(e) => onPatch(c.key, { price: e.target.value })}
-              placeholder="e.g. $45,000"
-            />
-          )}
-        </label>
-        <label className="roadmap-card__field-label">
-          <span className="roadmap-card__cap">Proposal price</span>
-          <input
-            className="roadmap-input"
-            value={c.priceOverride ?? ""}
-            placeholder="optional $"
-            onChange={(e) => onPatch(c.key, { priceOverride: e.target.value.trim() ? e.target.value : null })}
-          />
-        </label>
-      </div>
-      {c.kind === "custom_tier" ? (() => {
-        const br = scratchEffectiveHoursBreakdown(c, ctx);
-        const nt = c.scratchAttachedTaskIds?.length ?? 0;
-        const ng = c.scratchAttachedTaskGroupIds?.length ?? 0;
-        if (!br && nt === 0 && ng === 0) return null;
-        return (
-          <div className="roadmap-scratch-hours" role="status" aria-label="Scratch tier hours used for pricing">
-            {br ? (
-              <>
-                <div className="roadmap-scratch-hours__head">
-                  <span className="roadmap-scratch-hours__head-label">Pricing hours</span>
-                  <span className="roadmap-scratch-hours__head-value">{formatHoursShort(br.total)} h</span>
-                </div>
-                {br.catalog > 0 ? (
-                  <div className="roadmap-scratch-hours__breakdown">
-                    <div className="roadmap-scratch-hours__row">
-                      <span className="roadmap-scratch-hours__k">From card</span>
-                      <span className="roadmap-scratch-hours__v">{formatHoursShort(br.manual)} h</span>
-                    </div>
-                    <div className="roadmap-scratch-hours__row">
-                      <span className="roadmap-scratch-hours__k">From catalog</span>
-                      <span className="roadmap-scratch-hours__v">{formatHoursShort(br.catalog)} h</span>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="roadmap-scratch-hours__note">
-                Items attached — add hours on the card or use catalog lines with hours so pricing can total them.
-              </p>
-            )}
-            {(nt > 0 || ng > 0) && (
-              <div className="roadmap-scratch-hours__attachments">
-                {nt > 0 ? (
-                  <span className="roadmap-scratch-hours__pill">
-                    {nt} task{nt === 1 ? "" : "s"}
-                  </span>
-                ) : null}
-                {ng > 0 ? (
-                  <span className="roadmap-scratch-hours__pill">
-                    {ng} group{ng === 1 ? "" : "s"}
-                  </span>
-                ) : null}
-              </div>
-            )}
-          </div>
-        );
-      })() : null}
-      <div className="roadmap-card__foot">
-        <button type="button" className="roadmap-btn roadmap-btn--sm" onClick={() => onDetails(c)}>
-          Details
-        </button>
-        {c.kind === "custom_tier" ? (
-          <button type="button" className="roadmap-btn roadmap-btn--sm" onClick={() => onScratchCustomize(c)}>
-            Customize
-          </button>
-        ) : null}
-        <button type="button" className="roadmap-btn roadmap-btn--danger-sm" onClick={() => onRemove(c.key)}>
-          Remove
-        </button>
-      </div>
-    </li>
-  );
 }
 
 function tierCatalogDetailBlocks(t: SolutionTier, pr: SolutionTierPricing | null, solutionName: string, pkgLine: string): ReactNode {
@@ -1089,14 +851,13 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
 export function RoadmapPlanningView() {
   const { user } = useAuth();
   const { toastError, toastNote, toastSuccess } = useToast();
-  const searchId = useId();
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [catalogReloading, setCatalogReloading] = useState(false);
   const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
   const [savedProposalsLoading, setSavedProposalsLoading] = useState(false);
   const [savingProposal, setSavingProposal] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
-  const [selectedSavedClient, setSelectedSavedClient] = useState<string | null>(null);
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
   const savedProposalErrSeen = useRef<string | null>(null);
@@ -1107,11 +868,9 @@ export function RoadmapPlanningView() {
   const [scenarios, setScenarios] = useState<RoadmapScenario[]>(() => INITIAL_SCENARIOS_AND_PHASES.scenarios);
   const [phases, setPhases] = useState<RoadmapPhase[]>(() => INITIAL_SCENARIOS_AND_PHASES.phases);
   const [cards, setCards] = useState<RoadmapCard[]>([]);
-  const [paletteSearch, setPaletteSearch] = useState("");
   const [targetScenarioId, setTargetScenarioId] = useState<string>(
     () => INITIAL_SCENARIOS_AND_PHASES.scenarios[0]!.id
   );
-  const [paletteTab, setPaletteTab] = useState<"packages" | "tiers">("tiers");
   const [detailsModalKey, setDetailsModalKey] = useState<string | null>(null);
   /** Live edit buffer for scratch tier in the details modal */
   const [scratchDraft, setScratchDraft] = useState<RoadmapCard | null>(null);
@@ -1121,6 +880,9 @@ export function RoadmapPlanningView() {
   /** Remount catalog pickers so the dropdown resets after each pick (including duplicate picks). */
   const [scratchTaskPickTick, setScratchTaskPickTick] = useState(0);
   const [scratchGroupPickTick, setScratchGroupPickTick] = useState(0);
+  const [builderStep, setBuilderStep] = useState<ProposalBuilderStep>("setup");
+  const [builderMode, setBuilderMode] = useState<ProposalBuilderMode>("saved");
+  const [targetPhaseId, setTargetPhaseId] = useState("");
 
   const load = useCallback(async (preserveCurrentProposal = false) => {
     const keyErr = browserKeyConfigurationError();
@@ -1235,17 +997,6 @@ export function RoadmapPlanningView() {
     void loadSavedProposals();
   }, [loadSavedProposals]);
 
-  useEffect(() => {
-    const clients = [...new Set(savedProposals.map((row) => row.client_label.trim() || "Unlabeled client"))];
-    if (clients.length === 0) {
-      setSelectedSavedClient(null);
-      return;
-    }
-    if (!selectedSavedClient || !clients.includes(selectedSavedClient)) {
-      setSelectedSavedClient(clients[0]!);
-    }
-  }, [savedProposals, selectedSavedClient]);
-
   const currentProposalSnapshot = useCallback(
     (): RoadmapProposalSnapshot => ({
       version: 1,
@@ -1335,12 +1086,37 @@ export function RoadmapPlanningView() {
     setDetailsModalKey(null);
     setScratchDraft(null);
     setScratchModalFocusCompose(false);
+    setBuilderMode("create");
+    setBuilderStep("setup");
     toastNote("Started a new proposal draft.");
   }, [toastNote]);
 
+  const handleBuilderModeChange = useCallback(
+    (mode: ProposalBuilderMode) => {
+      if (mode === "create") {
+        const hasWork =
+          activeProposalId != null ||
+          cards.length > 0 ||
+          clientLabel.trim() !== "" ||
+          roadmapTitle.trim() !== "" ||
+          clientBudget.trim() !== "";
+        if (hasWork) {
+          const ok = window.confirm(
+            "Start a new proposal? Your current draft will be cleared unless you saved it."
+          );
+          if (!ok) return;
+        }
+        startNewProposal();
+        return;
+      }
+      setBuilderMode("saved");
+    },
+    [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, startNewProposal]
+  );
+
   const loadSavedProposalIntoBoard = useCallback(
     (row: RoadmapProposalRow) => {
-      const snapshot = asProposalSnapshot(row);
+      const snapshot = parseProposalSnapshot(row);
       if (!snapshot) {
         toastError("This saved proposal could not be read.");
         return;
@@ -1368,9 +1144,40 @@ export function RoadmapPlanningView() {
       setDetailsModalKey(null);
       setScratchDraft(null);
       setScratchModalFocusCompose(false);
+      setBuilderMode("saved");
+      setBuilderStep("review");
       toastSuccess(`Opened "${row.roadmap_title}".`);
     },
     [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, toastError, toastSuccess]
+  );
+
+  const copyStructureFromSavedProposal = useCallback(
+    (row: RoadmapProposalRow) => {
+      const snapshot = parseProposalSnapshot(row);
+      if (!snapshot || snapshot.scenarios.length === 0) {
+        toastError("This saved proposal has no scenarios to copy.");
+        return;
+      }
+      if (cards.length > 0) {
+        const ok = window.confirm(
+          `Replace your current scenarios, phases, and line items with "${row.roadmap_title}"? Client and budget on step 1 stay as they are.`
+        );
+        if (!ok) return;
+      }
+      const fallback = createInitialScenariosAndPhases();
+      const cloned = cloneProposalStructure(snapshot);
+      const nextScenarios = cloned.scenarios.length > 0 ? cloned.scenarios : fallback.scenarios;
+      const nextPhases = cloned.phases.length > 0 ? cloned.phases : fallback.phases;
+      setScenarios(nextScenarios);
+      setPhases(nextPhases);
+      setCards(cloned.cards);
+      const firstScenarioId = nextScenarios[0]?.id ?? "";
+      setTargetScenarioId(firstScenarioId);
+      const firstPhase = sortedPhasesForScenario(nextPhases, firstScenarioId)[0];
+      setTargetPhaseId(firstPhase?.id ?? "");
+      toastSuccess(`Copied structure from "${row.roadmap_title}".`);
+    },
+    [cards.length, toastError, toastSuccess]
   );
 
   const deleteSavedProposal = useCallback(
@@ -1495,13 +1302,6 @@ export function RoadmapPlanningView() {
     }
   }, []);
 
-  const openScratchCustomize = useCallback(
-    (c: RoadmapCard) => {
-      openDetailsModal(c, { focusCompose: true });
-    },
-    [openDetailsModal]
-  );
-
   const closeDetailsModal = useCallback(() => {
     setDetailsModalKey(null);
     setScratchDraft(null);
@@ -1541,17 +1341,102 @@ export function RoadmapPlanningView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [detailsModalKey, closeDetailsModal]);
 
-  const clearBoard = useCallback(() => {
-    setCards([]);
+  const clearScenarioItems = useCallback((scenarioId: string) => {
+    setCards((prev) => prev.filter((c) => c.scenarioId !== scenarioId));
     setDetailsModalKey(null);
     setScratchDraft(null);
     setScratchModalFocusCompose(false);
   }, []);
 
-  const targetDefaultPhaseId = useMemo(() => {
+  useEffect(() => {
     const list = sortedPhasesForScenario(phases, targetScenarioId);
-    return list[0]?.id ?? "";
+    setTargetPhaseId((prev) => (prev && list.some((p) => p.id === prev) ? prev : list[0]?.id ?? ""));
   }, [phases, targetScenarioId]);
+
+  const catalogTierTableRows = useMemo((): CatalogTierTableRow[] => {
+    if (!catalogCtx) return [];
+    const { tiers, packages, packageTiers, solutions, pricingMap } = catalogCtx;
+    const taskHoursByTier = new Map<string, number>();
+    for (const k of catalogCtx.tasks) {
+      if (k.task_time == null || !Number.isFinite(Number(k.task_time))) continue;
+      const tid = k.solution_tier_id;
+      taskHoursByTier.set(tid, (taskHoursByTier.get(tid) ?? 0) + Number(k.task_time));
+    }
+    return [...tiers]
+      .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))
+      .map((tier) => {
+        const pr = pricingMap.get(tier.solution_tier_id) ?? null;
+        const link = packageTiers.find((r) => r.solution_tier_id === tier.solution_tier_id);
+        const pname = link
+          ? packages.find((p) => p.package_id === link.package_id)?.package_name?.trim() ||
+            link.package_id ||
+            "Standalone"
+          : "Standalone";
+        const solution = solutions.find((s) => s.solution_id === tier.solution_id);
+        const vaultHours =
+          pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
+        const sumTasks = taskHoursByTier.get(tier.solution_tier_id) ?? null;
+        const hoursNum = vaultHours ?? (sumTasks != null && sumTasks > 0 ? sumTasks : null);
+        const priceNum = sellPriceNumber(pr);
+        return {
+          tierId: tier.solution_tier_id,
+          solutionId: tier.solution_id,
+          pname,
+          tierName: tier.solution_tier_name,
+          solutionName: solution?.solution_name ?? tier.solution_id,
+          phaseRaw: tier.solution_tier_phase?.trim() ?? "",
+          categoryRaw: tier.solution_tier_category?.trim() ?? "",
+          tacticRaw: tier.solution_tier_tactic?.trim() ?? "",
+          priceNum,
+          priceDisplay: sellPriceLine(pr),
+          hoursNum,
+          hoursDisplay: hoursNum != null && Number.isFinite(hoursNum) ? String(hoursNum) : "—",
+          taxable: pr?.taxable ?? false,
+          taxableSort: pr?.taxable ? 1 : 0,
+          taxableLabel: pr?.taxable ? "Taxable" : "Non-taxable",
+          tagsRaw: pr?.tags?.trim() ?? "",
+        };
+      });
+  }, [catalogCtx]);
+
+  const setupComplete = roadmapTitle.trim().length > 0;
+  const canAddToTarget = !!targetPhaseId;
+
+  const catalogAddedLines = useMemo(() => {
+    if (!catalogCtx) return [];
+    const phaseTitleById = new Map(phases.map((p) => [p.id, p.title.trim() || "Phase"]));
+    return cards
+      .filter((c) => c.scenarioId === targetScenarioId)
+      .map((c) => ({
+        key: c.key,
+        headline: c.headline,
+        phaseTitle: phaseTitleById.get(c.phaseId) ?? "Phase",
+        priceDisplay: effectivePriceStr(c, catalogCtx, computeScratchSellPrice) || "—",
+        scope: c.scope,
+        isTargetPhase: c.phaseId === targetPhaseId,
+        kind: c.kind,
+      }))
+      .sort((a, b) => {
+        if (a.isTargetPhase !== b.isTargetPhase) return a.isTargetPhase ? -1 : 1;
+        return a.headline.localeCompare(b.headline, undefined, { sensitivity: "base" });
+      });
+  }, [cards, catalogCtx, phases, targetScenarioId, targetPhaseId]);
+
+  const addedTierRefIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of cards) {
+      if (c.scenarioId === targetScenarioId && c.kind === "tier") ids.add(c.refId);
+    }
+    return ids;
+  }, [cards, targetScenarioId]);
+
+  const addedPackageRefIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of cards) {
+      if (c.scenarioId === targetScenarioId && c.kind === "package") ids.add(c.refId);
+    }
+    return ids;
+  }, [cards, targetScenarioId]);
 
   const addScenario = useCallback(() => {
     const id = newRoadmapCardKey();
@@ -1615,6 +1500,29 @@ export function RoadmapPlanningView() {
       ];
     });
   }, []);
+
+  const deletePhaseById = useCallback(
+    (phaseId: string) => {
+      const phase = phases.find((p) => p.id === phaseId);
+      if (!phase) return;
+      const forScenario = phases.filter((p) => p.scenarioId === phase.scenarioId);
+      if (forScenario.length <= 1) return;
+      const inPhase = cards.filter((c) => c.phaseId === phaseId);
+      if (inPhase.length > 0) {
+        const ok = window.confirm(
+          `Remove "${phase.title.trim() || "Phase"}" and ${inPhase.length} line item${inPhase.length === 1 ? "" : "s"} in it?`
+        );
+        if (!ok) return;
+      }
+      setPhases((prev) => prev.filter((p) => p.id !== phaseId));
+      setCards((prev) => prev.filter((c) => c.phaseId !== phaseId));
+      if (targetPhaseId === phaseId) {
+        const remaining = forScenario.filter((p) => p.id !== phaseId).sort((a, b) => a.sortOrder - b.sortOrder);
+        setTargetPhaseId(remaining[0]?.id ?? "");
+      }
+    },
+    [phases, cards, targetPhaseId]
+  );
 
   const budgetNumber = useMemo(() => parseMoneyInput(clientBudget), [clientBudget]);
 
@@ -1750,7 +1658,43 @@ export function RoadmapPlanningView() {
     return lines.join("\n");
   }, [cards, clientBudget, clientLabel, budgetNumber, horizon, scenarios, phases, roadmapTitle, catalogCtx]);
 
-  const q = paletteSearch;
+  const downloadPdf = useCallback(() => {
+    if (!catalogCtx) return;
+    setPdfGenerating(true);
+    try {
+      downloadProposalPdf({
+        roadmapTitle,
+        clientLabel,
+        horizonMonths: horizon === "custom" ? "custom" : Number(horizon),
+        clientBudgetRaw: clientBudget,
+        budgetNumber,
+        scenarios,
+        phases,
+        cards,
+        ctx: catalogCtx,
+        computeScratchSellPrice,
+        formatHoursShort,
+      });
+      toastSuccess("Proposal PDF downloaded.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not generate PDF.";
+      toastError(msg);
+    } finally {
+      setPdfGenerating(false);
+    }
+  }, [
+    cards,
+    catalogCtx,
+    clientBudget,
+    clientLabel,
+    budgetNumber,
+    horizon,
+    phases,
+    roadmapTitle,
+    scenarios,
+    toastError,
+    toastSuccess,
+  ]);
 
   const scenarioRollups = useMemo(() => {
     return scenarios.map((scenario) => {
@@ -1798,27 +1742,10 @@ export function RoadmapPlanningView() {
     });
   }, [cards, scenarios, catalogCtx]);
 
-  const filteredPackages = useMemo(() => {
+  const catalogPackages = useMemo(() => {
     if (!catalogCtx) return [];
-    return catalogCtx.packages.filter((p) => {
-      const { hours, price } = packageHoursPriceForCatalog(p, catalogCtx);
-      return matches(`${p.package_id} ${p.package_name} ${hours} ${price}`, q);
-    });
-  }, [catalogCtx, q]);
-
-  const filteredTiers = useMemo(() => {
-    if (!catalogCtx) return [];
-    return catalogCtx.tiers.filter((t) => {
-      const sol = catalogCtx.solutions.find((s) => s.solution_id === t.solution_id);
-      const solPart = sol ? `${sol.solution_name} ` : "";
-      const pr = catalogCtx.pricingMap.get(t.solution_tier_id) ?? null;
-      const pitch = tierPitchText(t);
-      return matches(
-        `${t.solution_tier_id} ${t.solution_tier_name} ${solPart}${pitch} ${tierHoursLine(pr)} ${sellPriceLine(pr)}`,
-        q
-      );
-    });
-  }, [catalogCtx, q]);
+    return [...catalogCtx.packages].sort((a, b) => sortId(a.package_id, b.package_id));
+  }, [catalogCtx]);
 
   if (state.status === "error") {
     return (
@@ -1855,711 +1782,275 @@ export function RoadmapPlanningView() {
 
   const ctx = catalogCtx;
   const detailsCard = detailsModalKey ? cards.find((c) => c.key === detailsModalKey) ?? null : null;
-  const palettePreviewScenarioId = scenarios[0]?.id ?? "";
-  const palettePreviewPhaseId = sortedPhasesForScenario(phases, palettePreviewScenarioId)[0]?.id ?? "";
-  const targetScenarioIndex = scenarios.findIndex((s) => s.id === targetScenarioId);
-  const targetScenarioRollup = targetScenarioIndex >= 0 ? (scenarioRollups[targetScenarioIndex] ?? null) : null;
+  const targetScenarioTitle =
+    scenarios.find((s) => s.id === targetScenarioId)?.title.trim() || "Scenario";
+  const targetPhaseTitle =
+    sortedPhasesForScenario(phases, targetScenarioId).find((p) => p.id === targetPhaseId)?.title.trim() || "Phase";
   const totalOptionalCount = cards.filter((c) => c.scope === "optional").length;
   const totalDeferredCount = cards.filter((c) => c.scope === "deferred").length;
-  const savedProposalGroups = savedProposals.reduce<Array<{ client: string; rows: RoadmapProposalRow[] }>>((acc, row) => {
-    const client = row.client_label.trim() || "Unlabeled client";
-    const group = acc.find((g) => g.client === client);
-    if (group) group.rows.push(row);
-    else acc.push({ client, rows: [row] });
-    return acc;
-  }, []);
-  const selectedSavedGroup =
-    savedProposalGroups.find((group) => group.client === selectedSavedClient) ?? savedProposalGroups[0] ?? null;
-  const savedProposalsPanel = (
-    <section className="roadmap-saved-sidebar" aria-label="Saved proposals">
-      <div className="roadmap-saved-sidebar__head">
-        <div>
-          <p className="roadmap-saved-sidebar__eyebrow">Client proposals</p>
-          <h2 className="roadmap-saved-sidebar__title">Saved proposals</h2>
-        </div>
-      </div>
-      <div className="roadmap-saved-sidebar__summary">
-        <span>{savedProposals.length} saved</span>
-        <button type="button" onClick={() => void loadSavedProposals()} disabled={savedProposalsLoading}>
-          {savedProposalsLoading ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-      {savedProposalsLoading ? (
-        <p className="roadmap-muted roadmap-saved-sidebar__empty">Loading saved proposals…</p>
-      ) : savedProposalGroups.length === 0 ? (
-        <p className="roadmap-muted roadmap-saved-sidebar__empty">
-          No saved proposals yet. Add a client and roadmap name, then save this draft.
-        </p>
-      ) : (
-        <div className="roadmap-saved-browser">
-          <nav className="roadmap-saved-browser__icons" aria-label="Clients">
-            {savedProposalGroups.map((group) => (
-              <button
-                key={group.client}
-                type="button"
-                className={
-                  selectedSavedGroup?.client === group.client
-                    ? "roadmap-saved-client-icon roadmap-saved-client-icon--active"
-                    : "roadmap-saved-client-icon"
-                }
-                onClick={() => setSelectedSavedClient(group.client)}
-                title={group.client}
-                aria-label={`${group.client}, ${group.rows.length} saved proposal${group.rows.length === 1 ? "" : "s"}`}
-              >
-                {clientInitials(group.client)}
-              </button>
-            ))}
-          </nav>
-          <div className="roadmap-saved-browser__main">
-            <section className="roadmap-saved-section" aria-label="Clients">
-              <div className="roadmap-saved-section__label">
-                <span>Clients</span>
-                <small>Choose a client</small>
-              </div>
-              <div className="roadmap-saved-client-list" aria-label="Client list">
-                {savedProposalGroups.map((group) => (
-                  <button
-                    key={group.client}
-                    type="button"
-                    className={
-                      selectedSavedGroup?.client === group.client
-                        ? "roadmap-saved-client-row roadmap-saved-client-row--active"
-                        : "roadmap-saved-client-row"
-                    }
-                    onClick={() => setSelectedSavedClient(group.client)}
-                  >
-                    <span className="roadmap-saved-client-row__avatar">{clientInitials(group.client)}</span>
-                    <span className="roadmap-saved-client-row__body">
-                      <span className="roadmap-saved-client-row__name">{group.client}</span>
-                      <span className="roadmap-saved-client-row__count">
-                        {group.rows.length} proposal{group.rows.length === 1 ? "" : "s"}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-            <section className="roadmap-saved-proposal-pane" aria-label="Proposal names for selected client">
-              <div className="roadmap-saved-section__label roadmap-saved-section__label--pane">
-                <span>Proposal Names</span>
-                <small>
-                  {selectedSavedGroup?.client ?? "Client"} · {selectedSavedGroup?.rows.length ?? 0} saved
-                </small>
-              </div>
-              <div className="roadmap-saved-proposal-pane__list">
-                {(selectedSavedGroup?.rows ?? []).map((row) => {
-                  const snapshot = asProposalSnapshot(row);
-                  const lineCount = snapshot?.cards.length ?? 0;
-                  const isDeleting = deletingProposalId === row.id;
-                  return (
-                    <div
-                      key={row.id}
-                      className={
-                        activeProposalId === row.id
-                          ? "roadmap-saved-card roadmap-saved-card--active"
-                          : "roadmap-saved-card"
-                      }
-                    >
-                      <button
-                        type="button"
-                        className="roadmap-saved-card__open"
-                        onClick={() => loadSavedProposalIntoBoard(row)}
-                      >
-                        <span className="roadmap-saved-card__title">{row.roadmap_title}</span>
-                        <span className="roadmap-saved-card__meta">
-                          {formatSavedProposalDate(row.updated_at)} · {lineCount} line{lineCount === 1 ? "" : "s"}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="roadmap-saved-card__delete"
-                        onClick={() => void deleteSavedProposal(row)}
-                        disabled={isDeleting}
-                        aria-label={`Delete ${row.roadmap_title}`}
-                      >
-                        {isDeleting ? "…" : "Delete"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-
   return (
     <div className="roadmap-page">
       <div className="roadmap-page__inner roadmap-page__inner--wide">
         <header className="roadmap-hero roadmap-hero--builder">
-          <div className="roadmap-hero__main">
+          <div className="roadmap-hero__main roadmap-hero__main--builder">
             <div className="roadmap-hero__copy">
-              <p className="roadmap-hero__eyebrow">Sales &amp; strategy workspace</p>
+              <p className="roadmap-hero__eyebrow">Sales &amp; Strategy Workspace</p>
               <h1 className="roadmap-hero__title">Proposal Builder</h1>
               <p className="roadmap-hero__lead">
-                Compare scenarios in columns, organize each into <strong>phases</strong>, and mark line items as{" "}
-                <strong>included</strong>, <strong>optional</strong>, or <strong>deferred</strong>. Set a{" "}
-                <strong>client budget</strong> to see each scenario against plan (under / in range / over). Use optional{" "}
-                <strong>hours and price overrides</strong> for proposal-only tweaks without changing the catalog. Save client
-                proposals for later, then export groups by phase with optional add-ons separated. Use <Link to="/admin">Admin</Link>{" "}
-                for catalog data.
+                Build client proposals step by step — set context, compare scenarios, add catalog offerings by playbook,
+                organize phases, then save and export. Catalog data lives in <Link to="/admin">Admin</Link>.
               </p>
+            </div>
+            <div className="roadmap-hero__mode-tabs">
+              <ProposalBuilderModeTabs
+                active={activeProposalId ? "saved" : builderMode}
+                onChange={handleBuilderModeChange}
+                savedCount={savedProposals.length}
+              />
             </div>
           </div>
         </header>
 
-        <section className="roadmap-panel roadmap-panel--meta">
-          <div className="roadmap-section-head">
-            <div>
-              <p className="roadmap-section-head__eyebrow">Proposal setup</p>
-              <h2 className="roadmap-section-head__title">Context and guardrails</h2>
-            </div>
+        {builderMode === "saved" && !activeProposalId ? (
+          <div className="proposal-builder-saved-wrap">
+            <ProposalSavedProposalsPanel
+              proposals={savedProposals}
+              loading={savedProposalsLoading}
+              activeProposalId={activeProposalId}
+              deletingProposalId={deletingProposalId}
+              onRefresh={() => void loadSavedProposals()}
+              onOpen={loadSavedProposalIntoBoard}
+              onDelete={(row) => void deleteSavedProposal(row)}
+            />
           </div>
-          <div className="roadmap-meta-grid">
-            <label className="roadmap-field">
-              <span className="roadmap-field__cap">Roadmap name</span>
-              <input
-                className="roadmap-input"
-                value={roadmapTitle}
-                onChange={(e) => setRoadmapTitle(e.target.value)}
-                placeholder="e.g. Acme — H2 growth roadmap"
-              />
-            </label>
-            <label className="roadmap-field">
-              <span className="roadmap-field__cap">Client / opportunity</span>
-              <input
-                className="roadmap-input"
-                value={clientLabel}
-                onChange={(e) => setClientLabel(e.target.value)}
-                placeholder="Optional label for your notes"
-              />
-            </label>
-            <label className="roadmap-field">
-              <span className="roadmap-field__cap">Client budget (USD)</span>
-              <input
-                className="roadmap-input"
-                value={clientBudget}
-                onChange={(e) => setClientBudget(e.target.value)}
-                placeholder="e.g. 150000 or 150k"
-                inputMode="decimal"
-                autoComplete="off"
-              />
-              {budgetNumber != null ? (
-                <span className="roadmap-budget-confirm">Using {formatUsd(budgetNumber)} for comparisons.</span>
-              ) : clientBudget.trim() ? (
-                <span className="roadmap-budget-warn" role="status">
-                  Could not read that as a number — try digits only, commas, or 150k.
-                </span>
-              ) : null}
-            </label>
-            <label className="roadmap-field">
-              <span className="roadmap-field__cap">Pitch horizon</span>
-              <select
-                className="roadmap-input"
-                value={horizon}
-                onChange={(e) => setHorizon(e.target.value as "3" | "4" | "6" | "12" | "custom")}
-              >
-                <option value="3">3 months</option>
-                <option value="4">4 months</option>
-                <option value="6">6 months</option>
-                <option value="12">12 months</option>
-                <option value="custom">Custom (describe in export)</option>
-              </select>
-            </label>
-          </div>
-        </section>
-
-        <aside className="roadmap-saved-dock" aria-label="Saved client proposals">
-          {savedProposalsPanel}
-        </aside>
-
-        <div className="roadmap-workspace">
-          <aside className="roadmap-library" aria-label="Catalog library">
-            <div className="roadmap-library__head">
-              <div className="roadmap-library__title-row">
-                <h2 className="roadmap-library__title">Catalog</h2>
-                <div className="roadmap-library__title-actions">
-                  <button
-                    type="button"
-                    className="roadmap-library__reload"
-                    onClick={() => void load(true)}
-                    disabled={catalogReloading}
-                  >
-                    {catalogReloading ? "Reloading…" : "Reload data"}
-                  </button>
-                  <span className="roadmap-library__count" aria-live="polite">
-                    {paletteTab === "packages" ? filteredPackages.length : filteredTiers.length}
-                  </span>
-                </div>
-              </div>
-
-              <section className="roadmap-library__target-card" aria-label="Target scenario">
-                <div className="roadmap-library__target-head">
-                  <span className="roadmap-library__target-label">Add to scenario</span>
-                  {targetScenarioRollup ? (
-                    <span className="roadmap-library__target-kpi" title="Included sell price in this scenario">
-                      {formatUsd(targetScenarioRollup.priceSubtotal)}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="roadmap-scenario-pick roadmap-scenario-pick--compact">
-                  {scenarios.map((s, i) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className={`roadmap-scenario-pill${targetScenarioId === s.id ? " is-active" : ""}`}
-                      onClick={() => setTargetScenarioId(s.id)}
-                      title={s.title}
-                    >
-                      <span className="roadmap-scenario-pill__index">{i + 1}</span>
-                      <span className="roadmap-scenario-pill__label">{s.title}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <div className="roadmap-library__toolbar">
-                <label className="roadmap-library__search">
-                  <span className="visually-hidden" id={searchId}>
-                    Search catalog
-                  </span>
-                  <input
-                    className="roadmap-input roadmap-library__search-input"
-                    aria-labelledby={searchId}
-                    value={paletteSearch}
-                    onChange={(e) => setPaletteSearch(e.target.value)}
-                    placeholder="Search name or ID…"
-                  />
-                </label>
-                <div className="roadmap-palette-tabs" role="tablist" aria-label="Catalog category">
-                  {(
-                    [
-                      ["packages", "Packages", ctx.packages.length],
-                      ["tiers", "Tiers", ctx.tiers.length],
-                    ] as const
-                  ).map(([id, lab, total]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="tab"
-                      aria-selected={paletteTab === id}
-                      className={`roadmap-palette-tab${paletteTab === id ? " is-active" : ""}`}
-                      onClick={() => setPaletteTab(id)}
-                    >
-                      {lab}
-                      <span className="roadmap-palette-tab__count">{total}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="roadmap-palette-scroll">
-              {paletteTab === "tiers" ? (
-                <div className="roadmap-scratch-row">
-                  <button
-                    type="button"
-                    className="roadmap-scratch-row__btn"
-                    disabled={!targetDefaultPhaseId}
-                    onClick={() => {
-                      if (!targetDefaultPhaseId) return;
-                      addCard(cardForScratchTier(targetScenarioId, targetDefaultPhaseId, ctx));
-                    }}
-                  >
-                    + Custom tier
-                  </button>
-                  <p
-                    className="roadmap-scratch-row__hint"
-                    title="Opens in the first phase of the selected scenario. Edit hours, tasks, and pricing in Details."
-                  >
-                    One-off tier for this scenario only.
-                  </p>
-                </div>
-              ) : null}
-              {paletteTab === "packages" &&
-                filteredPackages.map((p) => {
-                  const row = cardForPackage(p, ctx, palettePreviewScenarioId, palettePreviewPhaseId);
-                  return (
-                    <div key={p.package_id} className="roadmap-palette-row">
-                      <div className="roadmap-palette-row__body">
-                        <div className="roadmap-palette-row__head">
-                          <strong className="roadmap-palette-row__title">{p.package_name}</strong>
-                          <button
-                            type="button"
-                            className="roadmap-palette-row__add"
-                            disabled={!targetDefaultPhaseId}
-                            onClick={() => {
-                              if (!targetDefaultPhaseId) return;
-                              addCard(cardForPackage(p, ctx, targetScenarioId, targetDefaultPhaseId));
-                            }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                        <div className="roadmap-palette-row__meta">
-                          <span className="roadmap-palette-row__id" title={p.package_id}>
-                            {p.package_id}
-                          </span>
-                          <span className="roadmap-palette-row__kpi" title="Rollup from linked tiers">
-                            {row.hours}
-                          </span>
-                          <span className="roadmap-palette-row__kpi" title="Rollup from linked tiers">
-                            {row.price}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              {paletteTab === "tiers" &&
-                filteredTiers.map((t) => {
-                  const row = cardForTier(t, ctx, palettePreviewScenarioId, palettePreviewPhaseId);
-                  const sol = ctx.solutions.find((s) => s.solution_id === t.solution_id);
-                  return (
-                    <div key={t.solution_tier_id} className="roadmap-palette-row">
-                      <div className="roadmap-palette-row__body">
-                        <div className="roadmap-palette-row__head">
-                          <strong className="roadmap-palette-row__title">{t.solution_tier_name}</strong>
-                          <button
-                            type="button"
-                            className="roadmap-palette-row__add"
-                            disabled={!targetDefaultPhaseId}
-                            onClick={() => {
-                              if (!targetDefaultPhaseId) return;
-                              addCard(cardForTier(t, ctx, targetScenarioId, targetDefaultPhaseId));
-                            }}
-                          >
-                            Add
-                          </button>
-                        </div>
-                        <p className="roadmap-palette-row__context">
-                          {sol ? sol.solution_name : "—"}
-                        </p>
-                        <div className="roadmap-palette-row__meta">
-                          <span className="roadmap-palette-row__id" title={t.solution_tier_id}>
-                            {t.solution_tier_id}
-                          </span>
-                          <span className="roadmap-palette-row__kpi">{row.hours}</span>
-                          <span className="roadmap-palette-row__kpi">{row.price}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              {paletteTab === "packages" && filteredPackages.length === 0 ? (
-                <p className="roadmap-muted roadmap-palette-empty">No packages match.</p>
-              ) : null}
-              {paletteTab === "tiers" && filteredTiers.length === 0 ? (
-                <p className="roadmap-muted roadmap-palette-empty">No tiers match.</p>
-              ) : null}
-            </div>
-          </aside>
-
-          <main className="roadmap-board" aria-label="Roadmap board">
-            <div className="roadmap-board__toolbar">
-              <div className="roadmap-board__heading">
-                <p className="roadmap-board__eyebrow">Scenario board</p>
-                <h2 className="roadmap-board__title">What-if scenarios</h2>
-                <p className="roadmap-board__lead">
-                  Compare included scope, optional upsell, deferred work, and phased sequencing side by side.
-                </p>
-              </div>
-              <div className="roadmap-board__proposal-actions" aria-label="Scenario and proposal actions">
-                <div className="roadmap-board__action-group">
-                  <button
-                    type="button"
-                    className="roadmap-btn roadmap-btn--primary roadmap-board__proposal-action"
-                    onClick={() => void saveCurrentProposal()}
-                    disabled={savingProposal}
-                  >
-                    {savingProposal ? "Saving…" : activeProposalId ? "Update Saved" : "Save Proposal"}
-                  </button>
-                  <button
-                    type="button"
-                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
-                    onClick={startNewProposal}
-                  >
-                    New Proposal
-                  </button>
-                </div>
-                <div className="roadmap-board__action-group">
-                  <button
-                    type="button"
-                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
-                    onClick={addScenario}
-                  >
-                    + Scenario
-                  </button>
-                  <button
-                    type="button"
-                    className="roadmap-btn roadmap-btn--ghost roadmap-board__proposal-action"
-                    onClick={clearBoard}
-                  >
-                    Clear Board
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div
-              className="roadmap-columns"
-              style={{ ["--roadmap-scenario-count" as string]: String(Math.max(scenarios.length, 1)) }}
-            >
-              {scenarios.map((scenario, scenarioIdx) => {
-                const scenarioPhases = sortedPhasesForScenario(phases, scenario.id);
-                const rollup = scenarioRollups[scenarioIdx] ?? {
-                  count: 0,
-                  includedCount: 0,
-                  hoursSum: null,
-                  hoursCount: 0,
-                  priceSubtotal: 0,
-                  priceParsedCount: 0,
-                  missingPriceCount: 0,
-                  optionalPriceSubtotal: 0,
-                  optionalParsedCount: 0,
-                };
-                const sub = rollup.priceSubtotal;
-                const b = budgetNumber;
-                const remaining = b != null ? b - sub : null;
-                const barPct = b != null && b > 0 ? Math.min(100, (sub / b) * 100) : 0;
-                const budgetStat = b != null ? budgetVsScenarioStatus(sub, b) : null;
-                return (
-                  <section
-                    key={scenario.id}
-                    className={`roadmap-column${targetScenarioId === scenario.id ? " roadmap-column--active" : ""}`}
-                  >
-                    <header className="roadmap-column__head">
-                      <div className="roadmap-column__heading">
-                        <label className="roadmap-scenario-edit">
-                          <span className="visually-hidden">Scenario name</span>
-                          <input
-                            className="roadmap-scenario-input"
-                            value={scenario.title}
-                            onChange={(e) =>
-                              setScenarios((prev) =>
-                                prev.map((s) => (s.id === scenario.id ? { ...s, title: e.target.value } : s))
-                              )
-                            }
-                          />
-                        </label>
-                        <div className="roadmap-column__badges">
-                          {targetScenarioId === scenario.id ? (
-                            <span className="roadmap-column__target-badge">Library target</span>
-                          ) : null}
-                          <span className="roadmap-column__count" title="All line items in this scenario">
-                            {cards.filter((c) => c.scenarioId === scenario.id).length} items
-                          </span>
-                        </div>
-                      </div>
-                      <div className="roadmap-column__scenario-actions">
-                        <button
-                          type="button"
-                          className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
-                          onClick={() => duplicateScenarioById(scenario.id)}
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          type="button"
-                          className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
-                          disabled={scenarios.length <= 1}
-                          onClick={() => deleteScenarioById(scenario.id)}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          type="button"
-                          className="roadmap-btn roadmap-btn--sm"
-                          onClick={() => addPhaseForScenario(scenario.id)}
-                        >
-                          + Phase
-                        </button>
-                      </div>
-                    </header>
-                    <div className="roadmap-column__stats">
-                      <div className="roadmap-column__stat">
-                        <span>Included</span>
-                        <strong>{formatUsd(sub)}</strong>
-                      </div>
-                      <div className="roadmap-column__stat">
-                        <span>Optional</span>
-                        <strong>{rollup.optionalParsedCount > 0 ? formatUsd(rollup.optionalPriceSubtotal) : "—"}</strong>
-                      </div>
-                      <div className="roadmap-column__stat">
-                        <span>Hours</span>
-                        <strong>{rollup.hoursSum != null && rollup.hoursCount > 0 ? `~${formatHoursShort(rollup.hoursSum)} h` : "—"}</strong>
-                      </div>
-                    </div>
-                    {b != null ? (
-                      <div className="roadmap-column__budget-strip">
-                        <div
-                          className={`roadmap-budget-meter${budgetStat === "over" ? " roadmap-budget-meter--over" : ""}`}
-                          role="progressbar"
-                          aria-valuenow={Math.round(barPct)}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          title="Included subtotal vs client budget"
-                        >
-                          <div className="roadmap-budget-meter__fill" style={{ width: `${barPct}%` }} />
-                        </div>
-                        <div className="roadmap-rollup__line">
-                          <span>
-                            <strong>{formatUsd(sub)}</strong> included · budget {formatUsd(b)}
-                          </span>
-                          {budgetStat === "over" ? (
-                            <span className="roadmap-budget-pill roadmap-budget-pill--over">
-                              Over by {formatUsd(-(remaining ?? 0))}
-                            </span>
-                          ) : budgetStat === "in_range" ? (
-                            <span className="roadmap-budget-pill roadmap-budget-pill--range">Within range</span>
-                          ) : (
-                            <span className="roadmap-budget-pill roadmap-budget-pill--under">
-                              {remaining != null ? `${formatUsd(Math.max(0, remaining))} under` : "—"}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="roadmap-muted roadmap-column__budget-hint">
-                        Set a client budget above to compare <strong>included</strong> totals.
-                      </p>
-                    )}
-                    <details className="roadmap-scenario-narrative">
-                      <summary className="roadmap-scenario-narrative__summary">Approach / narrative (export)</summary>
-                      <textarea
-                        className="roadmap-input roadmap-scenario-narrative__textarea"
-                        rows={3}
-                        value={scenario.narrative}
-                        placeholder="Why this scenario is structured this way…"
-                        onChange={(e) =>
-                          setScenarios((prev) =>
-                            prev.map((s) => (s.id === scenario.id ? { ...s, narrative: e.target.value } : s))
-                          )
-                        }
+        ) : (
+        <div className="proposal-builder">
+          <ProposalBuilderSteps
+            active={builderStep}
+            onChange={setBuilderStep}
+            setupComplete={setupComplete}
+            scenarioCount={scenarios.length}
+            lineItemCount={cards.length}
+          />
+          <div className="proposal-builder__main">
+            {builderStep === "setup" ? (
+              <>
+                <section className="roadmap-panel roadmap-panel--meta proposal-step-panel">
+                  <header className="proposal-step-panel__head">
+                    <p className="proposal-step-panel__eyebrow">Step 1</p>
+                    <h2 className="proposal-step-panel__title">Proposal Context</h2>
+                    <p className="proposal-step-panel__lead">
+                      Name the roadmap and optional client budget so each scenario can be compared against plan.
+                    </p>
+                  </header>
+                  <div className="roadmap-meta-grid">
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Roadmap name</span>
+                      <input
+                        className="roadmap-input"
+                        value={roadmapTitle}
+                        onChange={(e) => setRoadmapTitle(e.target.value)}
+                        placeholder="e.g. Acme — H2 growth roadmap"
                       />
-                    </details>
-                    <div className="roadmap-column__phases">
-                      {scenarioPhases.map((phase) => {
-                        const phaseCardsIncluded = cards.filter(
-                          (c) => c.scenarioId === scenario.id && c.phaseId === phase.id && c.scope === "included"
-                        );
-                        const phaseCardsOther = cards.filter(
-                          (c) => c.scenarioId === scenario.id && c.phaseId === phase.id && c.scope !== "included"
-                        );
-                        let phH = 0;
-                        let phHC = 0;
-                        let phP = 0;
-                        let phPC = 0;
-                        for (const c of phaseCardsIncluded) {
-                          const hh = cardHoursForScenarioRollup(c, ctx);
-                          if (hh != null) {
-                            phH += hh;
-                            phHC += 1;
-                          }
-                          const pu = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
-                          if (pu != null) {
-                            phP += pu;
-                            phPC += 1;
-                          }
-                        }
-                        return (
-                          <div key={phase.id} className="roadmap-phase">
-                            <div className="roadmap-phase__head">
-                              <input
-                                className="roadmap-input roadmap-phase__title-input"
-                                value={phase.title}
-                                onChange={(e) =>
-                                  setPhases((prev) =>
-                                    prev.map((p) => (p.id === phase.id ? { ...p, title: e.target.value } : p))
-                                  )
-                                }
-                                aria-label="Phase title"
-                              />
-                              <span className="roadmap-phase__rollup roadmap-muted">
-                                {phPC > 0 ? formatUsd(phP) : "—"} · {phHC > 0 ? `~${formatHoursShort(phH)} h` : "—"}
-                              </span>
-                            </div>
-                            <ul className="roadmap-column__list roadmap-column__list--phase">
-                              {phaseCardsIncluded.map((c) => (
-                                <RoadmapCardBlock
-                                  key={c.key}
-                                  c={c}
-                                  ctx={ctx}
-                                  phaseChoices={scenarioPhases}
-                                  onPatch={patchCard}
-                                  onRemove={removeCard}
-                                  onDetails={openDetailsModal}
-                                  onScratchCustomize={openScratchCustomize}
-                                />
-                              ))}
-                              {phaseCardsOther.map((c) => (
-                                <RoadmapCardBlock
-                                  key={c.key}
-                                  c={c}
-                                  ctx={ctx}
-                                  phaseChoices={scenarioPhases}
-                                  onPatch={patchCard}
-                                  onRemove={removeCard}
-                                  onDetails={openDetailsModal}
-                                  onScratchCustomize={openScratchCustomize}
-                                />
-                              ))}
-                            </ul>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <footer className="roadmap-column__rollup">
-                      {rollup.count === 0 ? (
-                        <span className="roadmap-muted">Add line items from the library.</span>
-                      ) : (
-                        <>
-                          <div className="roadmap-rollup__line">
-                            <strong>{rollup.includedCount}</strong> included · <strong>{formatUsd(sub)}</strong>
-                            {rollup.optionalParsedCount > 0 ? (
-                              <span className="roadmap-muted">
-                                {" "}
-                                · optional tracked: <strong>{formatUsd(rollup.optionalPriceSubtotal)}</strong>
-                              </span>
-                            ) : null}
-                            {rollup.missingPriceCount > 0 ? (
-                              <span className="roadmap-muted" title="Included lines missing a parsed price">
-                                {" "}
-                                ({rollup.missingPriceCount} included without price)
-                              </span>
-                            ) : null}
-                          </div>
-                          {rollup.hoursSum != null && rollup.hoursCount > 0 ? (
-                            <div className="roadmap-rollup__line roadmap-muted" title="Included hours only">
-                              ~{rollup.hoursSum.toLocaleString()} h included
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                    </footer>
-                  </section>
-                );
-              })}
-            </div>
-          </main>
-        </div>
+                    </label>
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Client / opportunity</span>
+                      <input
+                        className="roadmap-input"
+                        value={clientLabel}
+                        onChange={(e) => setClientLabel(e.target.value)}
+                        placeholder="Optional label for your notes"
+                      />
+                    </label>
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Client budget (USD)</span>
+                      <input
+                        className="roadmap-input"
+                        value={clientBudget}
+                        onChange={(e) => setClientBudget(e.target.value)}
+                        placeholder="e.g. 150000 or 150k"
+                        inputMode="decimal"
+                        autoComplete="off"
+                      />
+                      {budgetNumber != null ? (
+                        <span className="roadmap-budget-confirm">Using {formatUsd(budgetNumber)} for comparisons.</span>
+                      ) : clientBudget.trim() ? (
+                        <span className="roadmap-budget-warn" role="status">
+                          Could not read that as a number — try digits only, commas, or 150k.
+                        </span>
+                      ) : null}
+                    </label>
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Pitch horizon</span>
+                      <select
+                        className="roadmap-input"
+                        value={horizon}
+                        onChange={(e) => setHorizon(e.target.value as RoadmapHorizon)}
+                      >
+                        <option value="3">3 months</option>
+                        <option value="4">4 months</option>
+                        <option value="6">6 months</option>
+                        <option value="12">12 months</option>
+                        <option value="custom">Custom (describe in export)</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+                <ProposalStepNav
+                  step="setup"
+                  onStepChange={setBuilderStep}
+                  nextDisabled={!setupComplete}
+                  nextLabel={setupComplete ? "Continue to scenarios & phases" : "Add a roadmap name to continue"}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "scenarios" ? (
+              <>
+                <ProposalCopyFromPanel
+                  proposals={savedProposals}
+                  loading={savedProposalsLoading}
+                  activeProposalId={activeProposalId}
+                  onCopy={copyStructureFromSavedProposal}
+                />
+                <ProposalScenariosPanel
+                  scenarios={scenarios}
+                  phases={phases}
+                  cards={cards}
+                  onUpdateScenarioTitle={(id, title) =>
+                    setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)))
+                  }
+                  onUpdatePhaseTitle={(id, title) =>
+                    setPhases((prev) => prev.map((p) => (p.id === id ? { ...p, title } : p)))
+                  }
+                  onAddScenario={addScenario}
+                  onDuplicateScenario={duplicateScenarioById}
+                  onDeleteScenario={deleteScenarioById}
+                  onAddPhase={addPhaseForScenario}
+                  onDeletePhase={deletePhaseById}
+                />
+                <ProposalStepNav step="scenarios" onStepChange={setBuilderStep} nextLabel="Continue to add offerings" />
+              </>
+            ) : null}
+
+            {builderStep === "catalog" ? (
+              <>
+                <ProposalCatalogPanel
+                  ctx={ctx}
+                  catalogTierTableRows={catalogTierTableRows}
+                  scenarios={scenarios}
+                  phases={phases}
+                  targetScenarioId={targetScenarioId}
+                  targetPhaseId={targetPhaseId}
+                  onTargetScenarioChange={setTargetScenarioId}
+                  onTargetPhaseChange={setTargetPhaseId}
+                  targetScenarioTitle={targetScenarioTitle}
+                  targetPhaseTitle={targetPhaseTitle}
+                  filteredPackages={catalogPackages}
+                  packagePreview={(p) => cardForPackage(p, ctx, targetScenarioId, targetPhaseId)}
+                  onAddPackage={(p) => {
+                    if (!canAddToTarget) return;
+                    addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId));
+                  }}
+                  onAddTier={(t) => {
+                    if (!canAddToTarget) return;
+                    addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId));
+                  }}
+                  onAddScratchTier={() => {
+                    if (!canAddToTarget) return;
+                    addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx));
+                  }}
+                  canAdd={canAddToTarget}
+                  catalogReloading={catalogReloading}
+                  onReloadCatalog={() => void load(true)}
+                  budget={budgetNumber}
+                  formatUsd={formatUsd}
+                  scenarioBudgetBars={scenarios.map((s, i) => ({
+                    scenarioId: s.id,
+                    title: s.title,
+                    includedSubtotal: scenarioRollups[i]?.priceSubtotal ?? 0,
+                    isActive: s.id === targetScenarioId,
+                  }))}
+                  addedLines={catalogAddedLines}
+                  onRemoveAdded={removeCard}
+                  addedTierRefIds={addedTierRefIds}
+                  addedPackageRefIds={addedPackageRefIds}
+                />
+                <ProposalStepNav step="catalog" onStepChange={setBuilderStep} nextLabel="Organize proposal" />
+              </>
+            ) : null}
+
+            {builderStep === "board" ? (
+              <>
+                <ProposalOrganizePanel
+                  scenarios={scenarios}
+                  phases={phases}
+                  cards={cards}
+                  ctx={ctx}
+                  scenarioRollups={scenarioRollups}
+                  budget={budgetNumber}
+                  formatUsd={formatUsd}
+                  formatHoursShort={formatHoursShort}
+                  computeScratchSellPrice={computeScratchSellPrice}
+                  initialScenarioId={targetScenarioId}
+                  onPatchCard={patchCard}
+                  onRemoveCard={removeCard}
+                  onOpenDetails={openDetailsModal}
+                  onEditStructure={() => setBuilderStep("scenarios")}
+                  onClearScenarioItems={clearScenarioItems}
+                  onUpdateScenarioNarrative={(id, narrative) =>
+                    setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, narrative } : s)))
+                  }
+                />
+              </>
+            ) : null}
+
+            {builderStep === "board" ? (
+              <ProposalStepNav step="board" onStepChange={setBuilderStep} nextLabel="Review & Export" />
+            ) : null}
+
+            {builderStep === "review" ? (
+              <>
+                <section className="roadmap-panel proposal-review-header">
+                  <header className="proposal-step-panel__head">
+                    <p className="proposal-step-panel__eyebrow">Step 5</p>
+                    <h2 className="proposal-step-panel__title">Review &amp; Export</h2>
+                    <p className="proposal-step-panel__lead">
+                      {roadmapTitle.trim() || "Untitled roadmap"}
+                      {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""} — {cards.length} line item
+                      {cards.length === 1 ? "" : "s"} across {scenarios.length} scenario
+                      {scenarios.length === 1 ? "" : "s"}.
+                    </p>
+                  </header>
+                </section>
 
         <section className="roadmap-panel roadmap-panel--export">
           <div className="roadmap-export__head">
             <div>
-              <p className="roadmap-export__eyebrow">Client-ready output</p>
-              <h2 className="roadmap-export__title">Export preview</h2>
+              <p className="roadmap-export__eyebrow">Client-Ready Output</p>
+              <h2 className="roadmap-export__title">Export Preview</h2>
             </div>
-            <div className="roadmap-export__stats">
-              <span>{summaryMarkdown.split("\n").filter(Boolean).length} summary lines</span>
-              <span>{cards.length} board items</span>
-              <span>{totalOptionalCount} optional</span>
-              <span>{totalDeferredCount} deferred</span>
+            <div className="roadmap-export__head-actions">
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--primary"
+                disabled={pdfGenerating}
+                onClick={downloadPdf}
+              >
+                {pdfGenerating ? "Generating PDF…" : "Download PDF"}
+              </button>
             </div>
+          </div>
+          <div className="roadmap-export__stats">
+            <span>{summaryMarkdown.split("\n").filter(Boolean).length} summary lines</span>
+            <span>{cards.length} board items</span>
+            <span>{totalOptionalCount} optional</span>
+            <span>{totalDeferredCount} deferred</span>
           </div>
           <p className="roadmap-export__explain">
             Phased tables mirror the board: <strong>included</strong> items by phase, then <strong>optional</strong> add-ons.{" "}
-            <strong>Deferred</strong> appears last. Use <strong>Copy summary</strong> for Markdown.
+            <strong>Deferred</strong> appears last. Download a PDF to share with clients — proposal hours and pricing use your
+            overrides from Organize.
           </p>
           <div className="roadmap-export-table-wrap" aria-label="Roadmap export tables">
             {scenarios.map((scenario) => {
@@ -2585,7 +2076,7 @@ export function RoadmapPlanningView() {
                           {c.scope}
                         </span>
                       </div>
-                      {c.description.trim() ? (
+                      {c.description.trim() && c.kind !== "tier" && c.kind !== "custom_tier" ? (
                         <p className="roadmap-export-table__desc">{descPreview(c.description, 140)}</p>
                       ) : null}
                     </div>
@@ -2654,7 +2145,7 @@ export function RoadmapPlanningView() {
                         if (!opt.length) return null;
                         return (
                           <div className="roadmap-export-phase roadmap-export-phase--optional">
-                            <h4 className="roadmap-export-phase__title">Optional add-ons</h4>
+                            <h4 className="roadmap-export-phase__title">Optional Add-Ons</h4>
                             <table>
                               <thead>
                                 <tr>
@@ -2674,7 +2165,7 @@ export function RoadmapPlanningView() {
                         if (!def.length) return null;
                         return (
                           <div className="roadmap-export-phase roadmap-export-phase--deferred">
-                            <h4 className="roadmap-export-phase__title">Deferred (not in core)</h4>
+                            <h4 className="roadmap-export-phase__title">Deferred (Not In Core)</h4>
                             <table>
                               <thead>
                                 <tr>
@@ -2696,6 +2187,25 @@ export function RoadmapPlanningView() {
             })}
           </div>
         </section>
+                <footer className="proposal-review-save-footer">
+                  <p className="proposal-review-save-footer__hint">
+                    Save to keep this draft in <strong>Saved Proposals</strong>. You can reopen and edit it anytime.
+                  </p>
+                  <button
+                    type="button"
+                    className="roadmap-btn roadmap-btn--primary proposal-review-save-footer__btn"
+                    onClick={() => void saveCurrentProposal()}
+                    disabled={savingProposal}
+                  >
+                    {savingProposal ? "Saving…" : activeProposalId ? "Update Saved Proposal" : "Save Proposal"}
+                  </button>
+                </footer>
+                <ProposalStepNav step="review" onStepChange={setBuilderStep} />
+              </>
+            ) : null}
+          </div>
+        </div>
+        )}
       </div>
 
       {detailsModalKey && detailsCard ? (

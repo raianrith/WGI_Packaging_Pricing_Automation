@@ -2,8 +2,9 @@ import type {
   Package,
   PackageSolutionTier,
   ImplementerHourGroupRow,
-  TaskRow,
   PricingHourGroupKey,
+  SolutionTierPricing,
+  TaskRow,
 } from "../types";
 import type { TierPricingMathConfig } from "./tierPricingMath";
 import {
@@ -11,6 +12,7 @@ import {
   applyUniformHourDiscount,
   stripRebuildablePricingOverrideKeys,
 } from "./packageAggregatePricing";
+import { vaultSellPriceUsd } from "./vaultTierMetrics";
 import {
   deriveCombinedTasksFromLegacyLinks,
   parsePackageCombinedTasks,
@@ -44,6 +46,100 @@ function pctFromPkgField(n: unknown): number {
   const x = Number(n);
   if (x < 0) return 0;
   return Math.min(100, x);
+}
+
+/** Parse user-entered discount % (0–100); non-finite or negative → 0. */
+export function parsePackageDiscountPct(raw: string): number {
+  const n = Number(String(raw).trim());
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(100, n);
+}
+
+export type PackageWizardDiscountPreview = {
+  hourPct: number;
+  sellPct: number;
+  catalogHours: number;
+  catalogSell: number;
+  hoursAfter: number | null;
+  /** Sum of vault catalog sell for selected tiers (matches step 3 table). */
+  modeledSellBeforeHourDiscount: number | null;
+  /** Vault catalog sell after uniform hour discount % (scaled per tier when hours known). */
+  modeledSellAfterHourDiscount: number | null;
+  /** After hour discount, then sell discount %. */
+  netSellAfterSellDiscount: number | null;
+};
+
+/**
+ * Build-a-Package step 4: match step 3 running totals (vault hours + sell per tier).
+ * Hour discount scales each tier’s sell in proportion to its hours (uniform %).
+ */
+export function computePackageWizardDiscountPreview(args: {
+  tierIdsSorted: string[];
+  pricingRows: SolutionTierPricing[];
+  vaultTasks: TaskRow[];
+  catalogHours: number;
+  catalogSell: number;
+  missingHours: boolean;
+  missingPrice: boolean;
+  hourPct: number;
+  sellPct: number;
+}): PackageWizardDiscountPreview {
+  const hourPct = Math.min(100, Math.max(0, args.hourPct));
+  const sellPct = Math.min(100, Math.max(0, args.sellPct));
+  const catalogHours = args.catalogHours;
+  const catalogSell = args.catalogSell;
+  const hourFactor = 1 - hourPct / 100;
+
+  const hoursAfter =
+    args.missingHours || catalogHours <= 0
+      ? null
+      : Math.round(catalogHours * hourFactor * 10) / 10;
+
+  let modeledSellBeforeHourDiscount: number | null = null;
+  let modeledSellAfterHourDiscount: number | null = null;
+
+  if (!args.missingPrice && catalogSell > 0) {
+    const pricingByTierId = new Map(args.pricingRows.map((p) => [p.solution_tier_id, p]));
+    let beforeSum = 0;
+    let afterSum = 0;
+    let pricedTierCount = 0;
+
+    for (const id of args.tierIdsSorted) {
+      const pr = pricingByTierId.get(id) ?? null;
+      const sell = vaultSellPriceUsd(pr);
+      if (sell == null) continue;
+      pricedTierCount += 1;
+      beforeSum += sell;
+      afterSum += sell * hourFactor;
+    }
+
+    if (pricedTierCount > 0) {
+      modeledSellBeforeHourDiscount = Math.round(beforeSum);
+      modeledSellAfterHourDiscount = Math.round(afterSum);
+    } else {
+      modeledSellBeforeHourDiscount = Math.round(catalogSell);
+      modeledSellAfterHourDiscount =
+        hoursAfter != null && catalogHours > 0
+          ? Math.round(catalogSell * (hoursAfter / catalogHours))
+          : Math.round(catalogSell);
+    }
+  }
+
+  const netSellAfterSellDiscount =
+    modeledSellAfterHourDiscount != null
+      ? Math.round(modeledSellAfterHourDiscount * (1 - sellPct / 100))
+      : null;
+
+  return {
+    hourPct,
+    sellPct,
+    catalogHours,
+    catalogSell,
+    hoursAfter,
+    modeledSellBeforeHourDiscount,
+    modeledSellAfterHourDiscount,
+    netSellAfterSellDiscount,
+  };
 }
 
 function hasCombinedTasksSignal(s: PackageCombinedTasksState | null): boolean {

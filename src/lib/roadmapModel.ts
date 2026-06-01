@@ -17,6 +17,10 @@ export type RoadmapPhase = {
   sortOrder: number;
 };
 
+export function sortedPhasesForScenario(phases: RoadmapPhase[], scenarioId: string): RoadmapPhase[] {
+  return phases.filter((p) => p.scenarioId === scenarioId).sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 export type RoadmapCard = {
   key: string;
   kind: RoadmapCardKind;

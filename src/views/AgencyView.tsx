@@ -61,6 +61,14 @@ import type {
   SolutionTierPricing,
   TaskRow,
 } from "../types";
+import {
+  CatalogPlaybookBrowser,
+  filterCatalogTierRows,
+  type PlaybookFilterValue,
+} from "../components/CatalogPlaybookBrowser";
+import type { CatalogTierSortCol } from "../components/CatalogTierTable";
+
+type CatalogViewMode = "detail" | "all_table";
 
 type LoadState =
   | { status: "idle" }
@@ -263,13 +271,15 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const [filterSol, setFilterSol] = useState("");
   const [filterPkg, setFilterPkg] = useState("");
   const [filterTier, setFilterTier] = useState("");
-  /** Catalog Solutions tab: spreadsheet-style list of every tier vs. single-tier detail. */
-  const [catalogTierTableView, setCatalogTierTableView] = useState(false);
+  /** Catalog: all-tiers browser (default) vs. single-tier KPI detail. */
+  const [catalogViewMode, setCatalogViewMode] = useState<CatalogViewMode>("all_table");
   const [catalogTierTableQuery, setCatalogTierTableQuery] = useState("");
+  const [playbookPhase, setPlaybookPhase] = useState<PlaybookFilterValue>(null);
+  const [playbookCategory, setPlaybookCategory] = useState<PlaybookFilterValue>(null);
+  const [playbookTactic, setPlaybookTactic] = useState<PlaybookFilterValue>(null);
   const [catalogFlyoutSolutionId, setCatalogFlyoutSolutionId] = useState<string | null>(null);
-  const catalogTierTableSearchId = useId();
   const [catalogTierSort, setCatalogTierSort] = useState<{
-    col: "tier" | "category" | "price" | "hours" | "taxable" | "tags";
+    col: CatalogTierSortCol;
     dir: "asc" | "desc";
   }>({ col: "tier", dir: "asc" });
   const solSearchFieldId = useId();
@@ -818,7 +828,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
         const solution = data.solutions.find((s) => s.solution_id === tier.solution_id);
         const solutionName = solution?.solution_name ?? tier.solution_id;
         const tierName = tier.solution_tier_name;
+        const phaseRaw = tier.solution_tier_phase?.trim() ?? "";
         const categoryRaw = tier.solution_tier_category?.trim() ?? "";
+        const tacticRaw = tier.solution_tier_tactic?.trim() ?? "";
         const priceNum = sellPriceNumber(pr);
         const priceDisplay = sellPriceDisplay(pr);
         const vaultHours = pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
@@ -834,7 +846,9 @@ export function AgencyView({ mode }: AgencyViewProps) {
           pname,
           tierName,
           solutionName,
+          phaseRaw,
           categoryRaw,
+          tacticRaw,
           priceNum,
           priceDisplay,
           hoursNum,
@@ -847,77 +861,30 @@ export function AgencyView({ mode }: AgencyViewProps) {
       });
   }, [data, taskTimeSumByTierId]);
 
-  const catalogTierRowsFilteredSorted = useMemo(() => {
-    const q = catalogTierTableQuery.trim().toLowerCase();
-    let rows = catalogTierTableRows;
-    if (q) {
-      rows = rows.filter((r) => {
-        const blob = `${r.pname} ${r.tierName} ${r.solutionName} ${r.categoryRaw} ${r.tagsRaw} ${r.taxableLabel} ${r.tierId} ${r.priceDisplay} ${r.hoursDisplay}`
-          .toLowerCase()
-          .replace(/\$/g, "");
-        return blob.includes(q);
-      });
-    }
-    const dir = catalogTierSort.dir === "asc" ? 1 : -1;
-    const cmpNum = (a: number | null, b: number | null): number => {
-      const aa = a == null || !Number.isFinite(a) ? null : a;
-      const bb = b == null || !Number.isFinite(b) ? null : b;
-      if (aa == null && bb == null) return 0;
-      if (aa == null) return 1;
-      if (bb == null) return -1;
-      return (aa - bb) * dir;
-    };
-    const sorted = [...rows].sort((a, b) => {
-      const tieTier = sortId(a.tierId, b.tierId);
-      let c = 0;
-      switch (catalogTierSort.col) {
-        case "tier": {
-          const byTier = a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" }) * dir;
-          c =
-            byTier !== 0
-              ? byTier
-              : a.solutionName.localeCompare(b.solutionName, undefined, { sensitivity: "base" }) * dir;
-          break;
-        }
-        case "category":
-          c =
-            (a.categoryRaw || "\uffff").localeCompare(b.categoryRaw || "\uffff", undefined, {
-              sensitivity: "base",
-            }) * dir;
-          break;
-        case "price":
-          c = cmpNum(a.priceNum, b.priceNum);
-          break;
-        case "hours":
-          c = cmpNum(a.hoursNum, b.hoursNum);
-          break;
-        case "taxable": {
-          const t = (a.taxableSort - b.taxableSort) * dir;
-          c =
-            t !== 0
-              ? t
-              : a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" });
-          break;
-        }
-        case "tags":
-          c =
-            (a.tagsRaw || "\uffff").localeCompare(b.tagsRaw || "\uffff", undefined, {
-              sensitivity: "base",
-            }) * dir;
-          break;
-        default:
-          c = 0;
-      }
-      return c !== 0 ? c : tieTier;
-    });
-    return sorted;
-  }, [catalogTierTableRows, catalogTierTableQuery, catalogTierSort]);
+  const catalogAllTiersFilteredCount = useMemo(
+    () =>
+      filterCatalogTierRows(
+        catalogTierTableRows,
+        playbookPhase,
+        playbookCategory,
+        playbookTactic,
+        catalogTierTableQuery
+      ).length,
+    [catalogTierTableRows, playbookPhase, playbookCategory, playbookTactic, catalogTierTableQuery]
+  );
 
-  const toggleCatalogTierSort = (col: "tier" | "category" | "price" | "hours" | "taxable" | "tags") => {
+  const toggleCatalogTierSort = (col: CatalogTierSortCol) => {
     setCatalogTierSort((prev) =>
       prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
     );
   };
+
+  const selectCatalogTier = useCallback((solutionId: string, id: string) => {
+    setSolId(solutionId);
+    setTierId(id);
+    setFilterTier("");
+    setFilterSol("");
+  }, []);
 
   /**
    * KPIs for the package selected in the catalog (left nav / pkgId) — not derived from the
@@ -2145,17 +2112,19 @@ export function AgencyView({ mode }: AgencyViewProps) {
               <section
                 className="agency-kpi-panel agency-kpi-panel--scope"
                 style={kpiSectionWrap}
-                aria-label={catalogTierTableView ? "All solution tiers browser" : "Tier pricing and task summary"}
+                aria-label={
+                  catalogViewMode === "all_table" ? "All solution tiers browser" : "Tier pricing and task summary"
+                }
               >
                 <div className="agency-kpi-panel__head agency-kpi-panel__head--with-toggle">
                   <div className="agency-catalog-view-head">
                     <div>
                       <h2 className="agency-kpi-panel__title">
-                        {catalogTierTableView ? "All solution tiers" : "Tier summary"}
+                        {catalogViewMode === "all_table" ? "All solution tiers" : "Tier summary"}
                       </h2>
                       <p className="agency-kpi-panel__scope agency-kpi-panel__scope--tight">
-                        {catalogTierTableView
-                          ? `${catalogTierRowsFilteredSorted.length} tier${catalogTierRowsFilteredSorted.length === 1 ? "" : "s"} (${catalogTierTableRows.length} in vault)`
+                        {catalogViewMode === "all_table"
+                          ? `${catalogAllTiersFilteredCount} tier${catalogAllTiersFilteredCount === 1 ? "" : "s"} shown (${catalogTierTableRows.length} in vault)`
                           : kpiScopeLine}
                       </p>
                     </div>
@@ -2163,31 +2132,31 @@ export function AgencyView({ mode }: AgencyViewProps) {
                       <button
                         type="button"
                         className={
-                          catalogTierTableView
-                            ? "agency-catalog-segment__btn"
-                            : "agency-catalog-segment__btn agency-catalog-segment__btn--active"
+                          catalogViewMode === "all_table"
+                            ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
+                            : "agency-catalog-segment__btn"
                         }
-                        onClick={() => setCatalogTierTableView(false)}
-                        aria-pressed={!catalogTierTableView}
+                        onClick={() => setCatalogViewMode("all_table")}
+                        aria-pressed={catalogViewMode === "all_table"}
                       >
-                        Tier detail
+                        All tiers
                       </button>
                       <button
                         type="button"
                         className={
-                          catalogTierTableView
+                          catalogViewMode === "detail"
                             ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
                             : "agency-catalog-segment__btn"
                         }
-                        onClick={() => setCatalogTierTableView(true)}
-                        aria-pressed={catalogTierTableView}
+                        onClick={() => setCatalogViewMode("detail")}
+                        aria-pressed={catalogViewMode === "detail"}
                       >
-                        All tiers table
+                        Tier detail
                       </button>
                     </div>
                   </div>
                 </div>
-                {!catalogTierTableView ? (
+                {catalogViewMode === "detail" ? (
                   <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
                     <div className="agency-kpi-card agency-kpi-card--pricing">
                       <span className="agency-kpi-card__label">Sell price</span>
@@ -2222,246 +2191,37 @@ export function AgencyView({ mode }: AgencyViewProps) {
               </section>
             ) : null}
 
-            {mode === "catalog" && catalogTierTableView ? (
-              <section className="agency-catalog-tier-sheet" aria-label="All tiers table">
-                <div className="agency-catalog-tier-sheet__toolbar">
-                  <label className="agency-catalog-tier-sheet__filter-label" htmlFor={catalogTierTableSearchId}>
-                    Filter table
-                  </label>
-                  <div className="agency-catalog-tier-sheet__filter-row">
-                    <input
-                      id={catalogTierTableSearchId}
-                      type="search"
-                      className="agency-catalog-tier-sheet__filter-input"
-                      value={catalogTierTableQuery}
-                      onChange={(e) => setCatalogTierTableQuery(e.target.value)}
-                      placeholder="Tier, solution, package, tags…"
-                      autoComplete="off"
-                    />
-                    {catalogTierTableQuery.trim() ? (
-                      <button
-                        type="button"
-                        className="agency-catalog-tier-sheet__clear"
-                        onClick={() => setCatalogTierTableQuery("")}
-                      >
-                        Clear
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="agency-catalog-tier-sheet__hint">
-                    Rows use vault pricing. Hours use stored total hours when set; otherwise summed task times. Select a row
-                    to open that tier in detail view.
-                  </p>
-                </div>
-                <div className="agency-catalog-tier-sheet__scroll">
-                  <table className="agency-catalog-tier-sheet__table">
-                    <thead>
-                      <tr>
-                        <th scope="col">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("tier")}
-                            aria-sort={
-                              catalogTierSort.col === "tier"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Solution tier
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "tier" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                            </span>
-                          </button>
-                        </th>
-                        <th scope="col">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("category")}
-                            aria-sort={
-                              catalogTierSort.col === "category"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Category
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "category"
-                                ? catalogTierSort.dir === "asc"
-                                  ? " ▲"
-                                  : " ▼"
-                                : ""}
-                            </span>
-                          </button>
-                        </th>
-                        <th scope="col" className="agency-catalog-tier-sheet__col--narrow">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("price")}
-                            aria-sort={
-                              catalogTierSort.col === "price"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Price
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "price" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                            </span>
-                          </button>
-                        </th>
-                        <th scope="col" className="agency-catalog-tier-sheet__col--narrow">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("hours")}
-                            aria-sort={
-                              catalogTierSort.col === "hours"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Hours
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "hours" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                            </span>
-                          </button>
-                        </th>
-                        <th scope="col" className="agency-catalog-tier-sheet__col--tax">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("taxable")}
-                            aria-sort={
-                              catalogTierSort.col === "taxable"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Taxable
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "taxable" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                            </span>
-                          </button>
-                        </th>
-                        <th scope="col">
-                          <button
-                            type="button"
-                            className="agency-catalog-tier-sheet__th-btn"
-                            onClick={() => toggleCatalogTierSort("tags")}
-                            aria-sort={
-                              catalogTierSort.col === "tags"
-                                ? catalogTierSort.dir === "asc"
-                                  ? "ascending"
-                                  : "descending"
-                                : "none"
-                            }
-                          >
-                            Tags
-                            <span className="agency-catalog-tier-sheet__sort" aria-hidden>
-                              {catalogTierSort.col === "tags" ? (catalogTierSort.dir === "asc" ? " ▲" : " ▼") : ""}
-                            </span>
-                          </button>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {catalogTierRowsFilteredSorted.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="agency-catalog-tier-sheet__empty">
-                            {catalogTierTableRows.length === 0
-                              ? "No tiers loaded."
-                              : "No tiers match your filter."}
-                          </td>
-                        </tr>
-                      ) : (
-                        catalogTierRowsFilteredSorted.map((r) => (
-                          <tr
-                            key={r.tierId}
-                            className="agency-catalog-tier-sheet__data-row"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              setSolId(r.solutionId);
-                              setTierId(r.tierId);
-                              setCatalogTierTableView(false);
-                              setFilterTier("");
-                              setFilterSol("");
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                setSolId(r.solutionId);
-                                setTierId(r.tierId);
-                                setCatalogTierTableView(false);
-                                setFilterTier("");
-                                setFilterSol("");
-                              }
-                            }}
-                            title={`${r.tierName} · ${r.solutionName}`}
-                          >
-                            <td>
-                              <div className="agency-catalog-tier-sheet__tier-title">{r.tierName}</div>
-                              <div className="agency-catalog-tier-sheet__submeta">
-                                <span className="agency-catalog-tier-sheet__sol-name">{r.solutionName}</span>
-                                <span className="agency-catalog-tier-sheet__subdot"> · </span>
-                                <span>{r.pname}</span>
-                              </div>
-                            </td>
-                            <td>
-                              {r.categoryRaw ? (
-                                <span className="agency-catalog-tier-sheet__category-pill">{r.categoryRaw}</span>
-                              ) : (
-                                <span className="agency-catalog-tier-sheet__dash">—</span>
-                              )}
-                            </td>
-                            <td className="agency-catalog-tier-sheet__cell--num">{r.priceDisplay}</td>
-                            <td className="agency-catalog-tier-sheet__cell--num">{r.hoursDisplay}</td>
-                            <td>
-                              <span
-                                className={
-                                  r.taxable
-                                    ? "agency-catalog-tier-sheet__status-pill agency-catalog-tier-sheet__status-pill--taxable"
-                                    : "agency-catalog-tier-sheet__status-pill"
-                                }
-                              >
-                                {r.taxableLabel}
-                              </span>
-                            </td>
-                            <td className="agency-catalog-tier-sheet__tags">
-                              {r.tagsRaw.trim() ? (
-                                <span className="agency-catalog-tier-sheet__tags-text">{r.tagsRaw}</span>
-                              ) : (
-                                <span className="agency-catalog-tier-sheet__dash">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+            {mode === "catalog" && catalogViewMode === "all_table" ? (
+              <CatalogPlaybookBrowser
+                allRows={catalogTierTableRows}
+                phase={playbookPhase}
+                category={playbookCategory}
+                tactic={playbookTactic}
+                onPhaseChange={setPlaybookPhase}
+                onCategoryChange={setPlaybookCategory}
+                onTacticChange={setPlaybookTactic}
+                tableSearch={catalogTierTableQuery}
+                onTableSearchChange={setCatalogTierTableQuery}
+                sort={catalogTierSort}
+                onToggleSort={toggleCatalogTierSort}
+                onOpenTier={selectCatalogTier}
+              />
             ) : null}
 
-            {mode === "catalog" && catalogTierTableView ? null : !selectedTier || !selectedTierDisplay ? (
-              mode === "package" ? null : (
-                <p style={emptyHint}>Select a tier to view details.</p>
-              )
-            ) : (
-              <div className={mode === "package" ? "agency-package-tier-detail-region" : undefined}>
+            {mode === "catalog" && catalogViewMode === "detail" && !selectedTier ? (
+              <p style={emptyHint}>Select a tier to view details.</p>
+            ) : null}
+
+            {selectedTier && selectedTierDisplay ? (
+              <div
+                className={
+                  mode === "package"
+                    ? "agency-package-tier-detail-region"
+                    : catalogViewMode === "all_table"
+                      ? "agency-catalog-tier-detail-below-table"
+                      : undefined
+                }
+              >
                 <div className="agency-breadcrumb" style={breadcrumb}>
                   {packageForSelectedTier ? (
                     <span>
@@ -2767,7 +2527,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                   )}
                 </section>
               </div>
-            )}
+            ) : null}
           </main>
         </div>
       )}

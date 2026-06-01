@@ -12,6 +12,9 @@ import { createPortal } from "react-dom";
 
 export type ToastVariant = "success" | "error" | "note";
 
+/** Auto-dismiss delay for every toast in the app stack. */
+const TOAST_AUTO_DISMISS_MS = 2000;
+
 type ToastRow = {
   id: string;
   variant: ToastVariant;
@@ -46,27 +49,23 @@ const VARIANT_META: Record<
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastRow[]>([]);
-  const adminSuccessTimersRef = useRef<Map<string, number>>(new Map());
-  const freeSuccessTimersRef = useRef<Map<string, number>>(new Map());
+  const dismissTimersRef = useRef<Map<string, number>>(new Map());
 
-  const clearAdminSuccessTimers = useCallback(() => {
-    adminSuccessTimersRef.current.forEach((t) => window.clearTimeout(t));
-    adminSuccessTimersRef.current.clear();
+  const clearDismissTimer = useCallback((id: string) => {
+    const t = dismissTimersRef.current.get(id);
+    if (t !== undefined) {
+      window.clearTimeout(t);
+      dismissTimersRef.current.delete(id);
+    }
   }, []);
 
-  const dismissToast = useCallback((id: string) => {
-    const at = adminSuccessTimersRef.current.get(id);
-    if (at !== undefined) {
-      window.clearTimeout(at);
-      adminSuccessTimersRef.current.delete(id);
-    }
-    const ft = freeSuccessTimersRef.current.get(id);
-    if (ft !== undefined) {
-      window.clearTimeout(ft);
-      freeSuccessTimersRef.current.delete(id);
-    }
-    setItems((prev) => prev.filter((x) => x.id !== id));
-  }, []);
+  const dismissToast = useCallback(
+    (id: string) => {
+      clearDismissTimer(id);
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    },
+    [clearDismissTimer]
+  );
 
   const setOpErr = useCallback(
     (message: string | null) => {
@@ -74,36 +73,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         setItems((prev) => prev.filter((x) => !(x.source === "admin" && x.variant === "error")));
         return;
       }
-      clearAdminSuccessTimers();
       setItems((prev) => {
         const without = prev.filter((x) => !(x.source === "admin" && x.variant === "error"));
+        const withoutSuccess = without.filter(
+          (x) => !(x.source === "admin" && x.variant === "success")
+        );
         return [
-          ...without,
+          ...withoutSuccess,
           { id: toastId(), variant: "error", message, source: "admin" },
         ];
       });
     },
-    [clearAdminSuccessTimers]
+    []
   );
 
-  const setOpOk = useCallback(
-    (message: string | null) => {
-      if (message === null) {
-        clearAdminSuccessTimers();
-        setItems((prev) => prev.filter((x) => !(x.source === "admin" && x.variant === "success")));
-        return;
-      }
-      clearAdminSuccessTimers();
-      setItems((prev) => {
-        const without = prev.filter((x) => !(x.source === "admin" && x.variant === "success"));
-        return [
-          ...without,
-          { id: toastId(), variant: "success", message, source: "admin" },
-        ];
-      });
-    },
-    [clearAdminSuccessTimers]
-  );
+  const setOpOk = useCallback((message: string | null) => {
+    if (message === null) {
+      setItems((prev) => prev.filter((x) => !(x.source === "admin" && x.variant === "success")));
+      return;
+    }
+    setItems((prev) => {
+      const without = prev.filter((x) => !(x.source === "admin" && x.variant === "success"));
+      return [
+        ...without,
+        { id: toastId(), variant: "success", message, source: "admin" },
+      ];
+    });
+  }, []);
 
   const toastError = useCallback((message: string) => {
     setItems((prev) => [...prev, { id: toastId(), variant: "error", message, source: "free" }]);
@@ -114,32 +110,35 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toastSuccess = useCallback((message: string) => {
-    const id = toastId();
-    setItems((prev) => [...prev, { id, variant: "success", message, source: "free" }]);
-    const t = window.setTimeout(() => {
-      freeSuccessTimersRef.current.delete(id);
-      setItems((prev) => prev.filter((x) => x.id !== id));
-    }, 6000);
-    freeSuccessTimersRef.current.set(id, t);
+    setItems((prev) => [...prev, { id: toastId(), variant: "success", message, source: "free" }]);
   }, []);
 
   useEffect(() => {
-    const hasAdminErr = items.some((i) => i.source === "admin" && i.variant === "error");
-    if (hasAdminErr) {
-      clearAdminSuccessTimers();
-      return;
-    }
-    const admins = items.filter((i) => i.source === "admin" && i.variant === "success");
-    for (const s of admins) {
-      if (adminSuccessTimersRef.current.has(s.id)) continue;
+    const visibleIds = new Set(items.map((i) => i.id));
+
+    dismissTimersRef.current.forEach((timerId, id) => {
+      if (!visibleIds.has(id)) {
+        window.clearTimeout(timerId);
+        dismissTimersRef.current.delete(id);
+      }
+    });
+
+    for (const row of items) {
+      if (dismissTimersRef.current.has(row.id)) continue;
       const tid = window.setTimeout(() => {
-        adminSuccessTimersRef.current.delete(s.id);
-        setItems((prev) => prev.filter((x) => x.id !== s.id));
-      }, 6000);
-      adminSuccessTimersRef.current.set(s.id, tid);
+        dismissTimersRef.current.delete(row.id);
+        setItems((prev) => prev.filter((x) => x.id !== row.id));
+      }, TOAST_AUTO_DISMISS_MS);
+      dismissTimersRef.current.set(row.id, tid);
     }
-    return undefined;
-  }, [items, clearAdminSuccessTimers]);
+  }, [items]);
+
+  useEffect(() => {
+    return () => {
+      dismissTimersRef.current.forEach((t) => window.clearTimeout(t));
+      dismissTimersRef.current.clear();
+    };
+  }, []);
 
   const value = useMemo<ToastContextValue>(
     () => ({

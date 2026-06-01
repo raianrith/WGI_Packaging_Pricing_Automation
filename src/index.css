@@ -13822,6 +13822,55 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   color: var(--muted);
 }
 
+.proposal-added-card__copy {
+  margin-bottom: 0.65rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  border: 1px dashed rgba(13, 92, 77, 0.28);
+  background: rgba(13, 92, 77, 0.04);
+}
+
+.proposal-added-card__copy-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(13, 92, 77, 0.92);
+}
+
+.proposal-added-card__copy-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.proposal-added-card__copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.proposal-added-card__copy-select {
+  flex: 1 1 9rem;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+
+.proposal-added-card__copy-btn {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.proposal-added-card__copy-preview {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .proposal-added-card__list {
   list-style: none;
   margin: 0;

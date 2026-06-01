@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
 import type { RoadmapCardKind } from "../../lib/roadmapModel";
+import {
+  ProposalCopyScenarioOfferings,
+  type ScenarioCopySource,
+} from "./ProposalCopyScenarioOfferings";
 
 export type ProposalAddedLine = {
   key: string;
@@ -16,6 +20,8 @@ type Props = {
   targetPhaseTitle: string;
   lines: ProposalAddedLine[];
   onRemove: (key: string) => void;
+  copyFromScenarios?: ScenarioCopySource[];
+  onCopyFromScenario?: (sourceScenarioId: string) => void;
 };
 
 function isTierKind(kind: RoadmapCardKind): boolean {
@@ -71,7 +77,14 @@ function AddedLineRow({ line, onRemove }: { line: ProposalAddedLine; onRemove: (
   );
 }
 
-export function ProposalAddedItemsPanel({ scenarioTitle, targetPhaseTitle, lines, onRemove }: Props) {
+export function ProposalAddedItemsPanel({
+  scenarioTitle,
+  targetPhaseTitle,
+  lines,
+  onRemove,
+  copyFromScenarios,
+  onCopyFromScenario,
+}: Props) {
   const [filter, setFilter] = useState<"all" | "tiers" | "packages">("all");
 
   const tierLines = useMemo(() => lines.filter((l) => isTierKind(l.kind)), [lines]);
@@ -110,6 +123,14 @@ export function ProposalAddedItemsPanel({ scenarioTitle, targetPhaseTitle, lines
           ) : null}
         </div>
       </header>
+
+      {copyFromScenarios && onCopyFromScenario ? (
+        <ProposalCopyScenarioOfferings
+          targetScenarioTitle={scenarioTitle}
+          sources={copyFromScenarios}
+          onCopy={onCopyFromScenario}
+        />
+      ) : null}
 
       {lines.length > 0 ? (
         <>

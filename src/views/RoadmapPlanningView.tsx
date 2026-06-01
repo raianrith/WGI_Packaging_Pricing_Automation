@@ -50,6 +50,7 @@ import {
   type RoadmapProposalSnapshot,
 } from "../lib/roadmapProposalSnapshot";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
+import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import type {
   ImplementerHourGroupRow,
   Package,
@@ -1438,6 +1439,65 @@ export function RoadmapPlanningView() {
     return ids;
   }, [cards, targetScenarioId]);
 
+  const copyFromScenarios = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of cards) {
+      counts.set(c.scenarioId, (counts.get(c.scenarioId) ?? 0) + 1);
+    }
+    return scenarios
+      .filter((s) => s.id !== targetScenarioId)
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        offeringCount: counts.get(s.id) ?? 0,
+      }));
+  }, [cards, scenarios, targetScenarioId]);
+
+  const copyOfferingsFromScenario = useCallback(
+    (sourceScenarioId: string) => {
+      if (sourceScenarioId === targetScenarioId) return;
+
+      const sourceTitle =
+        scenarios.find((s) => s.id === sourceScenarioId)?.title.trim() || "Source scenario";
+      const targetTitle =
+        scenarios.find((s) => s.id === targetScenarioId)?.title.trim() || "This scenario";
+
+      const { cards: cloned, skippedDuplicates } = copyScenarioOfferings({
+        allCards: cards,
+        phases,
+        sourceScenarioId,
+        targetScenarioId,
+        targetPhaseId,
+        newKey: newRoadmapCardKey,
+      });
+
+      if (cloned.length === 0) {
+        toastNote(
+          skippedDuplicates > 0
+            ? "Those offerings are already on this scenario."
+            : "That scenario has nothing to copy."
+        );
+        return;
+      }
+
+      const dupNote =
+        skippedDuplicates > 0
+          ? ` ${skippedDuplicates} duplicate tier/package${skippedDuplicates === 1 ? "" : "s"} will be skipped.`
+          : "";
+
+      const ok = window.confirm(
+        `Copy ${cloned.length} offering${cloned.length === 1 ? "" : "s"} from "${sourceTitle}" into "${targetTitle}"?${dupNote}`
+      );
+      if (!ok) return;
+
+      setCards((prev) => [...prev, ...cloned]);
+      toastSuccess(
+        `Copied ${cloned.length} offering${cloned.length === 1 ? "" : "s"} from "${sourceTitle}".`
+      );
+    },
+    [cards, phases, scenarios, targetScenarioId, targetPhaseId, toastNote, toastSuccess]
+  );
+
   const addScenario = useCallback(() => {
     const id = newRoadmapCardKey();
     setScenarios((prev) => [...prev, { id, title: `Scenario ${prev.length + 1}`, narrative: "" }]);
@@ -1975,6 +2035,8 @@ export function RoadmapPlanningView() {
                   onRemoveAdded={removeCard}
                   addedTierRefIds={addedTierRefIds}
                   addedPackageRefIds={addedPackageRefIds}
+                  copyFromScenarios={copyFromScenarios}
+                  onCopyFromScenario={copyOfferingsFromScenario}
                 />
                 <ProposalStepNav step="catalog" onStepChange={setBuilderStep} nextLabel="Organize proposal" />
               </>

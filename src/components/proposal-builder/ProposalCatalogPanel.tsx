@@ -4,6 +4,7 @@ import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
+import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
 import {
   ProposalScenarioBudgetBars,
   type ScenarioBudgetBarRow,
@@ -49,6 +50,8 @@ type Props = {
   onRemoveAdded: (key: string) => void;
   addedTierRefIds: Set<string>;
   addedPackageRefIds: Set<string>;
+  copyFromScenarios?: ScenarioCopySource[];
+  onCopyFromScenario?: (sourceScenarioId: string) => void;
 };
 
 function normLabel(raw: string): string {
@@ -232,6 +235,8 @@ export function ProposalCatalogPanel({
   onRemoveAdded,
   addedTierRefIds,
   addedPackageRefIds,
+  copyFromScenarios,
+  onCopyFromScenario,
 }: Props) {
   const searchId = useId();
   const [catalogMode, setCatalogMode] = useState<"playbook" | "packages">("playbook");
@@ -414,6 +419,8 @@ export function ProposalCatalogPanel({
           targetPhaseTitle={targetPhaseTitle}
           lines={addedLines}
           onRemove={onRemoveAdded}
+          copyFromScenarios={copyFromScenarios}
+          onCopyFromScenario={onCopyFromScenario}
         />
       </div>
 

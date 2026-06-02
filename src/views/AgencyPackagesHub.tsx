@@ -204,7 +204,7 @@ type PackageCardRollup = {
   pricePartial: boolean;
 };
 
-type PackageSourceFilter = "all" | "custom" | "prebuilt";
+type PackageSourceFilter = "prebuilt" | "custom";
 
 const shell: CSSProperties = {
   width: "100%",
@@ -246,7 +246,7 @@ export function AgencyPackagesHub() {
     defaultPackageBuilderSlots(defaultTypeSeed.id).map((r) => ({ ...r }))
   );
   const [pkgFilter, setPkgFilter] = useState("");
-  const [packageSourceFilter, setPackageSourceFilter] = useState<PackageSourceFilter>("all");
+  const [packageSourceFilter, setPackageSourceFilter] = useState<PackageSourceFilter>("prebuilt");
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
 
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -435,7 +435,7 @@ export function AgencyPackagesHub() {
       if (isCustom) custom += 1;
       else prebuilt += 1;
     }
-    return { all: packages.length, custom, prebuilt };
+    return { custom, prebuilt };
   }, [packages, packageTypeNameSet]);
 
   const packageCreatorById = useMemo(() => {
@@ -788,33 +788,11 @@ export function AgencyPackagesHub() {
               </div>
             </div>
 
-            <div className="agency-pkg-open-panel__filters" role="group" aria-label="Package source filter">
+            <div className="agency-pkg-open-panel__filters" role="tablist" aria-label="Package library">
               <button
                 type="button"
-                className={
-                  packageSourceFilter === "all"
-                    ? "agency-pkg-open-panel__filter is-active"
-                    : "agency-pkg-open-panel__filter"
-                }
-                onClick={() => setPackageSourceFilter("all")}
-              >
-                <span>All Packages</span>
-                <strong>{packageSourceCounts.all}</strong>
-              </button>
-              <button
-                type="button"
-                className={
-                  packageSourceFilter === "custom"
-                    ? "agency-pkg-open-panel__filter is-active"
-                    : "agency-pkg-open-panel__filter"
-                }
-                onClick={() => setPackageSourceFilter("custom")}
-              >
-                <span>Custom Built Packages</span>
-                <strong>{packageSourceCounts.custom}</strong>
-              </button>
-              <button
-                type="button"
+                role="tab"
+                aria-selected={packageSourceFilter === "prebuilt"}
                 className={
                   packageSourceFilter === "prebuilt"
                     ? "agency-pkg-open-panel__filter is-active"
@@ -822,8 +800,22 @@ export function AgencyPackagesHub() {
                 }
                 onClick={() => setPackageSourceFilter("prebuilt")}
               >
-                <span>Admin Built Packages</span>
+                <span>Preset Packages (Admin Packages)</span>
                 <strong>{packageSourceCounts.prebuilt}</strong>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={packageSourceFilter === "custom"}
+                className={
+                  packageSourceFilter === "custom"
+                    ? "agency-pkg-open-panel__filter is-active"
+                    : "agency-pkg-open-panel__filter"
+                }
+                onClick={() => setPackageSourceFilter("custom")}
+              >
+                <span>Custom Packages</span>
+                <strong>{packageSourceCounts.custom}</strong>
               </button>
             </div>
 

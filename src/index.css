@@ -1373,6 +1373,16 @@ button {
     overflow-y: visible;
   }
 
+  .kb-nav--catalog-flyout {
+    height: auto;
+    max-height: none;
+  }
+
+  .agency-nav-solutions-scroll {
+    overflow-y: visible;
+    max-height: none;
+  }
+
   .agency-nav-flyout {
     position: static;
     width: 100%;
@@ -1456,11 +1466,19 @@ button {
 
 .agency-nav-panel--solutions-flyout {
   overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .agency-nav-flyout-shell {
   position: relative;
   overflow: visible;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .agency-nav-flyout-anchor {
@@ -1654,8 +1672,44 @@ button {
 }
 
 .kb-nav--catalog-flyout {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 2rem);
+  max-height: calc(100vh - 2rem);
   overflow: visible;
-  max-height: none;
+}
+
+.agency-nav-solutions-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0 !important;
+}
+
+.agency-nav-solutions-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  margin: 0 -0.15rem;
+  padding: 0 0.15rem 0.1rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.agency-nav-solutions-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.agency-nav-solutions-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid rgba(255, 252, 247, 0.88);
+  background: rgba(148, 163, 184, 0.35);
+}
+
+.agency-nav-solutions-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .agency-nav-flyout {

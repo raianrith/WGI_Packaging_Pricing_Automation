@@ -1433,7 +1433,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
               <>
                 <div className="agency-nav-flyout-shell">
                   <div className="agency-nav-panel agency-nav-panel--solutions-flyout">
-                    <section style={navSection}>
+                    <section className="agency-nav-solutions-section" style={navSection}>
                       <h2 style={navHeading}>Solutions</h2>
                       <div className="agency-nav-sol-filter">
                         <label className="agency-nav-sol-filter__label" htmlFor={solSearchFieldId}>
@@ -1460,6 +1460,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           )}
                         </div>
                       </div>
+                      <div className="agency-nav-solutions-scroll">
                       <ul style={list}>
                         {solutionsNavRows.length === 0 ? (
                           <li>
@@ -1579,6 +1580,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           ))
                         )}
                       </ul>
+                      </div>
                     </section>
                   </div>
                 </div>

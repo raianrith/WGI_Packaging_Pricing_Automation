@@ -742,7 +742,7 @@ export function AgencyPackagesHub() {
                   Open a package
                 </h2>
                 <p className="agency-pkg-open-panel__lead">
-                  Jump back into a custom build, or open an Admin-built package.
+                  Jump back into a custom build, or open a preset package.
                 </p>
               </div>
               <div className="agency-pkg-open-panel__controls">
@@ -800,7 +800,7 @@ export function AgencyPackagesHub() {
                 }
                 onClick={() => setPackageSourceFilter("prebuilt")}
               >
-                <span>Preset Packages (Admin Packages)</span>
+                <span>Preset Packages</span>
                 <strong>{packageSourceCounts.prebuilt}</strong>
               </button>
               <button
@@ -856,7 +856,7 @@ export function AgencyPackagesHub() {
                   const workspaceSellDisplay =
                     rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
                   const isCustomPackage = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
-                  const sourceLabel = isCustomPackage ? "Custom built" : "Admin built";
+                  const sourceLabel = isCustomPackage ? "Custom package" : "Preset";
                   const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
                   const partialNote =
                     rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)

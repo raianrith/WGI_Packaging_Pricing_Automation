@@ -1035,8 +1035,8 @@ export function PackagesBuilderPanel({
               style={{
                 padding: "0.65rem 0.75rem",
                 borderRadius: 10,
-                background: "rgba(74, 179, 155, 0.08)",
-                border: "1px solid rgba(74, 179, 155, 0.18)",
+                background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--accent) 22%, transparent)",
                 marginTop: 12,
                 marginBottom: 12,
               }}

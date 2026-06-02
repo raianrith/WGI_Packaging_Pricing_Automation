@@ -1729,6 +1729,29 @@ button {
   z-index: 30;
 }
 
+.agency-nav-flyout--fixed {
+  position: fixed;
+  margin: 0;
+  z-index: 200;
+  max-height: min(calc(100vh - 1rem), 28rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.agency-nav-flyout--fixed .agency-nav-flyout__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agency-nav-flyout-bridge {
+  position: fixed;
+  z-index: 199;
+  background: transparent;
+  pointer-events: auto;
+}
+
 .agency-nav-flyout::before {
   content: "";
   position: absolute;

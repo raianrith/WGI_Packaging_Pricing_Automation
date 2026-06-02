@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import {
@@ -277,7 +278,16 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const [playbookPhase, setPlaybookPhase] = useState<PlaybookFilterValue>(null);
   const [playbookCategory, setPlaybookCategory] = useState<PlaybookFilterValue>(null);
   const [playbookTactic, setPlaybookTactic] = useState<PlaybookFilterValue>(null);
-  const [catalogFlyoutSolutionId, setCatalogFlyoutSolutionId] = useState<string | null>(null);
+  type CatalogFlyoutPlacement = {
+    solutionId: string;
+    top: number;
+    left: number;
+    anchorHeight: number;
+  };
+  const [catalogFlyoutPlacement, setCatalogFlyoutPlacement] = useState<CatalogFlyoutPlacement | null>(
+    null
+  );
+  const solutionsScrollRef = useRef<HTMLDivElement>(null);
   const [catalogTierSort, setCatalogTierSort] = useState<{
     col: CatalogTierSortCol;
     dir: "asc" | "desc";
@@ -303,10 +313,24 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const scheduleCatalogFlyoutClose = useCallback(() => {
     clearCatalogFlyoutCloseTimer();
     catalogFlyoutCloseTimer.current = window.setTimeout(() => {
-      setCatalogFlyoutSolutionId(null);
+      setCatalogFlyoutPlacement(null);
       catalogFlyoutCloseTimer.current = null;
     }, 180);
   }, [clearCatalogFlyoutCloseTimer]);
+
+  const openCatalogFlyout = useCallback(
+    (solutionId: string, anchorEl: HTMLElement) => {
+      clearCatalogFlyoutCloseTimer();
+      const rect = anchorEl.getBoundingClientRect();
+      setCatalogFlyoutPlacement({
+        solutionId,
+        top: rect.top,
+        left: rect.right + 6,
+        anchorHeight: rect.height,
+      });
+    },
+    [clearCatalogFlyoutCloseTimer]
+  );
 
   const load = useCallback(async () => {
     const keyErr = browserKeyConfigurationError();
@@ -579,14 +603,32 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
   useEffect(() => {
     if (mode !== "catalog") {
-      if (catalogFlyoutSolutionId !== null) setCatalogFlyoutSolutionId(null);
+      if (catalogFlyoutPlacement !== null) setCatalogFlyoutPlacement(null);
       return;
     }
-    if (!catalogFlyoutSolutionId) return;
-    if (!solutionsNavRows.some((row) => row.solution_id === catalogFlyoutSolutionId)) {
-      setCatalogFlyoutSolutionId(null);
+    if (!catalogFlyoutPlacement) return;
+    if (!solutionsNavRows.some((row) => row.solution_id === catalogFlyoutPlacement.solutionId)) {
+      setCatalogFlyoutPlacement(null);
     }
-  }, [mode, catalogFlyoutSolutionId, solutionsNavRows]);
+  }, [mode, catalogFlyoutPlacement, solutionsNavRows]);
+
+  useEffect(() => {
+    const el = solutionsScrollRef.current;
+    if (!el || mode !== "catalog") return;
+    const onScroll = () => setCatalogFlyoutPlacement(null);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [mode]);
+
+  const catalogFlyoutContent = useMemo(() => {
+    if (!catalogFlyoutPlacement || !data) return null;
+    const solution = solutionsNavRows.find((row) => row.solution_id === catalogFlyoutPlacement.solutionId);
+    if (!solution) return null;
+    const tiers = data.tiers
+      .filter((tier) => tier.solution_id === solution.solution_id)
+      .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
+    return { solution, tiers };
+  }, [catalogFlyoutPlacement, data, solutionsNavRows]);
 
   /** Package workspace: sidebar package list. */
   const packagesNavRows = useMemo(() => {
@@ -1460,7 +1502,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                           )}
                         </div>
                       </div>
-                      <div className="agency-nav-solutions-scroll">
+                      <div className="agency-nav-solutions-scroll" ref={solutionsScrollRef}>
                       <ul style={list}>
                         {solutionsNavRows.length === 0 ? (
                           <li>
@@ -1475,12 +1517,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                             className="agency-nav-flyout-anchor"
                             onMouseLeave={scheduleCatalogFlyoutClose}
                           >
-                            {(() => {
-                              const flyoutTiers = data.tiers
-                                .filter((tier) => tier.solution_id === s.solution_id)
-                                .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-                              return (
-                                <>
                               <button
                                 type="button"
                                 className={
@@ -1489,17 +1525,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                     : "kb-nav-item kb-nav-item--solution-rich"
                                 }
                                 title={`${solutionNavTitle(s)} · Owner: ${s.ownerLabel}`}
-                                onMouseEnter={() => {
-                                  clearCatalogFlyoutCloseTimer();
-                                  setCatalogFlyoutSolutionId(s.solution_id);
-                                }}
-                                onFocus={() => {
-                                  clearCatalogFlyoutCloseTimer();
-                                  setCatalogFlyoutSolutionId(s.solution_id);
-                                }}
-                                onClick={() => {
-                                  clearCatalogFlyoutCloseTimer();
-                                  setCatalogFlyoutSolutionId(s.solution_id);
+                                onMouseEnter={(e) => openCatalogFlyout(s.solution_id, e.currentTarget)}
+                                onFocus={(e) => openCatalogFlyout(s.solution_id, e.currentTarget)}
+                                onClick={(e) => {
+                                  openCatalogFlyout(s.solution_id, e.currentTarget);
                                   setSolId(s.solution_id);
                                   const tr = data.tiers
                                     .filter((tier) => tier.solution_id === s.solution_id)
@@ -1517,65 +1546,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                   ›
                                 </span>
                               </button>
-                                  {catalogFlyoutSolutionId === s.solution_id ? (
-                                    <div
-                                      className="agency-nav-flyout"
-                                      role="menu"
-                                      aria-label={`Solution tiers for ${s.solution_name}`}
-                                      onMouseEnter={clearCatalogFlyoutCloseTimer}
-                                      onMouseLeave={scheduleCatalogFlyoutClose}
-                                    >
-                                      <div className="agency-nav-flyout__header">
-                                        <p className="agency-nav-flyout__eyebrow">Solution tiers</p>
-                                        <p className="agency-nav-flyout__title">{s.solution_name}</p>
-                                      </div>
-                                      {flyoutTiers.length === 0 ? (
-                                        <p className="agency-nav-flyout__hint">No tiers available for this solution.</p>
-                                      ) : (
-                                        <ul className="agency-nav-flyout__list">
-                                          {flyoutTiers.map((t) => (
-                                            <li key={t.solution_tier_id}>
-                                              {(() => {
-                                                const priceDisplay = formatUsd(
-                                                  sellPriceNumber(
-                                                    pricingByTierId.get(t.solution_tier_id) ?? null
-                                                  )
-                                                );
-                                                return (
-                                              <button
-                                                type="button"
-                                                className={
-                                                  tierId === t.solution_tier_id
-                                                    ? "agency-nav-flyout__item agency-nav-flyout__item--active"
-                                                    : "agency-nav-flyout__item"
-                                                }
-                                                title={tierNavTitle(t, data.solutions)}
-                                                onClick={() => {
-                                                  setTierId(t.solution_tier_id);
-                                                  setSolId(t.solution_id);
-                                                  setCatalogFlyoutSolutionId(t.solution_id);
-                                                }}
-                                              >
-                                                <span className="agency-nav-flyout__item-main">
-                                                  <span className="agency-nav-flyout__item-name">
-                                                    {t.solution_tier_name}
-                                                  </span>
-                                                  <span className="agency-nav-flyout__item-price">
-                                                    {priceDisplay}
-                                                  </span>
-                                                </span>
-                                              </button>
-                                                );
-                                              })()}
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      )}
-                                    </div>
-                                  ) : null}
-                                </>
-                              );
-                            })()}
                           </li>
                           ))
                         )}
@@ -2533,6 +2503,85 @@ export function AgencyView({ mode }: AgencyViewProps) {
           </main>
         </div>
       )}
+
+      {typeof document !== "undefined" &&
+        mode === "catalog" &&
+        catalogFlyoutPlacement &&
+        catalogFlyoutContent &&
+        createPortal(
+          (() => {
+            const { solution, tiers } = catalogFlyoutContent;
+            const flyoutTop = Math.max(
+              8,
+              Math.min(catalogFlyoutPlacement.top, window.innerHeight - 280)
+            );
+            const bridgeWidth = 14;
+            const bridgeLeft = catalogFlyoutPlacement.left - bridgeWidth;
+            return (
+              <>
+                <div
+                  className="agency-nav-flyout-bridge"
+                  style={{
+                    top: catalogFlyoutPlacement.top,
+                    left: bridgeLeft,
+                    width: bridgeWidth,
+                    height: catalogFlyoutPlacement.anchorHeight,
+                  }}
+                  onMouseEnter={clearCatalogFlyoutCloseTimer}
+                  onMouseLeave={scheduleCatalogFlyoutClose}
+                  aria-hidden
+                />
+                <div
+                  className="agency-nav-flyout agency-nav-flyout--fixed"
+                  role="menu"
+                  aria-label={`Solution tiers for ${solution.solution_name}`}
+                  style={{ top: flyoutTop, left: catalogFlyoutPlacement.left }}
+                  onMouseEnter={clearCatalogFlyoutCloseTimer}
+                  onMouseLeave={scheduleCatalogFlyoutClose}
+                >
+                  <div className="agency-nav-flyout__header">
+                    <p className="agency-nav-flyout__eyebrow">Solution tiers</p>
+                    <p className="agency-nav-flyout__title">{solution.solution_name}</p>
+                  </div>
+                  {tiers.length === 0 ? (
+                    <p className="agency-nav-flyout__hint">No tiers available for this solution.</p>
+                  ) : (
+                    <ul className="agency-nav-flyout__list">
+                      {tiers.map((t) => {
+                        const priceDisplay = formatUsd(
+                          sellPriceNumber(pricingByTierId.get(t.solution_tier_id) ?? null)
+                        );
+                        return (
+                          <li key={t.solution_tier_id}>
+                            <button
+                              type="button"
+                              className={
+                                tierId === t.solution_tier_id
+                                  ? "agency-nav-flyout__item agency-nav-flyout__item--active"
+                                  : "agency-nav-flyout__item"
+                              }
+                              title={tierNavTitle(t, data!.solutions)}
+                              onClick={() => {
+                                setTierId(t.solution_tier_id);
+                                setSolId(t.solution_id);
+                              }}
+                            >
+                              <span className="agency-nav-flyout__item-main">
+                                <span className="agency-nav-flyout__item-name">{t.solution_tier_name}</span>
+                                <span className="agency-nav-flyout__item-price">{priceDisplay}</span>
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </>
+            );
+          })(),
+          document.body
+        )}
     </div>
   );
 }

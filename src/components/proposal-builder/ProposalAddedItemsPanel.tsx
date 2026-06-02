@@ -13,6 +13,8 @@ export type ProposalAddedLine = {
   scope: "included" | "optional" | "deferred";
   isTargetPhase: boolean;
   kind: RoadmapCardKind;
+  /** Variable tier: linked tier name or travel hours summary */
+  appliedToLabel?: string | null;
 };
 
 type Props = {
@@ -60,6 +62,12 @@ function AddedLineRow({ line, onRemove }: { line: ProposalAddedLine; onRemove: (
         </span>
         <div className="proposal-added-line__text">
           <strong className="proposal-added-line__title">{line.headline.trim() || "(untitled)"}</strong>
+          {line.appliedToLabel ? (
+            <span className="proposal-added-line__applied">
+              Applied to{" "}
+              <strong>{line.appliedToLabel}</strong>
+            </span>
+          ) : null}
           <span className="proposal-added-line__meta">
             {line.phaseTitle} · {line.priceDisplay} · {scopeLabel(line.scope)}
           </span>

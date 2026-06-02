@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
@@ -51,6 +51,15 @@ import {
 } from "../lib/roadmapProposalSnapshot";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
+import {
+  applyVariableTierPricingToCards,
+  computeVariableTierSellUsd,
+  isTravelVariableTierRefId,
+  isVariableTierRefId,
+  variableTierLinkTargetsForScenario,
+  variableTierAppliedToLabel,
+  type AddVariableTierOpts,
+} from "../lib/proposalVariableTiers";
 import type {
   ImplementerHourGroupRow,
   Package,
@@ -480,6 +489,23 @@ function rollupHoursPrice(tierIds: string[], pricingMap: Map<string, SolutionTie
     hours: hOk ? `${th} h (tiers Σ)` : "—",
     price: pOk ? `${formatUsd(tp)} (tiers Σ)` : "—",
   };
+}
+
+function cardForVariableTier(
+  t: SolutionTier,
+  ctx: CatalogCtx,
+  scenarioId: string,
+  phaseId: string,
+  opts?: AddVariableTierOpts
+): RoadmapCard {
+  const card = cardForTier(t, ctx, scenarioId, phaseId);
+  if (opts?.travelHours != null && isTravelVariableTierRefId(t.solution_tier_id)) {
+    return { ...card, variableTravelHours: opts.travelHours };
+  }
+  if (opts?.linkedTierRefId && !isTravelVariableTierRefId(t.solution_tier_id)) {
+    return { ...card, variableLinkedTierRefId: opts.linkedTierRefId };
+  }
+  return card;
 }
 
 function cardForPackage(p: Package, ctx: CatalogCtx, scenarioId: string, phaseId: string): RoadmapCard {
@@ -1247,13 +1273,39 @@ export function RoadmapPlanningView() {
     };
   }, [data, tierPricingMathConfig]);
 
-  const addCard = useCallback((c: RoadmapCard) => {
-    setCards((prev) => [...prev, c]);
-  }, []);
+  const applyVariablePricing = useCallback(
+    (next: RoadmapCard[]): RoadmapCard[] => {
+      if (!catalogCtx) return next;
+      return applyVariableTierPricingToCards(next, catalogCtx, computeScratchSellPrice);
+    },
+    [catalogCtx]
+  );
 
-  const removeCard = useCallback((key: string) => {
-    setCards((prev) => prev.filter((x) => x.key !== key));
-  }, []);
+  const setCardsSynced = useCallback(
+    (action: SetStateAction<RoadmapCard[]>) => {
+      setCards((prev) => applyVariablePricing(typeof action === "function" ? action(prev) : action));
+    },
+    [applyVariablePricing]
+  );
+
+  useEffect(() => {
+    if (!catalogCtx) return;
+    setCards((prev) => applyVariablePricing(prev));
+  }, [catalogCtx, applyVariablePricing]);
+
+  const addCard = useCallback(
+    (c: RoadmapCard) => {
+      setCardsSynced((prev) => [...prev, c]);
+    },
+    [setCardsSynced]
+  );
+
+  const removeCard = useCallback(
+    (key: string) => {
+      setCardsSynced((prev) => prev.filter((x) => x.key !== key));
+    },
+    [setCardsSynced]
+  );
 
   type RoadmapCardPatch = Partial<
     Pick<
@@ -1271,12 +1323,14 @@ export function RoadmapPlanningView() {
       | "scratchStrategicMult"
       | "scratchAttachedTaskIds"
       | "scratchAttachedTaskGroupIds"
+      | "variableTravelHours"
+      | "variableLinkedTierRefId"
     >
   >;
 
   const patchCard = useCallback(
     (key: string, patch: RoadmapCardPatch) => {
-      setCards((prev) =>
+      setCardsSynced((prev) =>
         prev.map((c) => {
           if (c.key !== key) return c;
           const next: RoadmapCard = { ...c, ...patch };
@@ -1287,7 +1341,7 @@ export function RoadmapPlanningView() {
         })
       );
     },
-    [catalogCtx]
+    [catalogCtx, setCardsSynced]
   );
 
   const openDetailsModal = useCallback((c: RoadmapCard, opts?: { focusCompose?: boolean }) => {
@@ -1315,9 +1369,9 @@ export function RoadmapPlanningView() {
     if (!merged.priceOverride?.trim()) {
       merged.price = computeScratchSellPrice(merged, catalogCtx);
     }
-    setCards((prev) => prev.map((c) => (c.key === detailsModalKey ? merged : c)));
+    setCardsSynced((prev) => prev.map((c) => (c.key === detailsModalKey ? merged : c)));
     closeDetailsModal();
-  }, [detailsModalKey, scratchDraft, catalogCtx, closeDetailsModal]);
+  }, [detailsModalKey, scratchDraft, catalogCtx, closeDetailsModal, setCardsSynced]);
 
   useLayoutEffect(() => {
     if (!scratchModalFocusCompose) return;
@@ -1342,12 +1396,15 @@ export function RoadmapPlanningView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [detailsModalKey, closeDetailsModal]);
 
-  const clearScenarioItems = useCallback((scenarioId: string) => {
-    setCards((prev) => prev.filter((c) => c.scenarioId !== scenarioId));
-    setDetailsModalKey(null);
-    setScratchDraft(null);
-    setScratchModalFocusCompose(false);
-  }, []);
+  const clearScenarioItems = useCallback(
+    (scenarioId: string) => {
+      setCardsSynced((prev) => prev.filter((c) => c.scenarioId !== scenarioId));
+      setDetailsModalKey(null);
+      setScratchDraft(null);
+      setScratchModalFocusCompose(false);
+    },
+    [setCardsSynced]
+  );
 
   useEffect(() => {
     const list = sortedPhasesForScenario(phases, targetScenarioId);
@@ -1400,6 +1457,51 @@ export function RoadmapPlanningView() {
       });
   }, [catalogCtx]);
 
+  const playbookCatalogTierTableRows = useMemo(
+    () => catalogTierTableRows.filter((r) => !isVariableTierRefId(r.tierId)),
+    [catalogTierTableRows]
+  );
+
+  const variableCatalogTierTableRows = useMemo(
+    () => catalogTierTableRows.filter((r) => isVariableTierRefId(r.tierId)),
+    [catalogTierTableRows]
+  );
+
+  const variableTierLinkTargets = useMemo(() => {
+    if (!catalogCtx) return [];
+    const phaseTitleById = new Map(phases.map((p) => [p.id, p.title.trim() || "Phase"]));
+    return variableTierLinkTargetsForScenario(
+      cards,
+      targetScenarioId,
+      catalogCtx,
+      computeScratchSellPrice,
+      phaseTitleById
+    );
+  }, [cards, targetScenarioId, catalogCtx, phases]);
+
+  const previewVariableTierPriceUsd = useCallback(
+    (refId: string, opts?: AddVariableTierOpts): number | null => {
+      if (!catalogCtx) return null;
+      if (isTravelVariableTierRefId(refId)) {
+        return computeVariableTierSellUsd(refId, 0, opts?.travelHours);
+      }
+      const linkedRefId = opts?.linkedTierRefId;
+      if (!linkedRefId) return null;
+      const linked = cards.find(
+        (c) =>
+          c.scenarioId === targetScenarioId &&
+          c.refId === linkedRefId &&
+          c.scope === "included" &&
+          !isVariableTierRefId(c.refId)
+      );
+      if (!linked) return null;
+      const base = cardPriceUsdForRollup(linked, catalogCtx, computeScratchSellPrice);
+      if (base == null || !Number.isFinite(base)) return null;
+      return computeVariableTierSellUsd(refId, base, null);
+    },
+    [cards, targetScenarioId, catalogCtx]
+  );
+
   const setupComplete = roadmapTitle.trim().length > 0;
   const canAddToTarget = !!targetPhaseId;
 
@@ -1416,6 +1518,7 @@ export function RoadmapPlanningView() {
         scope: c.scope,
         isTargetPhase: c.phaseId === targetPhaseId,
         kind: c.kind,
+        appliedToLabel: variableTierAppliedToLabel(c, cards),
       }))
       .sort((a, b) => {
         if (a.isTargetPhase !== b.isTargetPhase) return a.isTargetPhase ? -1 : 1;
@@ -1490,12 +1593,12 @@ export function RoadmapPlanningView() {
       );
       if (!ok) return;
 
-      setCards((prev) => [...prev, ...cloned]);
+      setCardsSynced((prev) => [...prev, ...cloned]);
       toastSuccess(
         `Copied ${cloned.length} offering${cloned.length === 1 ? "" : "s"} from "${sourceTitle}".`
       );
     },
-    [cards, phases, scenarios, targetScenarioId, targetPhaseId, toastNote, toastSuccess]
+    [cards, phases, scenarios, targetScenarioId, targetPhaseId, toastNote, toastSuccess, setCardsSynced]
   );
 
   const addScenario = useCallback(() => {
@@ -1519,7 +1622,7 @@ export function RoadmapPlanningView() {
         pmap.set(ph.id, nid);
         return { ...ph, id: nid, scenarioId: newSid, sortOrder: ph.sortOrder };
       });
-      setCards((cPrev) => [
+      setCardsSynced((cPrev) => [
         ...cPrev,
         ...cPrev
           .filter((c) => c.scenarioId === scenarioId)
@@ -1532,7 +1635,7 @@ export function RoadmapPlanningView() {
       ]);
       return [...phPrev, ...extra];
     });
-  }, []);
+  }, [setCardsSynced]);
 
   const deleteScenarioById = useCallback((scenarioId: string) => {
     setScenarios((prev) => {
@@ -1542,8 +1645,8 @@ export function RoadmapPlanningView() {
       return next;
     });
     setPhases((phPrev) => phPrev.filter((p) => p.scenarioId !== scenarioId));
-    setCards((cPrev) => cPrev.filter((c) => c.scenarioId !== scenarioId));
-  }, []);
+    setCardsSynced((cPrev) => cPrev.filter((c) => c.scenarioId !== scenarioId));
+  }, [setCardsSynced]);
 
   const addPhaseForScenario = useCallback((scenarioId: string) => {
     setPhases((prev) => {
@@ -1575,13 +1678,13 @@ export function RoadmapPlanningView() {
         if (!ok) return;
       }
       setPhases((prev) => prev.filter((p) => p.id !== phaseId));
-      setCards((prev) => prev.filter((c) => c.phaseId !== phaseId));
+      setCardsSynced((prev) => prev.filter((c) => c.phaseId !== phaseId));
       if (targetPhaseId === phaseId) {
         const remaining = forScenario.filter((p) => p.id !== phaseId).sort((a, b) => a.sortOrder - b.sortOrder);
         setTargetPhaseId(remaining[0]?.id ?? "");
       }
     },
-    [phases, cards, targetPhaseId]
+    [phases, cards, targetPhaseId, setCardsSynced]
   );
 
   const budgetNumber = useMemo(() => parseMoneyInput(clientBudget), [clientBudget]);
@@ -1997,7 +2100,8 @@ export function RoadmapPlanningView() {
               <>
                 <ProposalCatalogPanel
                   ctx={ctx}
-                  catalogTierTableRows={catalogTierTableRows}
+                  catalogTierTableRows={playbookCatalogTierTableRows}
+                  variableTierTableRows={variableCatalogTierTableRows}
                   scenarios={scenarios}
                   phases={phases}
                   targetScenarioId={targetScenarioId}
@@ -2016,6 +2120,12 @@ export function RoadmapPlanningView() {
                     if (!canAddToTarget) return;
                     addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId));
                   }}
+                  onAddVariableTier={(t, opts) => {
+                    if (!canAddToTarget) return;
+                    addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts));
+                  }}
+                  previewVariableTierPriceUsd={previewVariableTierPriceUsd}
+                  variableTierLinkTargets={variableTierLinkTargets}
                   onAddScratchTier={() => {
                     if (!canAddToTarget) return;
                     addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx));
@@ -2124,7 +2234,9 @@ export function RoadmapPlanningView() {
                 const p = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
                 if (p != null) includedGrand += p;
               }
-              const renderRow = (c: RoadmapCard) => (
+              const renderRow = (c: RoadmapCard) => {
+                const appliedToLabel = variableTierAppliedToLabel(c, scenCards);
+                return (
                 <tr key={c.key}>
                   <td className="roadmap-export-table__col roadmap-export-table__col--deliverable">
                     <div className="roadmap-export-table__deliverable">
@@ -2138,6 +2250,12 @@ export function RoadmapPlanningView() {
                           {c.scope}
                         </span>
                       </div>
+                      {appliedToLabel && !isTravelVariableTierRefId(c.refId) ? (
+                        <span className="roadmap-export-table__applied">
+                          Applied to{" "}
+                          <strong>{appliedToLabel}</strong>
+                        </span>
+                      ) : null}
                       {c.description.trim() && c.kind !== "tier" && c.kind !== "custom_tier" ? (
                         <p className="roadmap-export-table__desc">{descPreview(c.description, 140)}</p>
                       ) : null}
@@ -2154,6 +2272,7 @@ export function RoadmapPlanningView() {
                   </td>
                 </tr>
               );
+              };
               return (
                 <section key={scenario.id} className="roadmap-export-table">
                   <header className="roadmap-export-table__head">

@@ -258,6 +258,7 @@ export function ProposalOrganizePanel({
                       <ProposalOrganizeLineCard
                         key={c.key}
                         card={c}
+                        scenarioCards={scenCards}
                         ctx={ctx}
                         phaseChoices={scenarioPhases}
                         computeScratchSellPrice={computeScratchSellPrice}

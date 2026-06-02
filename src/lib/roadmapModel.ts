@@ -42,6 +42,10 @@ export type RoadmapCard = {
   scratchStrategicMult?: number;
   scratchAttachedTaskIds?: string[];
   scratchAttachedTaskGroupIds?: string[];
+  /** Travel Time variable tier: hours entered at add time */
+  variableTravelHours?: number | null;
+  /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
+  variableLinkedTierRefId?: string | null;
 };
 
 export type CatalogCtxLike = {

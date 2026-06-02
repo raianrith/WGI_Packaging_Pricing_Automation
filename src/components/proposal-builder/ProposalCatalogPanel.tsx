@@ -3,6 +3,13 @@ import type { Package, SolutionTier } from "../../types";
 import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
+import {
+  isPercentVariableTierRefId,
+  isTravelVariableTierRefId,
+  variableTierRuleSummary,
+  type AddVariableTierOpts,
+  type VariableTierLinkTarget,
+} from "../../lib/proposalVariableTiers";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
 import {
@@ -26,6 +33,7 @@ type CatalogCtxLike = {
 
 type Props = {
   catalogTierTableRows: CatalogTierTableRow[];
+  variableTierTableRows: CatalogTierTableRow[];
   ctx: CatalogCtxLike;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
@@ -39,6 +47,9 @@ type Props = {
   packagePreview: (p: Package) => { hours: string; price: string };
   onAddPackage: (p: Package) => void;
   onAddTier: (t: SolutionTier) => void;
+  onAddVariableTier: (t: SolutionTier, opts?: AddVariableTierOpts) => void;
+  previewVariableTierPriceUsd: (refId: string, opts?: AddVariableTierOpts) => number | null;
+  variableTierLinkTargets: VariableTierLinkTarget[];
   onAddScratchTier: () => void;
   canAdd: boolean;
   catalogReloading?: boolean;
@@ -211,6 +222,7 @@ function SolutionTierBrowsePath({
 
 export function ProposalCatalogPanel({
   catalogTierTableRows,
+  variableTierTableRows,
   ctx,
   scenarios,
   phases,
@@ -224,6 +236,9 @@ export function ProposalCatalogPanel({
   packagePreview,
   onAddPackage,
   onAddTier,
+  onAddVariableTier,
+  previewVariableTierPriceUsd,
+  variableTierLinkTargets,
   onAddScratchTier,
   canAdd,
   catalogReloading,
@@ -239,12 +254,17 @@ export function ProposalCatalogPanel({
   onCopyFromScenario,
 }: Props) {
   const searchId = useId();
-  const [catalogMode, setCatalogMode] = useState<"playbook" | "packages">("playbook");
+  const travelHoursFieldId = useId();
+  const [catalogMode, setCatalogMode] = useState<"playbook" | "packages" | "variable">("playbook");
   const [browsePhase, setBrowsePhase] = useState<string | null>(null);
   const [browseCategory, setBrowseCategory] = useState<string | null>(null);
   const [browseTactic, setBrowseTactic] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
+  const [travelModalTierId, setTravelModalTierId] = useState<string | null>(null);
+  const [travelHoursStr, setTravelHoursStr] = useState("");
+  const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
+  const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
 
   const targetPhases = useMemo(
     () => sortedPhasesForScenario(phases, targetScenarioId),
@@ -320,6 +340,83 @@ export function ProposalCatalogPanel({
     resetBrowse();
   };
 
+  const variableTierRows = useMemo(() => {
+    if (!searchLower) return variableTierTableRows;
+    return variableTierTableRows.filter((r) => {
+      const blob = `${r.tierName} ${r.solutionName} ${r.tierId}`.toLowerCase();
+      return blob.includes(searchLower);
+    });
+  }, [variableTierTableRows, searchLower]);
+
+  const travelModalTier = travelModalTierId ? tierById.get(travelModalTierId) ?? null : null;
+  const linkModalTier = linkModalTierId ? tierById.get(linkModalTierId) ?? null : null;
+
+  const closeTravelModal = () => {
+    setTravelModalTierId(null);
+    setTravelHoursStr("");
+  };
+
+  const closeLinkModal = () => {
+    setLinkModalTierId(null);
+    setSelectedLinkedTierRefId(null);
+  };
+
+  const submitTravelModal = () => {
+    if (!travelModalTier) return;
+    const h = Number(travelHoursStr.trim());
+    if (!Number.isFinite(h) || h <= 0) return;
+    onAddVariableTier(travelModalTier, { travelHours: h });
+    setJustAddedId(`tier:${travelModalTier.solution_tier_id}`);
+    window.setTimeout(
+      () => setJustAddedId((id) => (id === `tier:${travelModalTier.solution_tier_id}` ? null : id)),
+      1600
+    );
+    closeTravelModal();
+  };
+
+  const submitLinkModal = () => {
+    if (!linkModalTier || !selectedLinkedTierRefId) return;
+    onAddVariableTier(linkModalTier, { linkedTierRefId: selectedLinkedTierRefId });
+    setJustAddedId(`tier:${linkModalTier.solution_tier_id}`);
+    window.setTimeout(
+      () => setJustAddedId((id) => (id === `tier:${linkModalTier.solution_tier_id}` ? null : id)),
+      1600
+    );
+    closeLinkModal();
+  };
+
+  const handleAddVariableTierRow = (tierId: string) => {
+    const tier = tierById.get(tierId);
+    if (!tier || !canAdd) return;
+    if (isTravelVariableTierRefId(tierId)) {
+      setTravelModalTierId(tierId);
+      setTravelHoursStr("");
+      return;
+    }
+    if (isPercentVariableTierRefId(tierId)) {
+      if (variableTierLinkTargets.length === 0) {
+        window.alert("Add at least one solution tier to this scenario before adding this variable tier.");
+        return;
+      }
+      setLinkModalTierId(tierId);
+      setSelectedLinkedTierRefId(variableTierLinkTargets[0]?.refId ?? null);
+    }
+  };
+
+  const catalogSliderPos =
+    catalogMode === "packages" ? 1 : catalogMode === "variable" ? 2 : 0;
+
+  const linkModalPreviewUsd =
+    linkModalTier && selectedLinkedTierRefId
+      ? previewVariableTierPriceUsd(linkModalTier.solution_tier_id, {
+          linkedTierRefId: selectedLinkedTierRefId,
+        })
+      : null;
+
+  const selectedLinkTarget = selectedLinkedTierRefId
+    ? variableTierLinkTargets.find((t) => t.refId === selectedLinkedTierRefId) ?? null
+    : null;
+
   const handleAddTier = (tierId: string) => {
     const tier = tierById.get(tierId);
     if (!tier || !canAdd) return;
@@ -342,8 +439,9 @@ export function ProposalCatalogPanel({
         <p className="proposal-step-panel__eyebrow">Step 3</p>
         <h2 className="proposal-step-panel__title">Add Offerings</h2>
         <p className="proposal-step-panel__lead">
-          Choose where items land, then add <strong>Solution Tiers</strong> (phase → category → track) or switch to{" "}
-          <strong>Packages</strong> to add full agency packages. Use <strong>Show All</strong> to skip a drill-down level.
+          Choose where items land, then add <strong>Solution Tiers</strong> (phase → category → track),{" "}
+          <strong>Packages</strong>, or <strong>Variable Tiers</strong> with dynamic pricing. Use{" "}
+          <strong>Show All</strong> to skip a drill-down level.
         </p>
       </header>
 
@@ -431,7 +529,7 @@ export function ProposalCatalogPanel({
             role="tablist"
           >
             <div
-              className={`proposal-catalog-source-tabs__slider${catalogMode === "packages" ? " proposal-catalog-source-tabs__slider--right" : ""}`}
+              className={`proposal-catalog-source-tabs__slider proposal-catalog-source-tabs__slider--pos-${catalogSliderPos}`}
               aria-hidden
             />
             <button
@@ -455,6 +553,20 @@ export function ProposalCatalogPanel({
             >
               Packages
               <span className="proposal-catalog-source-tabs__count">{ctx.packages.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={catalogMode === "variable"}
+              className={`proposal-catalog-source-tabs__tab${catalogMode === "variable" ? " is-active" : ""}`}
+              onClick={() => {
+                setCatalogMode("variable");
+                resetBrowse();
+                setSearch("");
+              }}
+            >
+              Variable Tiers
+              <span className="proposal-catalog-source-tabs__count">{variableTierTableRows.length}</span>
             </button>
           </div>
           {onReloadCatalog ? (
@@ -550,6 +662,51 @@ export function ProposalCatalogPanel({
                   />
                 );
               })}
+          </ProposalCatalogLinesPanel>
+        </div>
+      ) : catalogMode === "variable" ? (
+        <div className="proposal-catalog-offerings">
+          <p className="proposal-catalog-step-prompt">Pick A Variable Tier</p>
+          <p className="proposal-catalog-offerings__hint">
+            Dynamic pricing tied to scenario tiers · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
+            <strong>{targetPhaseTitle}</strong>
+          </p>
+          <ProposalCatalogListSearch
+            id={searchId}
+            value={search}
+            onChange={setSearch}
+            placeholder="Search variable tiers…"
+            label="Search variable tiers"
+          />
+          <ProposalCatalogLinesPanel
+            count={variableTierRows.length}
+            isEmpty={variableTierRows.length === 0}
+            emptyTitle="No variable tiers"
+            emptyText="Variable tiers are configured in the catalog vault."
+          >
+            {variableTierRows.map((r) => {
+              const onProposal = addedTierRefIds.has(r.tierId);
+              const justAdded = justAddedId === `tier:${r.tierId}`;
+              const priceDisplay = isTravelVariableTierRefId(r.tierId)
+                ? "Enter hours"
+                : isPercentVariableTierRefId(r.tierId)
+                  ? "Select tier"
+                  : "—";
+              return (
+                <ProposalCatalogLineRow
+                  key={r.tierId}
+                  kind="tier"
+                  title={r.tierName}
+                  detail={variableTierRuleSummary(r.tierId)}
+                  hours={isTravelVariableTierRefId(r.tierId) ? "—" : r.hoursDisplay}
+                  price={priceDisplay}
+                  onProposal={onProposal}
+                  justAdded={justAdded}
+                  canAdd={canAdd}
+                  onAdd={() => handleAddVariableTierRow(r.tierId)}
+                />
+              );
+            })}
           </ProposalCatalogLinesPanel>
         </div>
       ) : (
@@ -692,6 +849,262 @@ export function ProposalCatalogPanel({
           ) : null}
         </>
       )}
+
+      {travelModalTier ? (
+        <div
+          className="roadmap-modal-backdrop proposal-travel-modal-backdrop"
+          role="presentation"
+          onClick={closeTravelModal}
+        >
+          <div
+            className="roadmap-modal proposal-travel-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proposal-travel-hours-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="proposal-travel-modal__close"
+              aria-label="Close"
+              onClick={closeTravelModal}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M18 6L6 18M6 6l12 12"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            <header className="proposal-travel-modal__head">
+              <div className="proposal-travel-modal__icon" aria-hidden>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.75" />
+                  <path d="M12 7v5l3.5 2" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="proposal-travel-modal__head-copy">
+                <p className="proposal-travel-modal__eyebrow">Variable Tier</p>
+                <h2 id="proposal-travel-hours-title" className="proposal-travel-modal__title">
+                  {travelModalTier.solution_tier_name}
+                </h2>
+                <p className="proposal-travel-modal__subtitle">
+                  Billable travel time for this scenario. Sell price is calculated automatically.
+                </p>
+              </div>
+            </header>
+
+            <div className="proposal-travel-modal__body">
+              <div className="proposal-travel-modal__rate" aria-label="Hourly rate">
+                <span className="proposal-travel-modal__rate-label">Hourly rate</span>
+                <strong className="proposal-travel-modal__rate-value">$150</strong>
+                <span className="proposal-travel-modal__rate-unit">/ hr</span>
+              </div>
+
+              <label className="proposal-travel-modal__field" htmlFor={travelHoursFieldId}>
+                <span className="proposal-travel-modal__field-label">Total travel hours</span>
+                <div className="proposal-travel-modal__input-wrap">
+                  <input
+                    id={travelHoursFieldId}
+                    type="number"
+                    min={0.25}
+                    step={0.25}
+                    inputMode="decimal"
+                    className="proposal-travel-modal__input"
+                    placeholder="0"
+                    value={travelHoursStr}
+                    onChange={(e) => setTravelHoursStr(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitTravelModal();
+                      if (e.key === "Escape") closeTravelModal();
+                    }}
+                  />
+                  <span className="proposal-travel-modal__input-suffix">hrs</span>
+                </div>
+              </label>
+
+              {(() => {
+                const h = Number(travelHoursStr.trim());
+                const preview =
+                  Number.isFinite(h) && h > 0
+                    ? previewVariableTierPriceUsd(travelModalTier.solution_tier_id, { travelHours: h })
+                    : null;
+                const hoursLabel =
+                  Number.isFinite(h) && h > 0
+                    ? Number.isInteger(h)
+                      ? String(h)
+                      : String(Math.round(h * 10) / 10)
+                    : null;
+                return (
+                  <div
+                    className={`proposal-travel-modal__preview${preview != null ? " proposal-travel-modal__preview--live" : ""}`}
+                    role="status"
+                  >
+                    <span className="proposal-travel-modal__preview-label">Estimated sell price</span>
+                    <strong className="proposal-travel-modal__preview-value">
+                      {preview != null ? formatUsd(preview) : "—"}
+                    </strong>
+                    {preview != null && hoursLabel ? (
+                      <span className="proposal-travel-modal__preview-formula">
+                        {hoursLabel} hrs × $150
+                      </span>
+                    ) : (
+                      <span className="proposal-travel-modal__preview-hint">Enter hours to see the sell price</span>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <footer className="roadmap-modal__actions proposal-travel-modal__actions">
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={closeTravelModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--primary proposal-travel-modal__submit"
+                disabled={!Number.isFinite(Number(travelHoursStr.trim())) || Number(travelHoursStr.trim()) <= 0}
+                onClick={submitTravelModal}
+              >
+                Add to scenario
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {linkModalTier ? (
+        <div
+          className="roadmap-modal-backdrop proposal-travel-modal-backdrop"
+          role="presentation"
+          onClick={closeLinkModal}
+        >
+          <div
+            className="roadmap-modal proposal-travel-modal proposal-travel-modal--link"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proposal-link-tier-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="proposal-travel-modal__close"
+              aria-label="Close"
+              onClick={closeLinkModal}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M18 6L6 18M6 6l12 12"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            <header className="proposal-travel-modal__head">
+              <div className="proposal-travel-modal__icon proposal-travel-modal__icon--link" aria-hidden>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+              <div className="proposal-travel-modal__head-copy">
+                <p className="proposal-travel-modal__eyebrow">Variable Tier</p>
+                <h2 id="proposal-link-tier-title" className="proposal-travel-modal__title">
+                  {linkModalTier.solution_tier_name}
+                </h2>
+                <p className="proposal-travel-modal__subtitle">
+                  Choose which scenario tier this charge is based on. The formula stays the same — only the base sell
+                  price changes.
+                </p>
+              </div>
+            </header>
+
+            <div className="proposal-travel-modal__body">
+              <p className="proposal-travel-modal__field-label">Linked tier</p>
+              {variableTierLinkTargets.length === 0 ? (
+                <p className="proposal-travel-modal__empty">Add solution tiers to this scenario first.</p>
+              ) : (
+                <ul className="proposal-travel-modal__link-list" role="listbox" aria-label="Linked tier">
+                  {variableTierLinkTargets.map((target) => {
+                    const selected = selectedLinkedTierRefId === target.refId;
+                    return (
+                      <li key={target.refId} role="presentation">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          className={`proposal-travel-modal__link-option${selected ? " is-selected" : ""}`}
+                          onClick={() => setSelectedLinkedTierRefId(target.refId)}
+                        >
+                          <span className="proposal-travel-modal__link-option-main">
+                            <span className="proposal-travel-modal__link-option-title">{target.headline}</span>
+                            <span className="proposal-travel-modal__link-option-meta">
+                              {target.phaseTitle} · {target.priceDisplay}
+                            </span>
+                          </span>
+                          <span className="proposal-travel-modal__link-option-check" aria-hidden>
+                            {selected ? "✓" : ""}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              <div
+                className={`proposal-travel-modal__preview${linkModalPreviewUsd != null ? " proposal-travel-modal__preview--live" : ""}`}
+                role="status"
+              >
+                <span className="proposal-travel-modal__preview-label">Estimated sell price</span>
+                <strong className="proposal-travel-modal__preview-value">
+                  {linkModalPreviewUsd != null ? formatUsd(linkModalPreviewUsd) : "—"}
+                </strong>
+                {linkModalPreviewUsd != null && selectedLinkTarget ? (
+                  <span className="proposal-travel-modal__preview-formula">
+                    {variableTierRuleSummary(linkModalTier.solution_tier_id).replace(
+                      "linked tier sell",
+                      selectedLinkTarget.priceDisplay
+                    )}
+                  </span>
+                ) : (
+                  <span className="proposal-travel-modal__preview-hint">Select a tier to preview the charge</span>
+                )}
+              </div>
+            </div>
+
+            <footer className="roadmap-modal__actions proposal-travel-modal__actions">
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={closeLinkModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--primary proposal-travel-modal__submit"
+                disabled={!selectedLinkedTierRefId || linkModalPreviewUsd == null}
+                onClick={submitLinkModal}
+              >
+                Add to scenario
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

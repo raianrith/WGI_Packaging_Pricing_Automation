@@ -1,5 +1,6 @@
 import type { RoadmapCard, RoadmapLineScope, RoadmapPhase } from "../../lib/roadmapModel";
 import { effectiveHoursStr, effectivePriceStr } from "../../lib/roadmapModel";
+import { isTravelVariableTierRefId, isVariableTierRefId, variableTierAppliedToLabel } from "../../lib/proposalVariableTiers";
 
 type CatalogCtxLike = Parameters<typeof effectivePriceStr>[1];
 
@@ -24,6 +25,7 @@ function kindShort(kind: RoadmapCard["kind"]): string {
 
 type Props = {
   card: RoadmapCard;
+  scenarioCards: RoadmapCard[];
   ctx: CatalogCtxLike;
   phaseChoices: RoadmapPhase[];
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike) => string;
@@ -35,6 +37,7 @@ type Props = {
 
 export function ProposalOrganizeLineCard({
   card,
+  scenarioCards,
   ctx,
   phaseChoices,
   computeScratchSellPrice,
@@ -46,6 +49,9 @@ export function ProposalOrganizeLineCard({
   const hours = effectiveHoursStr(card);
   const price = effectivePriceStr(card, ctx, computeScratchSellPrice);
   const hasProposalOverride = Boolean(card.hoursOverride?.trim() || card.priceOverride?.trim());
+  const appliedToLabel = isVariableTierRefId(card.refId)
+    ? variableTierAppliedToLabel(card, scenarioCards)
+    : null;
 
   return (
     <li className={`proposal-organize-line proposal-organize-line--${card.scope}`}>
@@ -72,6 +78,12 @@ export function ProposalOrganizeLineCard({
           </span>
 
           <h4 className="proposal-organize-line__title">{card.headline.trim() || "(untitled)"}</h4>
+          {appliedToLabel && !isTravelVariableTierRefId(card.refId) ? (
+            <p className="proposal-organize-line__applied">
+              Applied to{" "}
+              <strong>{appliedToLabel}</strong>
+            </p>
+          ) : null}
 
           <div className="proposal-organize-line__metrics">
             <span className="proposal-organize-line__metric">

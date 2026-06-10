@@ -30,6 +30,7 @@ import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCat
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
+import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
 import {
   effectiveResourceExamples,
   effectiveResourceTools,
@@ -50,7 +51,9 @@ import {
   type RoadmapProposalSnapshot,
 } from "../lib/roadmapProposalSnapshot";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
+import { ProposalSaveReminderBanner } from "../components/proposal-builder/ProposalSaveReminderBanner";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
+import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import {
   applyVariableTierPricingToCards,
   computeVariableTierSellUsd,
@@ -878,6 +881,7 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
 export function RoadmapPlanningView() {
   const { user } = useAuth();
   const { toastError, toastNote, toastSuccess } = useToast();
+  const { setGuard } = useProposalDraftGuard();
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [catalogReloading, setCatalogReloading] = useState(false);
   const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
@@ -886,6 +890,7 @@ export function RoadmapPlanningView() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
+  const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
   const savedProposalErrSeen = useRef<string | null>(null);
   const [clientLabel, setClientLabel] = useState("");
@@ -1083,6 +1088,7 @@ export function RoadmapPlanningView() {
     }
     const saved = result.data as RoadmapProposalRow | null;
     if (saved?.id) setActiveProposalId(saved.id);
+    setLastSavedFingerprint(proposalSnapshotFingerprint(snapshot));
     toastSuccess(`Saved "${title}" under ${clientName}.`);
     await loadSavedProposals();
   }, [
@@ -1108,8 +1114,70 @@ export function RoadmapPlanningView() {
     [saveCurrentProposal, savingProposal, activeProposalId]
   );
 
+  const showSaveBanner =
+    builderMode === "create" ||
+    activeProposalId != null ||
+    cards.length > 0 ||
+    clientLabel.trim() !== "" ||
+    roadmapTitle.trim() !== "" ||
+    clientBudget.trim() !== "";
+
+  const proposalIsDirty = useMemo(() => {
+    if (lastSavedFingerprint === null) return false;
+    return (
+      proposalSnapshotFingerprint({
+        version: 1,
+        clientLabel,
+        roadmapTitle,
+        horizon,
+        clientBudget,
+        scenarios,
+        phases,
+        cards,
+      }) !== lastSavedFingerprint
+    );
+  }, [
+    lastSavedFingerprint,
+    clientLabel,
+    roadmapTitle,
+    horizon,
+    clientBudget,
+    scenarios,
+    phases,
+    cards,
+  ]);
+
+  useEffect(() => {
+    setGuard({
+      isActive: showSaveBanner,
+      isDirty: proposalIsDirty,
+      message:
+        "You have unsaved changes to your proposal. Save your work before leaving, or your changes will be lost.",
+    });
+    return () => setGuard(null);
+  }, [proposalIsDirty, setGuard, showSaveBanner]);
+
+  useEffect(() => {
+    if (!proposalIsDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [proposalIsDirty]);
+
   const startNewProposal = useCallback(() => {
     const init = createInitialScenariosAndPhases();
+    const emptySnapshot: RoadmapProposalSnapshot = {
+      version: 1,
+      clientLabel: "",
+      roadmapTitle: "",
+      horizon: "6",
+      clientBudget: "",
+      scenarios: init.scenarios,
+      phases: init.phases,
+      cards: [],
+    };
     setClientLabel("");
     setRoadmapTitle("");
     setClientBudget("");
@@ -1119,6 +1187,7 @@ export function RoadmapPlanningView() {
     setCards([]);
     setTargetScenarioId(init.scenarios[0]!.id);
     setActiveProposalId(null);
+    setLastSavedFingerprint(proposalSnapshotFingerprint(emptySnapshot));
     setDetailsModalKey(null);
     setScratchDraft(null);
     setScratchModalFocusCompose(false);
@@ -1177,6 +1246,18 @@ export function RoadmapPlanningView() {
       setCards(snapshot.cards);
       setTargetScenarioId(nextScenarios[0]?.id ?? "");
       setActiveProposalId(row.id);
+      setLastSavedFingerprint(
+        proposalSnapshotFingerprint({
+          version: 1,
+          clientLabel: snapshot.clientLabel,
+          roadmapTitle: snapshot.roadmapTitle,
+          horizon: snapshot.horizon,
+          clientBudget: snapshot.clientBudget,
+          scenarios: nextScenarios,
+          phases: nextPhases,
+          cards: snapshot.cards,
+        })
+      );
       setDetailsModalKey(null);
       setScratchDraft(null);
       setScratchModalFocusCompose(false);
@@ -1982,6 +2063,14 @@ export function RoadmapPlanningView() {
             </div>
           </div>
         </header>
+
+        {showSaveBanner ? (
+          <ProposalSaveReminderBanner
+            isDirty={proposalIsDirty}
+            saving={savingProposal}
+            onSave={() => void saveCurrentProposal()}
+          />
+        ) : null}
 
         {builderMode === "saved" && !activeProposalId ? (
           <div className="proposal-builder-saved-wrap">

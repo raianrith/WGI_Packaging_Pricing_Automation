@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Navigate, Outlet, NavLink, useLocation } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   APP_BRAND_NAME,
   APP_SCOPE_LABEL,
@@ -10,6 +10,7 @@ import {
   NAV_SOLUTIONS_OVERVIEW,
 } from "../branding";
 import { useAuth } from "../context/AuthContext";
+import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
 import { isAgencyRoute } from "../lib/agencyRoutes";
 import { getSupabase } from "../lib/supabase";
 import {
@@ -45,6 +46,39 @@ function SignOutButton() {
     >
       {busy ? "Signing out…" : "Sign out"}
     </button>
+  );
+}
+
+function GuardedNavLink({
+  to,
+  end,
+  className,
+  children,
+}: {
+  to: string;
+  end?: boolean;
+  className: string | ((props: { isActive: boolean }) => string);
+  children: ReactNode;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { guard, confirmLeave } = useProposalDraftGuard();
+
+  return (
+    <NavLink
+      end={end}
+      to={to}
+      className={className}
+      onClick={(e) => {
+        if (location.pathname !== "/roadmap") return;
+        if (to === "/roadmap") return;
+        if (!guard?.isActive || !guard.isDirty) return;
+        e.preventDefault();
+        confirmLeave(() => navigate(to));
+      }}
+    >
+      {children}
+    </NavLink>
   );
 }
 
@@ -143,7 +177,7 @@ export function ProtectedLayout() {
           </div>
 
           <nav className="app-module-tabs app-top-bar__nav" aria-label="Application area">
-            <NavLink
+            <GuardedNavLink
               end
               to="/"
               className={() =>
@@ -151,7 +185,7 @@ export function ProtectedLayout() {
               }
             >
               {NAV_SOLUTIONS_OVERVIEW}
-            </NavLink>
+            </GuardedNavLink>
             <NavLink
               to="/roadmap"
               className={({ isActive }) =>
@@ -161,14 +195,14 @@ export function ProtectedLayout() {
               {NAV_PROPOSAL_BUILDER}
             </NavLink>
             {!profileLoading && isAdmin ? (
-              <NavLink
+              <GuardedNavLink
                 to="/admin"
                 className={({ isActive }) =>
                   `app-module-tab${isActive ? " app-module-tab--active" : ""}`
                 }
               >
                 Admin
-              </NavLink>
+              </GuardedNavLink>
             ) : null}
             <a
               className="app-module-tab app-module-tab--external"

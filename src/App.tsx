@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { ProposalDraftGuardProvider } from "./context/ProposalDraftGuardContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ProtectedLayout } from "./components/ProtectedLayout";
 import { AgencyPackagesHub } from "./views/AgencyPackagesHub";
@@ -14,6 +15,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
+      <ProposalDraftGuardProvider>
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route element={<ProtectedLayout />}>
@@ -36,6 +38,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      </ProposalDraftGuardProvider>
       </ToastProvider>
     </AuthProvider>
   );

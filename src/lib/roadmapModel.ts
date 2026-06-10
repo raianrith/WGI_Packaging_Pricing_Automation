@@ -165,7 +165,32 @@ export function budgetVsScenarioStatus(subtotal: number, budget: number): Budget
 
 export type ReorderCardDirection = "up" | "down";
 
-/** Move a line up or down within its scenario + phase; preserves order elsewhere on the board. */
+/** Apply a new key order for all lines in one scenario phase; other cards stay put. */
+export function reorderPhaseCardsByKeys(
+  cards: RoadmapCard[],
+  scenarioId: string,
+  phaseId: string,
+  orderedKeys: string[]
+): RoadmapCard[] {
+  const phaseCards = cards.filter((c) => c.scenarioId === scenarioId && c.phaseId === phaseId);
+  if (phaseCards.length <= 1) return cards;
+  if (orderedKeys.length !== phaseCards.length) return cards;
+
+  const phaseKeySet = new Set(phaseCards.map((c) => c.key));
+  for (const key of orderedKeys) {
+    if (!phaseKeySet.has(key)) return cards;
+  }
+
+  const byKey = new Map(phaseCards.map((c) => [c.key, c]));
+  const reordered = orderedKeys.map((key) => byKey.get(key)!);
+  let idx = 0;
+  return cards.map((c) => {
+    if (c.scenarioId !== scenarioId || c.phaseId !== phaseId) return c;
+    return reordered[idx++]!;
+  });
+}
+
+/** @deprecated Use drag reorder via reorderPhaseCardsByKeys */
 export function reorderCardInPhase(
   cards: RoadmapCard[],
   cardKey: string,
@@ -183,12 +208,7 @@ export function reorderCardInPhase(
   const swapIdx = direction === "up" ? idxInPhase - 1 : idxInPhase + 1;
   if (swapIdx < 0 || swapIdx >= phaseKeys.length) return cards;
 
-  const swapKey = phaseKeys[swapIdx]!;
-  const i = cards.findIndex((c) => c.key === cardKey);
-  const j = cards.findIndex((c) => c.key === swapKey);
-  if (i < 0 || j < 0) return cards;
-
-  const next = [...cards];
-  [next[i], next[j]] = [next[j]!, next[i]!];
-  return next;
+  const nextKeys = [...phaseKeys];
+  [nextKeys[idxInPhase], nextKeys[swapIdx]] = [nextKeys[swapIdx]!, nextKeys[idxInPhase]!];
+  return reorderPhaseCardsByKeys(cards, card.scenarioId, card.phaseId, nextKeys);
 }

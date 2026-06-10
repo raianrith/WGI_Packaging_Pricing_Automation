@@ -1,4 +1,7 @@
-import type { RoadmapCard, RoadmapLineScope, RoadmapPhase, ReorderCardDirection } from "../../lib/roadmapModel";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { CSSProperties } from "react";
+import type { RoadmapCard, RoadmapLineScope, RoadmapPhase } from "../../lib/roadmapModel";
 import { effectiveHoursStr, effectivePriceStr } from "../../lib/roadmapModel";
 import { isTravelVariableTierRefId, isVariableTierRefId, variableTierAppliedToLabel } from "../../lib/proposalVariableTiers";
 
@@ -29,11 +32,8 @@ type Props = {
   ctx: CatalogCtxLike;
   phaseChoices: RoadmapPhase[];
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike) => string;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
   onPatch: (key: string, patch: Partial<RoadmapCard>) => void;
   onRemove: (key: string) => void;
-  onReorder: (key: string, direction: ReorderCardDirection) => void;
   onDetails: (card: RoadmapCard) => void;
   onEditPricing: (card: RoadmapCard) => void;
 };
@@ -44,14 +44,21 @@ export function ProposalOrganizeLineCard({
   ctx,
   phaseChoices,
   computeScratchSellPrice,
-  canMoveUp,
-  canMoveDown,
   onPatch,
   onRemove,
-  onReorder,
   onDetails,
   onEditPricing,
 }: Props) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: card.key,
+  });
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { zIndex: 2, position: "relative" } : {}),
+  };
+
   const hours = effectiveHoursStr(card);
   const price = effectivePriceStr(card, ctx, computeScratchSellPrice);
   const hasProposalOverride = Boolean(card.hoursOverride?.trim() || card.priceOverride?.trim());
@@ -60,27 +67,23 @@ export function ProposalOrganizeLineCard({
     : null;
 
   return (
-    <li className={`proposal-organize-line proposal-organize-line--${card.scope}`}>
-      <div className="proposal-organize-line__reorder" aria-label="Reorder within phase">
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`proposal-organize-line proposal-organize-line--${card.scope}${isDragging ? " proposal-organize-line--dragging" : ""}`}
+    >
+      <div className="proposal-organize-line__reorder">
         <button
           type="button"
-          className="proposal-organize-line__reorder-btn"
-          disabled={!canMoveUp}
-          aria-label="Move up"
-          title="Move up"
-          onClick={() => onReorder(card.key, "up")}
+          className="proposal-organize-line__drag-handle admin-task-drag-handle"
+          aria-label="Drag to reorder"
+          title="Drag to reorder"
+          {...attributes}
+          {...listeners}
         >
-          ↑
-        </button>
-        <button
-          type="button"
-          className="proposal-organize-line__reorder-btn"
-          disabled={!canMoveDown}
-          aria-label="Move down"
-          title="Move down"
-          onClick={() => onReorder(card.key, "down")}
-        >
-          ↓
+          <span className="admin-task-drag-handle__grip" aria-hidden>
+            ⠿
+          </span>
         </button>
       </div>
 

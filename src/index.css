@@ -14551,45 +14551,22 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
 .proposal-organize-line__reorder {
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 0.15rem;
-  padding: 0.35rem 0.25rem;
+  padding: 0.35rem 0.3rem;
   background: rgba(248, 246, 242, 0.95);
   border-right: 1px solid rgba(226, 220, 211, 0.85);
 }
 
-.proposal-organize-line__reorder-btn {
-  display: grid;
-  place-items: center;
-  width: 1.65rem;
-  height: 1.35rem;
-  padding: 0;
-  border: 1px solid rgba(226, 220, 211, 0.95);
-  border-radius: 6px;
-  background: #fff;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 800;
-  line-height: 1;
-  color: rgba(13, 92, 77, 0.82);
-  cursor: pointer;
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease,
-    opacity 0.12s ease;
+.proposal-organize-line__drag-handle {
+  width: 1.85rem;
+  height: 2.35rem;
 }
 
-.proposal-organize-line__reorder-btn:hover:not(:disabled) {
-  background: rgba(13, 92, 77, 0.08);
-  border-color: rgba(13, 92, 77, 0.35);
-  color: rgba(13, 92, 77, 0.98);
-}
-
-.proposal-organize-line__reorder-btn:disabled {
-  opacity: 0.28;
-  cursor: not-allowed;
+.proposal-organize-line--dragging {
+  border-color: rgba(13, 92, 77, 0.45);
+  box-shadow: 0 8px 24px rgba(13, 92, 77, 0.16);
+  opacity: 0.98;
 }
 
 .proposal-organize-line__accent {
@@ -16208,7 +16185,7 @@ html[data-theme="dark"] .proposal-organize-line__scope,
 html[data-theme="dark"] .proposal-organize-line__metric,
 html[data-theme="dark"] .proposal-organize-line__action,
 html[data-theme="dark"] .proposal-organize-line__reorder,
-html[data-theme="dark"] .proposal-organize-line__reorder-btn,
+html[data-theme="dark"] .proposal-organize-line__drag-handle,
 html[data-theme="dark"] .proposal-budget-card__item,
 html[data-theme="dark"] .proposal-pricing-modal__block--catalog {
   background: rgba(0, 0, 0, 0.2);

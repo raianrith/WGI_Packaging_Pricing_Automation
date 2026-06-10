@@ -11,7 +11,7 @@ const STEPS: StepDef[] = [
   { id: "setup", number: 1, label: "Setup", hint: "Client & Budget" },
   { id: "scenarios", number: 2, label: "Scenarios & Phases", hint: "Names & Structure" },
   { id: "catalog", number: 3, label: "Add Offerings", hint: "From Catalog" },
-  { id: "board", number: 4, label: "Organize", hint: "Scope & Compare" },
+  { id: "board", number: 4, label: "Organize & Reorder Offerings", hint: "Scope & Compare" },
   { id: "review", number: 5, label: "Review", hint: "Save & Export" },
 ];
 

@@ -162,3 +162,33 @@ export function budgetVsScenarioStatus(subtotal: number, budget: number): Budget
   if (subtotal >= budget * 0.92) return "in_range";
   return "under";
 }
+
+export type ReorderCardDirection = "up" | "down";
+
+/** Move a line up or down within its scenario + phase; preserves order elsewhere on the board. */
+export function reorderCardInPhase(
+  cards: RoadmapCard[],
+  cardKey: string,
+  direction: ReorderCardDirection
+): RoadmapCard[] {
+  const card = cards.find((c) => c.key === cardKey);
+  if (!card) return cards;
+
+  const phaseKeys = cards
+    .filter((c) => c.scenarioId === card.scenarioId && c.phaseId === card.phaseId)
+    .map((c) => c.key);
+  const idxInPhase = phaseKeys.indexOf(cardKey);
+  if (idxInPhase < 0) return cards;
+
+  const swapIdx = direction === "up" ? idxInPhase - 1 : idxInPhase + 1;
+  if (swapIdx < 0 || swapIdx >= phaseKeys.length) return cards;
+
+  const swapKey = phaseKeys[swapIdx]!;
+  const i = cards.findIndex((c) => c.key === cardKey);
+  const j = cards.findIndex((c) => c.key === swapKey);
+  if (i < 0 || j < 0) return cards;
+
+  const next = [...cards];
+  [next[i], next[j]] = [next[j]!, next[i]!];
+  return next;
+}

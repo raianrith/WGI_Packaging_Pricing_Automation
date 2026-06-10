@@ -1,4 +1,4 @@
-import type { RoadmapCard, RoadmapLineScope, RoadmapPhase } from "../../lib/roadmapModel";
+import type { RoadmapCard, RoadmapLineScope, RoadmapPhase, ReorderCardDirection } from "../../lib/roadmapModel";
 import { effectiveHoursStr, effectivePriceStr } from "../../lib/roadmapModel";
 import { isTravelVariableTierRefId, isVariableTierRefId, variableTierAppliedToLabel } from "../../lib/proposalVariableTiers";
 
@@ -29,8 +29,11 @@ type Props = {
   ctx: CatalogCtxLike;
   phaseChoices: RoadmapPhase[];
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike) => string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   onPatch: (key: string, patch: Partial<RoadmapCard>) => void;
   onRemove: (key: string) => void;
+  onReorder: (key: string, direction: ReorderCardDirection) => void;
   onDetails: (card: RoadmapCard) => void;
   onEditPricing: (card: RoadmapCard) => void;
 };
@@ -41,8 +44,11 @@ export function ProposalOrganizeLineCard({
   ctx,
   phaseChoices,
   computeScratchSellPrice,
+  canMoveUp,
+  canMoveDown,
   onPatch,
   onRemove,
+  onReorder,
   onDetails,
   onEditPricing,
 }: Props) {
@@ -55,6 +61,29 @@ export function ProposalOrganizeLineCard({
 
   return (
     <li className={`proposal-organize-line proposal-organize-line--${card.scope}`}>
+      <div className="proposal-organize-line__reorder" aria-label="Reorder within phase">
+        <button
+          type="button"
+          className="proposal-organize-line__reorder-btn"
+          disabled={!canMoveUp}
+          aria-label="Move up"
+          title="Move up"
+          onClick={() => onReorder(card.key, "up")}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          className="proposal-organize-line__reorder-btn"
+          disabled={!canMoveDown}
+          aria-label="Move down"
+          title="Move down"
+          onClick={() => onReorder(card.key, "down")}
+        >
+          ↓
+        </button>
+      </div>
+
       <div className="proposal-organize-line__accent" aria-hidden />
 
       <div className="proposal-organize-line__body">

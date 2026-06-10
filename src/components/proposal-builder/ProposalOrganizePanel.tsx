@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
+import type { RoadmapCard, RoadmapPhase, RoadmapScenario, ReorderCardDirection } from "../../lib/roadmapModel";
 import { budgetVsScenarioStatus, cardHoursForScenarioRollup, cardPriceUsdForRollup, sortedPhasesForScenario } from "../../lib/roadmapModel";
 import { ProposalOrganizeLineCard } from "./ProposalOrganizeLineCard";
 import { ProposalOrganizePricingModal } from "./ProposalOrganizePricingModal";
@@ -31,6 +31,7 @@ type Props = {
   initialScenarioId: string;
   onPatchCard: (key: string, patch: Partial<RoadmapCard>) => void;
   onRemoveCard: (key: string) => void;
+  onReorderCard: (key: string, direction: ReorderCardDirection) => void;
   onOpenDetails: (c: RoadmapCard) => void;
   onEditStructure: () => void;
   onClearScenarioItems: (scenarioId: string) => void;
@@ -50,6 +51,7 @@ export function ProposalOrganizePanel({
   initialScenarioId,
   onPatchCard,
   onRemoveCard,
+  onReorderCard,
   onOpenDetails,
   onEditStructure,
   onClearScenarioItems,
@@ -115,10 +117,11 @@ export function ProposalOrganizePanel({
       <header className="proposal-organize__hero">
         <div className="proposal-organize__hero-text">
           <p className="proposal-step-panel__eyebrow">Step 4</p>
-          <h2 className="proposal-step-panel__title">Organize &amp; Compare</h2>
+          <h2 className="proposal-step-panel__title">Organize &amp; Reorder Offerings</h2>
           <p className="proposal-step-panel__lead">
-            Tune scope per line, move items between phases, and set <strong>proposal hours &amp; pricing</strong> when the
-            catalog numbers are not what you want on the final proposal.
+            Tune scope per line, reorder offerings within each phase, move items between phases, and set{" "}
+            <strong>proposal hours &amp; pricing</strong> when the catalog numbers are not what you want on the final
+            proposal.
           </p>
         </div>
       </header>
@@ -254,7 +257,7 @@ export function ProposalOrganizePanel({
                   <p className="proposal-organize-phase__empty roadmap-muted">Nothing in this phase.</p>
                 ) : (
                   <ul className="proposal-organize-phase__list">
-                    {phaseCards.map((c) => (
+                    {phaseCards.map((c, phaseIndex) => (
                       <ProposalOrganizeLineCard
                         key={c.key}
                         card={c}
@@ -262,10 +265,13 @@ export function ProposalOrganizePanel({
                         ctx={ctx}
                         phaseChoices={scenarioPhases}
                         computeScratchSellPrice={computeScratchSellPrice}
+                        canMoveUp={phaseIndex > 0}
+                        canMoveDown={phaseIndex < phaseCards.length - 1}
                         onPatch={onPatchCard}
                         onRemove={onRemoveCard}
+                        onReorder={onReorderCard}
                         onDetails={onOpenDetails}
-                        onEditPricing={(c) => setPricingCardKey(c.key)}
+                        onEditPricing={(card) => setPricingCardKey(card.key)}
                       />
                     ))}
                   </ul>

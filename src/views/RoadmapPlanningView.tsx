@@ -14,6 +14,8 @@ import {
   type RoadmapLineScope,
   type RoadmapPhase,
   type RoadmapScenario,
+  type ReorderCardDirection,
+  reorderCardInPhase,
   sortedPhasesForScenario,
   scratchEffectiveHoursBreakdown,
   tryParseRoadmapHours,
@@ -1407,6 +1409,13 @@ export function RoadmapPlanningView() {
     [setCardsSynced]
   );
 
+  const reorderCard = useCallback(
+    (key: string, direction: ReorderCardDirection) => {
+      setCardsSynced((prev) => reorderCardInPhase(prev, key, direction));
+    },
+    [setCardsSynced]
+  );
+
   type RoadmapCardPatch = Partial<
     Pick<
       RoadmapCard,
@@ -2281,6 +2290,7 @@ export function RoadmapPlanningView() {
                   initialScenarioId={targetScenarioId}
                   onPatchCard={patchCard}
                   onRemoveCard={removeCard}
+                  onReorderCard={reorderCard}
                   onOpenDetails={openDetailsModal}
                   onEditStructure={() => setBuilderStep("scenarios")}
                   onClearScenarioItems={clearScenarioItems}

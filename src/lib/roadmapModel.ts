@@ -44,6 +44,8 @@ export type RoadmapCard = {
   scratchAttachedTaskGroupIds?: string[];
   /** Travel Time variable tier: hours entered at add time */
   variableTravelHours?: number | null;
+  /** Paid Campaign Optimization variable tier: total paid ads spend entered at add time */
+  variablePaidAdsSpendUsd?: number | null;
   /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
   variableLinkedTierRefId?: string | null;
 };

@@ -57,6 +57,8 @@ import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import {
   applyVariableTierPricingToCards,
   computeVariableTierSellUsd,
+  isPaidAdsVariableTierRefId,
+  isPercentVariableTierRefId,
   isTravelVariableTierRefId,
   isVariableTierRefId,
   variableTierLinkTargetsForScenario,
@@ -505,7 +507,10 @@ function cardForVariableTier(
   if (opts?.travelHours != null && isTravelVariableTierRefId(t.solution_tier_id)) {
     return { ...card, variableTravelHours: opts.travelHours };
   }
-  if (opts?.linkedTierRefId && !isTravelVariableTierRefId(t.solution_tier_id)) {
+  if (opts?.paidAdsSpendUsd != null && isPaidAdsVariableTierRefId(t.solution_tier_id)) {
+    return { ...card, variablePaidAdsSpendUsd: opts.paidAdsSpendUsd };
+  }
+  if (opts?.linkedTierRefId && isPercentVariableTierRefId(t.solution_tier_id)) {
     return { ...card, variableLinkedTierRefId: opts.linkedTierRefId };
   }
   return card;
@@ -1414,6 +1419,7 @@ export function RoadmapPlanningView() {
       | "scratchAttachedTaskIds"
       | "scratchAttachedTaskGroupIds"
       | "variableTravelHours"
+      | "variablePaidAdsSpendUsd"
       | "variableLinkedTierRefId"
     >
   >;
@@ -1573,7 +1579,10 @@ export function RoadmapPlanningView() {
     (refId: string, opts?: AddVariableTierOpts): number | null => {
       if (!catalogCtx) return null;
       if (isTravelVariableTierRefId(refId)) {
-        return computeVariableTierSellUsd(refId, 0, opts?.travelHours);
+        return computeVariableTierSellUsd(refId, 0, { travelHours: opts?.travelHours });
+      }
+      if (isPaidAdsVariableTierRefId(refId)) {
+        return computeVariableTierSellUsd(refId, 0, { paidAdsSpendUsd: opts?.paidAdsSpendUsd });
       }
       const linkedRefId = opts?.linkedTierRefId;
       if (!linkedRefId) return null;
@@ -1587,7 +1596,7 @@ export function RoadmapPlanningView() {
       if (!linked) return null;
       const base = cardPriceUsdForRollup(linked, catalogCtx, computeScratchSellPrice);
       if (base == null || !Number.isFinite(base)) return null;
-      return computeVariableTierSellUsd(refId, base, null);
+      return computeVariableTierSellUsd(refId, base);
     },
     [cards, targetScenarioId, catalogCtx]
   );

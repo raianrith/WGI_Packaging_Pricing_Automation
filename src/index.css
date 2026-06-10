@@ -15168,6 +15168,35 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   color: rgba(13, 92, 77, 0.65);
 }
 
+.proposal-travel-modal__rate-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: rgba(13, 92, 77, 0.82);
+}
+
+.proposal-travel-modal__input-prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.85rem;
+  font-size: 1.35rem;
+  font-weight: 750;
+  color: rgba(13, 92, 77, 0.55);
+  background: linear-gradient(180deg, rgba(13, 92, 77, 0.04), rgba(13, 92, 77, 0.08));
+  border-right: 1px solid rgba(13, 92, 77, 0.1);
+}
+
+.proposal-travel-modal__input--currency {
+  padding-left: 0.75rem;
+}
+
+.proposal-travel-modal__icon--paid-ads {
+  background: linear-gradient(135deg, rgba(13, 92, 77, 0.12), rgba(13, 92, 77, 0.06));
+  color: rgba(13, 92, 77, 0.92);
+}
+
 .proposal-travel-modal__field {
   display: flex;
   flex-direction: column;

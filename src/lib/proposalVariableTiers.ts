@@ -6,6 +6,7 @@ import {
 
 /** Vault solution_tier_id values with proposal dynamic pricing. */
 export const VARIABLE_TIER_REF_IDS = [
+  "3-62",
   "3-66",
   "3-67",
   "3-68",
@@ -20,6 +21,7 @@ const VARIABLE_TIER_SET = new Set<string>(VARIABLE_TIER_REF_IDS);
 
 export type AddVariableTierOpts = {
   travelHours?: number;
+  paidAdsSpendUsd?: number;
   linkedTierRefId?: string;
 };
 
@@ -31,8 +33,16 @@ export function isTravelVariableTierRefId(refId: string): boolean {
   return refId === "3-68";
 }
 
+export function isPaidAdsVariableTierRefId(refId: string): boolean {
+  return refId === "3-62";
+}
+
 export function isPercentVariableTierRefId(refId: string): boolean {
-  return isVariableTierRefId(refId) && !isTravelVariableTierRefId(refId);
+  return (
+    isVariableTierRefId(refId) &&
+    !isTravelVariableTierRefId(refId) &&
+    !isPaidAdsVariableTierRefId(refId)
+  );
 }
 
 type PercentRule = {
@@ -47,9 +57,14 @@ type TravelRule = {
   rateUsd: number;
 };
 
-type VariableTierRule = PercentRule | TravelRule;
+type PaidAdsRule = {
+  kind: "paid_ads";
+};
+
+type VariableTierRule = PercentRule | TravelRule | PaidAdsRule;
 
 const RULES: Record<VariableTierRefId, VariableTierRule> = {
+  "3-62": { kind: "paid_ads" },
   "3-67": { kind: "percent", pct: 35 },
   "3-66": { kind: "percent", pct: 15 },
   "3-68": { kind: "travel", rateUsd: 150 },
@@ -63,11 +78,28 @@ export function variableTierRule(refId: string): VariableTierRule | null {
   return RULES[refId as VariableTierRefId] ?? null;
 }
 
+export function computePaidAdsOptimizationUsd(spendUsd: number): number | null {
+  if (!Number.isFinite(spendUsd) || spendUsd <= 0) return null;
+  if (spendUsd <= 2000) return (spendUsd / 1000) * 400;
+  if (spendUsd <= 10_000) return (spendUsd / 1000) * 270;
+  return (spendUsd / 1000) * 200;
+}
+
+export function paidAdsOptimizationFormulaLabel(spendUsd: number): string | null {
+  if (!Number.isFinite(spendUsd) || spendUsd <= 0) return null;
+  const perK = spendUsd <= 2000 ? 400 : spendUsd <= 10_000 ? 270 : 200;
+  const spendLabel = formatUsd(spendUsd);
+  return `${spendLabel} ÷ $1k × $${perK}`;
+}
+
 export function variableTierRuleSummary(refId: string): string {
   const rule = variableTierRule(refId);
   if (!rule) return "Dynamic pricing";
   if (rule.kind === "travel") {
     return `Total travel hours × ${formatUsd(rule.rateUsd)}/hr`;
+  }
+  if (rule.kind === "paid_ads") {
+    return "Total paid ads spend (tiered rate per $1k)";
   }
   const pct = `${rule.pct}% of linked tier sell`;
   if (rule.minUsd != null && rule.maxUsd != null) {
@@ -145,13 +177,17 @@ function linkedTierSellUsd(
 export function computeVariableTierSellUsd(
   refId: string,
   baseSellUsd: number,
-  travelHours: number | null | undefined
+  opts?: Pick<AddVariableTierOpts, "travelHours" | "paidAdsSpendUsd">
 ): number | null {
   const rule = variableTierRule(refId);
   if (!rule) return null;
   if (rule.kind === "travel") {
+    const travelHours = opts?.travelHours;
     if (travelHours == null || !Number.isFinite(travelHours) || travelHours <= 0) return null;
     return travelHours * rule.rateUsd;
+  }
+  if (rule.kind === "paid_ads") {
+    return computePaidAdsOptimizationUsd(opts?.paidAdsSpendUsd ?? NaN);
   }
   if (!Number.isFinite(baseSellUsd) || baseSellUsd <= 0) return null;
   let usd = baseSellUsd * (rule.pct / 100);
@@ -181,11 +217,22 @@ function variablePriceFields(
     return { price, priceOverride: price, hoursOverride: `${hoursLabel} h` };
   }
 
+  if (rule.kind === "paid_ads") {
+    const spend = c.variablePaidAdsSpendUsd;
+    if (spend == null || !Number.isFinite(spend) || spend <= 0) {
+      return { price: "—", priceOverride: null, hoursOverride: c.hoursOverride ?? null };
+    }
+    const usd = computePaidAdsOptimizationUsd(spend);
+    if (usd == null) return { price: "—", priceOverride: null, hoursOverride: c.hoursOverride ?? null };
+    const price = formatVariableTierPriceUsd(usd);
+    return { price, priceOverride: price, hoursOverride: c.hoursOverride ?? null };
+  }
+
   const baseUsd = linkedTierSellUsd(c, cards, ctx, computeScratchSellPrice);
   if (baseUsd == null) {
     return { price: "—", priceOverride: null, hoursOverride: c.hoursOverride ?? null };
   }
-  const usd = computeVariableTierSellUsd(c.refId, baseUsd, null);
+  const usd = computeVariableTierSellUsd(c.refId, baseUsd, undefined);
   if (usd == null) return { price: "—", priceOverride: null, hoursOverride: c.hoursOverride ?? null };
   const price = formatVariableTierPriceUsd(usd);
   return { price, priceOverride: price, hoursOverride: c.hoursOverride ?? null };
@@ -198,6 +245,11 @@ export function variableTierAppliedToLabel(card: RoadmapCard, cards: RoadmapCard
     if (h == null || !Number.isFinite(h) || h <= 0) return null;
     const hoursLabel = Number.isInteger(h) ? String(h) : String(Math.round(h * 10) / 10);
     return `${hoursLabel} travel hrs`;
+  }
+  if (isPaidAdsVariableTierRefId(card.refId)) {
+    const spend = card.variablePaidAdsSpendUsd;
+    if (spend == null || !Number.isFinite(spend) || spend <= 0) return null;
+    return `${formatUsd(spend)} paid ads spend`;
   }
   const linkedRefId = card.variableLinkedTierRefId?.trim();
   if (!linkedRefId) return null;

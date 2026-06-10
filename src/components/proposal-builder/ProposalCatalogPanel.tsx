@@ -4,8 +4,10 @@ import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
 import {
+  isPaidAdsVariableTierRefId,
   isPercentVariableTierRefId,
   isTravelVariableTierRefId,
+  paidAdsOptimizationFormulaLabel,
   variableTierRuleSummary,
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
@@ -255,6 +257,7 @@ export function ProposalCatalogPanel({
 }: Props) {
   const searchId = useId();
   const travelHoursFieldId = useId();
+  const paidAdsSpendFieldId = useId();
   const [catalogMode, setCatalogMode] = useState<"playbook" | "packages" | "variable">("playbook");
   const [browsePhase, setBrowsePhase] = useState<string | null>(null);
   const [browseCategory, setBrowseCategory] = useState<string | null>(null);
@@ -263,6 +266,8 @@ export function ProposalCatalogPanel({
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [travelModalTierId, setTravelModalTierId] = useState<string | null>(null);
   const [travelHoursStr, setTravelHoursStr] = useState("");
+  const [paidAdsModalTierId, setPaidAdsModalTierId] = useState<string | null>(null);
+  const [paidAdsSpendStr, setPaidAdsSpendStr] = useState("");
   const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
   const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
 
@@ -349,11 +354,17 @@ export function ProposalCatalogPanel({
   }, [variableTierTableRows, searchLower]);
 
   const travelModalTier = travelModalTierId ? tierById.get(travelModalTierId) ?? null : null;
+  const paidAdsModalTier = paidAdsModalTierId ? tierById.get(paidAdsModalTierId) ?? null : null;
   const linkModalTier = linkModalTierId ? tierById.get(linkModalTierId) ?? null : null;
 
   const closeTravelModal = () => {
     setTravelModalTierId(null);
     setTravelHoursStr("");
+  };
+
+  const closePaidAdsModal = () => {
+    setPaidAdsModalTierId(null);
+    setPaidAdsSpendStr("");
   };
 
   const closeLinkModal = () => {
@@ -374,6 +385,19 @@ export function ProposalCatalogPanel({
     closeTravelModal();
   };
 
+  const submitPaidAdsModal = () => {
+    if (!paidAdsModalTier) return;
+    const spend = Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""));
+    if (!Number.isFinite(spend) || spend <= 0) return;
+    onAddVariableTier(paidAdsModalTier, { paidAdsSpendUsd: spend });
+    setJustAddedId(`tier:${paidAdsModalTier.solution_tier_id}`);
+    window.setTimeout(
+      () => setJustAddedId((id) => (id === `tier:${paidAdsModalTier.solution_tier_id}` ? null : id)),
+      1600
+    );
+    closePaidAdsModal();
+  };
+
   const submitLinkModal = () => {
     if (!linkModalTier || !selectedLinkedTierRefId) return;
     onAddVariableTier(linkModalTier, { linkedTierRefId: selectedLinkedTierRefId });
@@ -391,6 +415,11 @@ export function ProposalCatalogPanel({
     if (isTravelVariableTierRefId(tierId)) {
       setTravelModalTierId(tierId);
       setTravelHoursStr("");
+      return;
+    }
+    if (isPaidAdsVariableTierRefId(tierId)) {
+      setPaidAdsModalTierId(tierId);
+      setPaidAdsSpendStr("");
       return;
     }
     if (isPercentVariableTierRefId(tierId)) {
@@ -969,6 +998,142 @@ export function ProposalCatalogPanel({
                 className="roadmap-btn roadmap-btn--primary proposal-travel-modal__submit"
                 disabled={!Number.isFinite(Number(travelHoursStr.trim())) || Number(travelHoursStr.trim()) <= 0}
                 onClick={submitTravelModal}
+              >
+                Add to scenario
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {paidAdsModalTier ? (
+        <div
+          className="roadmap-modal-backdrop proposal-travel-modal-backdrop"
+          role="presentation"
+          onClick={closePaidAdsModal}
+        >
+          <div
+            className="roadmap-modal proposal-travel-modal proposal-travel-modal--paid-ads"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proposal-paid-ads-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="proposal-travel-modal__close"
+              aria-label="Close"
+              onClick={closePaidAdsModal}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M18 6L6 18M6 6l12 12"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            <header className="proposal-travel-modal__head">
+              <div className="proposal-travel-modal__icon proposal-travel-modal__icon--paid-ads" aria-hidden>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 2v20M17 5H9.5a3.5 3.5 0 100 7h5a3.5 3.5 0 110 7H6"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <div className="proposal-travel-modal__head-copy">
+                <p className="proposal-travel-modal__eyebrow">Variable Tier</p>
+                <h2 id="proposal-paid-ads-title" className="proposal-travel-modal__title">
+                  {paidAdsModalTier.solution_tier_name}
+                </h2>
+                <p className="proposal-travel-modal__subtitle">
+                  Enter total paid ads spend for this scenario. Sell price is calculated automatically from tiered rates.
+                </p>
+              </div>
+            </header>
+
+            <div className="proposal-travel-modal__body">
+              <div className="proposal-travel-modal__rate" aria-label="Pricing tiers">
+                <span className="proposal-travel-modal__rate-label">Rate per $1k spend</span>
+                <div className="proposal-travel-modal__rate-tiers">
+                  <span>≤ $2k → $400</span>
+                  <span>≤ $10k → $270</span>
+                  <span>&gt; $10k → $200</span>
+                </div>
+              </div>
+
+              <label className="proposal-travel-modal__field" htmlFor={paidAdsSpendFieldId}>
+                <span className="proposal-travel-modal__field-label">Total paid ads spend</span>
+                <div className="proposal-travel-modal__input-wrap">
+                  <span className="proposal-travel-modal__input-prefix">$</span>
+                  <input
+                    id={paidAdsSpendFieldId}
+                    type="number"
+                    min={1}
+                    step={100}
+                    inputMode="decimal"
+                    className="proposal-travel-modal__input proposal-travel-modal__input--currency"
+                    placeholder="0"
+                    value={paidAdsSpendStr}
+                    onChange={(e) => setPaidAdsSpendStr(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitPaidAdsModal();
+                      if (e.key === "Escape") closePaidAdsModal();
+                    }}
+                  />
+                </div>
+              </label>
+
+              {(() => {
+                const spend = Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""));
+                const preview =
+                  Number.isFinite(spend) && spend > 0
+                    ? previewVariableTierPriceUsd(paidAdsModalTier.solution_tier_id, {
+                        paidAdsSpendUsd: spend,
+                      })
+                    : null;
+                const formula =
+                  Number.isFinite(spend) && spend > 0 ? paidAdsOptimizationFormulaLabel(spend) : null;
+                return (
+                  <div
+                    className={`proposal-travel-modal__preview${preview != null ? " proposal-travel-modal__preview--live" : ""}`}
+                    role="status"
+                  >
+                    <span className="proposal-travel-modal__preview-label">Estimated sell price</span>
+                    <strong className="proposal-travel-modal__preview-value">
+                      {preview != null ? formatUsd(preview) : "—"}
+                    </strong>
+                    {preview != null && formula ? (
+                      <span className="proposal-travel-modal__preview-formula">{formula}</span>
+                    ) : (
+                      <span className="proposal-travel-modal__preview-hint">
+                        Enter total paid ads spend to see the sell price
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <footer className="roadmap-modal__actions proposal-travel-modal__actions">
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={closePaidAdsModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--primary proposal-travel-modal__submit"
+                disabled={
+                  !Number.isFinite(Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""))) ||
+                  Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, "")) <= 0
+                }
+                onClick={submitPaidAdsModal}
               >
                 Add to scenario
               </button>

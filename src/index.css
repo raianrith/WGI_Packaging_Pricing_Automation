@@ -13300,7 +13300,40 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding-top: 0.25rem;
+  padding: 0.85rem 0 0.25rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid rgba(226, 220, 211, 0.85);
+}
+
+.proposal-step-nav__start {
+  flex-shrink: 0;
+}
+
+.proposal-step-nav__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.proposal-step-nav__save {
+  font-weight: 650;
+  color: rgba(13, 92, 77, 0.95);
+  background: rgba(13, 92, 77, 0.08);
+  border: 1px solid rgba(13, 92, 77, 0.28);
+  box-shadow: 0 1px 2px rgba(13, 92, 77, 0.06);
+}
+
+.proposal-step-nav__save:hover:not(:disabled) {
+  background: rgba(13, 92, 77, 0.14);
+  border-color: rgba(13, 92, 77, 0.4);
+}
+
+.proposal-step-nav__save:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .proposal-scenario-list {
@@ -15945,6 +15978,22 @@ html[data-theme="dark"] .proposal-builder-mode-tabs__tab.is-active .proposal-bui
 html[data-theme="dark"] .proposal-builder-mode-tabs__count {
   background: rgba(167, 139, 250, 0.2);
   color: rgba(196, 181, 253, 0.95);
+}
+
+html[data-theme="dark"] .proposal-step-nav {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .proposal-step-nav__save {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.32);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .proposal-step-nav__save:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: rgba(167, 139, 250, 0.45);
 }
 
 html[data-theme="dark"] .proposal-review-save-footer {

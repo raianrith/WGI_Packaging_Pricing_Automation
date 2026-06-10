@@ -1099,6 +1099,15 @@ export function RoadmapPlanningView() {
     user?.id,
   ]);
 
+  const proposalStepSaveProps = useMemo(
+    () => ({
+      onSave: () => void saveCurrentProposal(),
+      saving: savingProposal,
+      saveLabel: activeProposalId ? "Update saved" : "Save proposal",
+    }),
+    [saveCurrentProposal, savingProposal, activeProposalId]
+  );
+
   const startNewProposal = useCallback(() => {
     const init = createInitialScenariosAndPhases();
     setClientLabel("");
@@ -2064,6 +2073,7 @@ export function RoadmapPlanningView() {
                   onStepChange={setBuilderStep}
                   nextDisabled={!setupComplete}
                   nextLabel={setupComplete ? "Continue to scenarios & phases" : "Add a roadmap name to continue"}
+                  {...proposalStepSaveProps}
                 />
               </>
             ) : null}
@@ -2092,7 +2102,12 @@ export function RoadmapPlanningView() {
                   onAddPhase={addPhaseForScenario}
                   onDeletePhase={deletePhaseById}
                 />
-                <ProposalStepNav step="scenarios" onStepChange={setBuilderStep} nextLabel="Continue to add offerings" />
+                <ProposalStepNav
+                  step="scenarios"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Continue to add offerings"
+                  {...proposalStepSaveProps}
+                />
               </>
             ) : null}
 
@@ -2148,7 +2163,12 @@ export function RoadmapPlanningView() {
                   copyFromScenarios={copyFromScenarios}
                   onCopyFromScenario={copyOfferingsFromScenario}
                 />
-                <ProposalStepNav step="catalog" onStepChange={setBuilderStep} nextLabel="Organize proposal" />
+                <ProposalStepNav
+                  step="catalog"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Organize proposal"
+                  {...proposalStepSaveProps}
+                />
               </>
             ) : null}
 
@@ -2178,7 +2198,12 @@ export function RoadmapPlanningView() {
             ) : null}
 
             {builderStep === "board" ? (
-              <ProposalStepNav step="board" onStepChange={setBuilderStep} nextLabel="Review & Export" />
+              <ProposalStepNav
+                step="board"
+                onStepChange={setBuilderStep}
+                nextLabel="Review & Export"
+                {...proposalStepSaveProps}
+              />
             ) : null}
 
             {builderStep === "review" ? (
@@ -2368,20 +2393,7 @@ export function RoadmapPlanningView() {
             })}
           </div>
         </section>
-                <footer className="proposal-review-save-footer">
-                  <p className="proposal-review-save-footer__hint">
-                    Save to keep this draft in <strong>Saved Proposals</strong>. You can reopen and edit it anytime.
-                  </p>
-                  <button
-                    type="button"
-                    className="roadmap-btn roadmap-btn--primary proposal-review-save-footer__btn"
-                    onClick={() => void saveCurrentProposal()}
-                    disabled={savingProposal}
-                  >
-                    {savingProposal ? "Saving…" : activeProposalId ? "Update Saved Proposal" : "Save Proposal"}
-                  </button>
-                </footer>
-                <ProposalStepNav step="review" onStepChange={setBuilderStep} />
+                <ProposalStepNav step="review" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
               </>
             ) : null}
           </div>

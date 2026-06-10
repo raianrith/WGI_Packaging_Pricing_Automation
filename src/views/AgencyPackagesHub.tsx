@@ -22,6 +22,14 @@ import {
   applyPackageTierMembership,
   emptyPackageLinkPayload,
 } from "../lib/packageTierLinkPersistence";
+import {
+  adjustTierQuantity,
+  catalogUsageFromQuantities,
+  emptyTierQuantities,
+  tierIdsFromQuantities,
+  totalTierLineCount,
+  type PackageTierQuantities,
+} from "../lib/packageTierQuantities";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
 import { loadTierPricingMathConfigFromStorage, normalizeTierPricingMathConfig } from "../lib/tierPricingMath";
@@ -255,7 +263,7 @@ export function AgencyPackagesHub() {
   const [sellDiscountPctStr, setSellDiscountPctStr] = useState("0");
   const [selectedPackageType, setSelectedPackageType] = useState<PackageBuilderPackageType | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<PackageBuilderSlotTemplate | null>(null);
-  const [tierPickIds, setTierPickIds] = useState<string[]>([]);
+  const [tierPickQty, setTierPickQty] = useState<PackageTierQuantities>(() => emptyTierQuantities());
   const [tierSearch, setTierSearch] = useState("");
   const [pkgName, setPkgName] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
@@ -357,30 +365,34 @@ export function AgencyPackagesHub() {
   }, [pricing]);
 
   const pkgRollupById = useMemo(() => {
-    const tiersByPkg = new Map<string, Set<string>>();
+    const tiersByPkg = new Map<string, PackageSolutionTier[]>();
     for (const row of packageTiers) {
-      const set = tiersByPkg.get(row.package_id) ?? new Set<string>();
-      set.add(row.solution_tier_id);
-      tiersByPkg.set(row.package_id, set);
+      const prev = tiersByPkg.get(row.package_id) ?? [];
+      prev.push(row);
+      tiersByPkg.set(row.package_id, prev);
     }
     const m = new Map<string, PackageCardRollup>();
     for (const pkg of packages) {
-      const ids = [...(tiersByPkg.get(pkg.package_id) ?? new Set<string>())];
+      const links = tiersByPkg.get(pkg.package_id) ?? [];
       let hoursSum = 0;
       let priceSum = 0;
       let hoursPartial = false;
       let pricePartial = false;
-      for (const tid of ids) {
+      let tierLineCount = 0;
+      for (const link of links) {
+        const tid = link.solution_tier_id;
+        const qty = link.quantity != null && link.quantity > 0 ? link.quantity : 1;
+        tierLineCount += qty;
         const pr = pricingByTierId.get(tid) ?? null;
         const h = vaultTierHours(pr, tasks, tid);
         const usd = vaultSellPriceUsd(pr);
         if (h == null) hoursPartial = true;
-        else hoursSum += h;
+        else hoursSum += h * qty;
         if (usd == null) pricePartial = true;
-        else priceSum += usd;
+        else priceSum += usd * qty;
       }
       m.set(pkg.package_id, {
-        tierCount: ids.length,
+        tierCount: tierLineCount,
         hoursSum,
         priceSum,
         hoursPartial,
@@ -495,22 +507,12 @@ export function AgencyPackagesHub() {
     });
   }, [tiers, tierSearch, solutionById, selectedSlot]);
 
-  const usage = useMemo(() => {
-    let hours = 0;
-    let price = 0;
-    let missingHours = false;
-    let missingPrice = false;
-    for (const id of tierPickIds) {
-      const pr = pricingByTierId.get(id) ?? null;
-      const h = vaultTierHours(pr, tasks, id);
-      const usd = vaultSellPriceUsd(pr);
-      if (h == null) missingHours = true;
-      else hours += h;
-      if (usd == null) missingPrice = true;
-      else price += usd;
-    }
-    return { hours, price, missingHours, missingPrice };
-  }, [tierPickIds, pricingByTierId, tasks]);
+  const usage = useMemo(
+    () => catalogUsageFromQuantities(tierPickQty, pricingByTierId, tasks),
+    [tierPickQty, pricingByTierId, tasks]
+  );
+
+  const tierLineCount = totalTierLineCount(tierPickQty);
 
   const ceiling = selectedSlot;
   const overHours =
@@ -524,12 +526,12 @@ export function AgencyPackagesHub() {
   const overTierCount =
     ceiling != null &&
     slotEnforcesTierCountLimit(ceiling) &&
-    tierPickIds.length > (ceiling.solution_tier_limit ?? 0);
+    tierLineCount > (ceiling.solution_tier_limit ?? 0);
   const tierStepValid =
     ceiling != null &&
     selectedPackageType != null &&
     pkgName.trim().length > 0 &&
-    tierPickIds.length > 0 &&
+    tierLineCount > 0 &&
     !overHours &&
     !overPrice &&
     !overTierCount;
@@ -538,7 +540,7 @@ export function AgencyPackagesHub() {
 
   const discountPreview = useMemo(() => {
     return computePackageWizardDiscountPreview({
-      tierIdsSorted: [...tierPickIds].sort(sortId),
+      tierQuantities: tierPickQty,
       pricingRows: pricing,
       vaultTasks: tasks,
       catalogHours: usage.hours,
@@ -548,7 +550,7 @@ export function AgencyPackagesHub() {
       hourPct: parsePackageDiscountPct(hourDiscountPctStr),
       sellPct: parsePackageDiscountPct(sellDiscountPctStr),
     });
-  }, [hourDiscountPctStr, sellDiscountPctStr, usage, tierPickIds, pricing, tasks]);
+  }, [hourDiscountPctStr, sellDiscountPctStr, usage, tierPickQty, pricing, tasks]);
 
   const resetWizardDiscounts = () => {
     setHourDiscountPctStr("0");
@@ -560,7 +562,7 @@ export function AgencyPackagesHub() {
     setWizStep(2);
     setSelectedPackageType({ ...packageType });
     setSelectedSlot(null);
-    setTierPickIds([]);
+    setTierPickQty(emptyTierQuantities());
     setTierSearch("");
     setPkgName(`${packageType.name} package`);
     resetWizardDiscounts();
@@ -572,21 +574,24 @@ export function AgencyPackagesHub() {
     resetWizardDiscounts();
   };
 
-  const toggleTierPick = (tierId: string, on: boolean) => {
-    if (on && selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tierId)) return;
-    setTierPickIds((prev) => {
-      if (on) {
-        if (prev.includes(tierId)) return prev;
-        if (
-          selectedSlot &&
-          slotEnforcesTierCountLimit(selectedSlot) &&
-          prev.length >= (selectedSlot.solution_tier_limit ?? 0)
-        ) {
-          return prev;
-        }
-        return [...prev, tierId];
+  const changeTierQty = (tierId: string, delta: number) => {
+    if (delta > 0 && selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tierId)) return;
+    const maxTiers =
+      selectedSlot && slotEnforcesTierCountLimit(selectedSlot)
+        ? selectedSlot.solution_tier_limit
+        : null;
+    setTierPickQty((prev) => {
+      const result = adjustTierQuantity(prev, tierId, delta, maxTiers);
+      if (result.blockedByMaxTiers && selectedSlot) {
+        queueMicrotask(() =>
+          toastNote(
+            `This package tier allows at most ${selectedSlot.solution_tier_limit} vault tier line${
+              selectedSlot.solution_tier_limit === 1 ? "" : "s"
+            }. Remove one to add another.`
+          )
+        );
       }
-      return prev.filter((x) => x !== tierId);
+      return result.quantities;
     });
   };
 
@@ -598,8 +603,8 @@ export function AgencyPackagesHub() {
       toastError("Enter a package name.");
       return;
     }
-    const wanted = [...tierPickIds].sort(sortId);
-    for (const tid of wanted) {
+    const wantedIds = tierIdsFromQuantities(tierPickQty);
+    for (const tid of wantedIds) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
       if (!t?.solution_tier_name.trim()) {
         toastError(`Tier ${tid} needs a name in the vault before it can be added to a package.`);
@@ -627,8 +632,8 @@ export function AgencyPackagesHub() {
         return;
       }
       const payloadByTier: Record<string, ReturnType<typeof emptyPackageLinkPayload>> = {};
-      for (const tid of wanted) payloadByTier[tid] = emptyPackageLinkPayload();
-      const assignErr = await applyPackageTierMembership(client, newId, wanted, payloadByTier);
+      for (const tid of wantedIds) payloadByTier[tid] = emptyPackageLinkPayload();
+      const assignErr = await applyPackageTierMembership(client, newId, tierPickQty, payloadByTier);
       if (assignErr) {
         toastError(
           `${assignErr} Package ${newId} was created; fix tier links in Admin → Package Builder if needed.`
@@ -644,7 +649,8 @@ export function AgencyPackagesHub() {
         before: null,
         after: {
           ...(JSON.parse(JSON.stringify(row)) as Record<string, unknown>),
-          solution_tier_ids: wanted,
+          solution_tier_ids: wantedIds,
+          solution_tier_quantities: tierPickQty,
         },
       });
       if (auditErr) {
@@ -653,7 +659,7 @@ export function AgencyPackagesHub() {
         );
       }
       notifyPackagingDataChanged();
-      toastNote(`Package ${newId} created (${wanted.length} tier(s)).`);
+      toastNote(`Package ${newId} created (${tierLineCount} tier line(s)).`);
       setWizardOpen(false);
       await load();
       navigate(`/package/${encodeURIComponent(newId)}`);
@@ -1009,7 +1015,7 @@ export function AgencyPackagesHub() {
                           onClick={() => {
                             setSelectedPackageType({ ...pt });
                             setSelectedSlot(null);
-                            setTierPickIds([]);
+                            setTierPickQty(emptyTierQuantities());
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">{pt.name}</span>
@@ -1047,7 +1053,7 @@ export function AgencyPackagesHub() {
                           }
                           onClick={() => {
                             setSelectedSlot({ ...s });
-                            setTierPickIds([]);
+                            setTierPickQty(emptyTierQuantities());
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">
@@ -1081,7 +1087,8 @@ export function AgencyPackagesHub() {
                   </div>
                   <div className="agency-pkg-wizard__solution-step-block">
                   <p className="agency-pkg-wizard__lead">
-                    Select vault solution tiers for this package. Running totals use catalog hours and sell prices.
+                    Set how many of each vault tier to include. Use the + button to add duplicates — for example,
+                    3× Customer Interviews - Basic. Running totals multiply catalog hours and sell by quantity.
                   </p>
 
                   <PackageTierDisclaimer notes={slotTierNotes(selectedSlot)} />
@@ -1118,7 +1125,7 @@ export function AgencyPackagesHub() {
                     {slotEnforcesTierCountLimit(selectedSlot) ? (
                       <WizardMeter
                         label="Tiers selected"
-                        value={tierPickIds.length}
+                        value={tierLineCount}
                         max={selectedSlot.solution_tier_limit}
                         format={(n) => String(Math.round(n))}
                         over={overTierCount}
@@ -1175,7 +1182,9 @@ export function AgencyPackagesHub() {
                       <table className="agency-pkg-wizard__table">
                         <thead>
                           <tr>
-                            <th className="col-check" scope="col" />
+                            <th className="col-qty" scope="col">
+                              Qty
+                            </th>
                             <th scope="col">Solution</th>
                             <th scope="col">Tier</th>
                             <th className="col-hours" scope="col">
@@ -1192,30 +1201,50 @@ export function AgencyPackagesHub() {
                             const h = vaultTierHours(pr, tasks, t.solution_tier_id);
                             const usd = vaultSellPriceUsd(pr);
                             const sol = solutionById.get(t.solution_id);
-                            const checked = tierPickIds.includes(t.solution_tier_id);
+                            const qty = tierPickQty[t.solution_tier_id] ?? 0;
+                            const lineHours = h != null ? h * Math.max(qty, 1) : null;
+                            const lineSell = usd != null && qty > 0 ? usd * qty : null;
                             return (
                               <tr
                                 key={t.solution_tier_id}
-                                className={checked ? "is-selected" : undefined}
+                                className={qty > 0 ? "is-selected" : undefined}
                               >
-                                <td className="col-check">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) =>
-                                      toggleTierPick(t.solution_tier_id, e.target.checked)
-                                    }
-                                    aria-label={`Include ${t.solution_tier_name}`}
-                                  />
+                                <td className="col-qty">
+                                  <div className="agency-pkg-wizard__qty">
+                                    <button
+                                      type="button"
+                                      className="agency-pkg-wizard__qty-btn"
+                                      aria-label={`Decrease quantity for ${t.solution_tier_name}`}
+                                      disabled={qty <= 0}
+                                      onClick={() => changeTierQty(t.solution_tier_id, -1)}
+                                    >
+                                      −
+                                    </button>
+                                    <span className="agency-pkg-wizard__qty-value" aria-live="polite">
+                                      {qty}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="agency-pkg-wizard__qty-btn"
+                                      aria-label={`Increase quantity for ${t.solution_tier_name}`}
+                                      onClick={() => changeTierQty(t.solution_tier_id, 1)}
+                                    >
+                                      +
+                                    </button>
+                                  </div>
                                 </td>
                                 <td>{sol?.solution_name ?? t.solution_id}</td>
                                 <td>{t.solution_tier_name}</td>
                                 <td className="col-hours">
-                                  {h != null
-                                    ? h.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                                    : "—"}
+                                  {qty > 0 && h != null
+                                    ? lineHours!.toLocaleString(undefined, { maximumFractionDigits: 1 })
+                                    : h != null
+                                      ? h.toLocaleString(undefined, { maximumFractionDigits: 1 })
+                                      : "—"}
                                 </td>
-                                <td className="col-sell">{usd != null ? fmtUsd(usd) : "—"}</td>
+                                <td className="col-sell">
+                                  {qty > 0 && usd != null ? fmtUsd(lineSell!) : usd != null ? fmtUsd(usd) : "—"}
+                                </td>
                               </tr>
                             );
                           })}
@@ -1233,7 +1262,7 @@ export function AgencyPackagesHub() {
                     <span className="agency-pkg-wizard__chip">
                       {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
                     </span>
-                    <span className="agency-pkg-wizard__chip">{tierPickIds.length} tiers</span>
+                    <span className="agency-pkg-wizard__chip">{tierLineCount} tier lines</span>
                   </div>
                   <p className="agency-pkg-wizard__lead">
                     Optional package-level discounts. Leave at 0% if you do not need them — you can change these later in

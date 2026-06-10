@@ -43,6 +43,14 @@ import {
 import type { TierPricingMathConfig } from "../lib/tierPricingMath";
 import { newPackageTaskId } from "../lib/packageTaskLayout";
 import { applyPackageTierMembership } from "../lib/packageTierLinkPersistence";
+import {
+  adjustTierQuantity,
+  emptyTierQuantities,
+  tierIdsFromQuantities,
+  tierQuantitiesFromLinks,
+  totalTierLineCount,
+  type PackageTierQuantities,
+} from "../lib/packageTierQuantities";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
 import { PricingPanel } from "./PricingPanel";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
@@ -259,7 +267,7 @@ export function PackagesBuilderPanel({
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnDangerSm, btnSm, tbl, th, td, h2, muted } = s;
 
   const [nameField, setNameField] = useState("");
-  const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
+  const [selectedTierQty, setSelectedTierQty] = useState<PackageTierQuantities>(() => emptyTierQuantities());
   const [tierSearch, setTierSearch] = useState("");
 
   const [pkgEditId, setPkgEditId] = useState<string | null>(null);
@@ -325,8 +333,7 @@ export function PackagesBuilderPanel({
     (packageId: string) => {
       const pkg = packages.find((p) => p.package_id === packageId);
       const links = packageTiersRef.current.filter((r) => r.package_id === packageId);
-      const tierIds = [...new Set(links.map((l) => l.solution_tier_id))].sort(sortId);
-      setSelectedTierIds(tierIds);
+      setSelectedTierQty(tierQuantitiesFromLinks(links));
 
       setPackageDetails(packageRowToDetailsValues(pkg ?? null));
       const h = pkg?.package_hour_discount_pct;
@@ -335,6 +342,7 @@ export function PackagesBuilderPanel({
       setSellDiscountPctStr(sd != null && Number.isFinite(Number(sd)) ? String(Number(sd)) : "0");
       setStoredPackagePricingOverrides(parsePricingOverrides(pkg?.package_pricing_overrides ?? null));
 
+      const tierIds = tierIdsFromQuantities(tierQuantitiesFromLinks(links));
       const linksByTierId = new Map<string, PackageSolutionTier>();
       for (const l of links) linksByTierId.set(l.solution_tier_id, l);
 
@@ -361,16 +369,17 @@ export function PackagesBuilderPanel({
   }, [subTab, pkgEditId, packages]);
 
   useEffect(() => {
-    const wanted = [...selectedTierIds].sort(sortId);
-    setCombinedTasks((prev) => reconcileCombinedTasksForTierSelection(prev, wanted, tasksRef.current));
-  }, [selectedTierIds, tasks]);
+    setCombinedTasks((prev) =>
+      reconcileCombinedTasksForTierSelection(prev, selectedTierQty, tasksRef.current)
+    );
+  }, [selectedTierQty, tasks]);
 
-  const toggleTier = (tierId: string, include: boolean) => {
-    setSelectedTierIds((prev) => {
-      if (include) return prev.includes(tierId) ? prev : [...prev, tierId];
-      return prev.filter((x) => x !== tierId);
-    });
+  const changeTierQty = (tierId: string, delta: number) => {
+    setSelectedTierQty((prev) => adjustTierQuantity(prev, tierId, delta, null).quantities);
   };
+
+  const selectedTierIds = useMemo(() => tierIdsFromQuantities(selectedTierQty), [selectedTierQty]);
+  const selectedTierLineCount = totalTierLineCount(selectedTierQty);
 
   const sparseOverridesForSave = useCallback(
     (wanted: string[], hourPct: number, packageIdForLinks: string | null): PackagePricingOverrides => {
@@ -420,7 +429,7 @@ export function PackagesBuilderPanel({
 
   const startNewCreate = () => {
     setNameField("");
-    setSelectedTierIds([]);
+    setSelectedTierQty(emptyTierQuantities());
     setTierSearch("");
     setPkgEditId(null);
     setPackageDetails(emptyPackageDetails());
@@ -484,7 +493,7 @@ export function PackagesBuilderPanel({
     }
 
     const payloadByTier = packageCombinedTasksToLinkPayloads(combinedTasks, wanted, tasks);
-    const assignErr = await applyPackageTierMembership(client, newId, wanted, payloadByTier);
+    const assignErr = await applyPackageTierMembership(client, newId, selectedTierQty, payloadByTier);
     if (assignErr) {
       setOpErr(`${assignErr} (Package ${newId} was created; fix links if needed.)`);
       await onSaved();
@@ -498,7 +507,7 @@ export function PackagesBuilderPanel({
       before: null,
       after: { ...(rowJson(row as unknown as Package) as Record<string, unknown>), solution_tier_ids: wanted },
     });
-    setOpOk(`Package ${newId} created with ${wanted.length} tier link(s).`);
+    setOpOk(`Package ${newId} created with ${selectedTierLineCount} tier line(s).`);
     startNewCreate();
     await onSaved();
   };
@@ -557,7 +566,7 @@ export function PackagesBuilderPanel({
     }
 
     const payloadByTier = packageCombinedTasksToLinkPayloads(combinedTasks, wanted, tasks);
-    const assignErr = await applyPackageTierMembership(client, pkgEditId, wanted, payloadByTier);
+    const assignErr = await applyPackageTierMembership(client, pkgEditId, selectedTierQty, payloadByTier);
     if (assignErr) {
       setOpErr(assignErr);
       await onSaved();
@@ -684,7 +693,7 @@ export function PackagesBuilderPanel({
     );
   }, [packageHoursFromTasksPrediscount, hourDiscountPctStr]);
 
-  const packageTaskDrivenHours = Boolean(anchorTierIdForPackage && selectedTierIds.length > 0);
+  const packageTaskDrivenHours = Boolean(anchorTierIdForPackage && selectedTierLineCount > 0);
 
   const applyUnifiedPackageOrderFromIds = useCallback(
     (orderedIds: UniqueIdentifier[]) => {
@@ -862,8 +871,8 @@ export function PackagesBuilderPanel({
 
   const tierPickerIntro =
     subTab === "create"
-      ? "Check each solution tier to include in this package. A tier can only belong to one package at a time; saving moves it from another package if needed."
-      : "Manage tier membership for this package. Removing a tier deletes its link on save.";
+      ? "Set quantity for each vault tier to include. You can add the same tier multiple times (e.g. 3× Customer Interviews - Basic). A tier can only belong to one package at a time; saving moves it from another package if needed."
+      : "Manage tier membership and quantities for this package. Set quantity to 0 to remove a tier link on save.";
 
   const tierPickerBlock = (
     <>
@@ -886,7 +895,7 @@ export function PackagesBuilderPanel({
         <table className="admin-data-table" style={{ ...tbl, marginTop: 0 }}>
           <thead>
             <tr>
-              <th style={{ ...th, width: "2.25rem" }} aria-label="Include tier in package" />
+              <th style={{ ...th, width: "6.5rem" }}>Qty</th>
               <th style={th}>Solution</th>
               <th style={th}>Tier</th>
               <th style={th}>Tier id</th>
@@ -903,7 +912,7 @@ export function PackagesBuilderPanel({
             ) : (
               tierRows.map((t) => {
                 const sol = solutionById.get(t.solution_id);
-                const checked = selectedTierIds.includes(t.solution_tier_id);
+                const qty = selectedTierQty[t.solution_tier_id] ?? 0;
                 const pid = tierToPackageId.get(t.solution_tier_id);
                 const editingThisPackage = subTab === "update" && pkgEditId != null && pid === pkgEditId;
                 const pkgLabel =
@@ -915,12 +924,26 @@ export function PackagesBuilderPanel({
                 return (
                   <tr key={t.solution_tier_id}>
                     <td style={td}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => toggleTier(t.solution_tier_id, e.target.checked)}
-                        aria-label={`Include tier ${t.solution_tier_name} in this package`}
-                      />
+                      <div className="agency-pkg-wizard__qty">
+                        <button
+                          type="button"
+                          className="agency-pkg-wizard__qty-btn"
+                          aria-label={`Decrease quantity for ${t.solution_tier_name}`}
+                          disabled={qty <= 0}
+                          onClick={() => changeTierQty(t.solution_tier_id, -1)}
+                        >
+                          −
+                        </button>
+                        <span className="agency-pkg-wizard__qty-value">{qty}</span>
+                        <button
+                          type="button"
+                          className="agency-pkg-wizard__qty-btn"
+                          aria-label={`Increase quantity for ${t.solution_tier_name}`}
+                          onClick={() => changeTierQty(t.solution_tier_id, 1)}
+                        >
+                          +
+                        </button>
+                      </div>
                     </td>
                     <td style={td}>{sol?.solution_name ?? t.solution_id}</td>
                     <td style={td}>{t.solution_tier_name}</td>
@@ -940,7 +963,7 @@ export function PackagesBuilderPanel({
 
 
   const showPackageWorkbench =
-    (subTab === "create" && selectedTierIds.length > 0) || (subTab === "update" && Boolean(pkgEditId));
+    (subTab === "create" && selectedTierLineCount > 0) || (subTab === "update" && Boolean(pkgEditId));
 
   const sellPctApplied = parseDiscountPct(sellDiscountPctStr);
   const sellAfterPackageDiscount =

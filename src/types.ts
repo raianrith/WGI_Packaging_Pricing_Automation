@@ -275,6 +275,8 @@ export type PackageTaskExtensions = {
 export type PackageSolutionTier = {
   package_id: string;
   solution_tier_id: string;
+  /** How many times this tier is included in the package (default 1). */
+  quantity?: number | null;
   created_at?: string;
   /** Sparse JSON vs vault tier narrative (`solution_tiers`). */
   tier_overrides?: PackageTierOverrides | null;

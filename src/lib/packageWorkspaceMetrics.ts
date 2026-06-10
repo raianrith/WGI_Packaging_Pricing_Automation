@@ -21,6 +21,7 @@ import {
   anchorTierForPackage,
   type PackageCombinedTasksState,
 } from "./packageCombinedTasks";
+import { tierQuantitiesFromLinks, type PackageTierQuantities } from "./packageTierQuantities";
 import {
   mergePricingWithPackageOverrides,
   emptyPricingTemplate,
@@ -74,7 +75,7 @@ export type PackageWizardDiscountPreview = {
  * Hour discount scales each tier’s sell in proportion to its hours (uniform %).
  */
 export function computePackageWizardDiscountPreview(args: {
-  tierIdsSorted: string[];
+  tierQuantities: PackageTierQuantities;
   pricingRows: SolutionTierPricing[];
   vaultTasks: TaskRow[];
   catalogHours: number;
@@ -104,13 +105,14 @@ export function computePackageWizardDiscountPreview(args: {
     let afterSum = 0;
     let pricedTierCount = 0;
 
-    for (const id of args.tierIdsSorted) {
+    for (const [id, qty] of Object.entries(args.tierQuantities)) {
+      if ((qty ?? 0) <= 0) continue;
       const pr = pricingByTierId.get(id) ?? null;
       const sell = vaultSellPriceUsd(pr);
       if (sell == null) continue;
       pricedTierCount += 1;
-      beforeSum += sell;
-      afterSum += sell * hourFactor;
+      beforeSum += sell * qty;
+      afterSum += sell * qty * hourFactor;
     }
 
     if (pricedTierCount > 0) {
@@ -186,6 +188,8 @@ export function computePackageUnifiedTaskRows(args: {
   packageTierLinksForPackage: PackageSolutionTier[];
   vaultTasks: TaskRow[];
 }): TaskRow[] {
+  const linksByTier = new Map(args.packageTierLinksForPackage.map((r) => [r.solution_tier_id, r]));
+  const quantities = tierQuantitiesFromLinks(args.packageTierLinksForPackage);
   const tierIdsSorted = [...args.tierIdsSorted].sort(sortTierIds);
   if (tierIdsSorted.length === 0) return [];
 
@@ -196,9 +200,8 @@ export function computePackageUnifiedTaskRows(args: {
 
   const parsed = parsePackageCombinedTasks(args.pkg.package_combined_tasks);
   if (parsed !== null && hasCombinedTasksSignal(parsed)) {
-    combined = reconcileCombinedTasksForTierSelection(parsed, tierIdsSorted, args.vaultTasks);
+    combined = reconcileCombinedTasksForTierSelection(parsed, quantities, args.vaultTasks);
   } else {
-    const linksByTier = new Map(args.packageTierLinksForPackage.map((r) => [r.solution_tier_id, r]));
     combined = deriveCombinedTasksFromLegacyLinks(tierIdsSorted, args.vaultTasks, linksByTier);
   }
 

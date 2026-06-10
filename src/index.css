@@ -5293,6 +5293,46 @@ button {
   padding-left: 0.85rem;
 }
 
+.agency-pkg-wizard__table .col-qty {
+  width: 6.75rem;
+  padding-left: 0.65rem;
+}
+
+.agency-pkg-wizard__qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.agency-pkg-wizard__qty-btn {
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(13, 92, 77, 0.22);
+  background: rgba(255, 252, 247, 0.96);
+  color: var(--accent, #0d5c4d);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agency-pkg-wizard__qty-btn:hover:not(:disabled) {
+  background: rgba(13, 92, 77, 0.08);
+}
+
+.agency-pkg-wizard__qty-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.agency-pkg-wizard__qty-value {
+  min-width: 1.35rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .agency-pkg-wizard__table .col-hours,
 .agency-pkg-wizard__table .col-sell {
   white-space: nowrap;

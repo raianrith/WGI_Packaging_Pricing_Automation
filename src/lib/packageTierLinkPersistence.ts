@@ -7,6 +7,11 @@ import type {
   PackageTierOverrides,
 } from "../types";
 import {
+  normalizeTierQuantity,
+  tierIdsFromQuantities,
+  type PackageTierQuantities,
+} from "./packageTierQuantities";
+import {
   sanitizePricingOverridesForDb,
   sanitizeTaskOverridesMapForDb,
 } from "./packagePricingTaskOverrides";
@@ -41,14 +46,15 @@ export function packPackageLinkRowForDb(p: PackageLinkSavePayload): Record<strin
 
 /**
  * Sync `package_solution_tiers` rows for one package: delete removed tiers, insert new links,
- * update overrides for existing links.
+ * update overrides and quantity for existing links.
  */
 export async function applyPackageTierMembership(
   client: SupabaseClient,
   packageId: string,
-  wantedTierIds: string[],
+  wantedQuantities: PackageTierQuantities,
   payloadByTier: Record<string, PackageLinkSavePayload>
 ): Promise<string | null> {
+  const wantedTierIds = tierIdsFromQuantities(wantedQuantities);
   const { data: curRows, error: fetchErr } = await client
     .from("package_solution_tiers")
     .select("*")
@@ -71,7 +77,10 @@ export async function applyPackageTierMembership(
 
   for (const tid of wantedTierIds) {
     const payload = payloadByTier[tid] ?? emptyPackageLinkPayload();
-    const rowPayload = packPackageLinkRowForDb(payload);
+    const rowPayload = {
+      ...packPackageLinkRowForDb(payload),
+      quantity: normalizeTierQuantity(wantedQuantities[tid]),
+    };
     if (!curSet.has(tid)) {
       const { error: e1 } = await client.from("package_solution_tiers").delete().eq("solution_tier_id", tid);
       if (e1) return friendlyMutationMessage(e1.message);
@@ -91,4 +100,16 @@ export async function applyPackageTierMembership(
     }
   }
   return null;
+}
+
+/** @deprecated Pass `PackageTierQuantities` instead of a flat tier id list. */
+export async function applyPackageTierMembershipByIds(
+  client: SupabaseClient,
+  packageId: string,
+  wantedTierIds: string[],
+  payloadByTier: Record<string, PackageLinkSavePayload>
+): Promise<string | null> {
+  const wantedQuantities: PackageTierQuantities = {};
+  for (const tid of wantedTierIds) wantedQuantities[tid] = 1;
+  return applyPackageTierMembership(client, packageId, wantedQuantities, payloadByTier);
 }

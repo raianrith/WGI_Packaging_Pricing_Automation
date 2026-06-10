@@ -9,6 +9,12 @@ import type {
 import { mergeTaskWithPackageOverride, parseTaskOverridesMap } from "./packagePricingTaskOverrides";
 import type { PackageLinkSavePayload } from "./packageTierLinkPersistence";
 import { emptyPackageLinkPayload } from "./packageTierLinkPersistence";
+import {
+  expandTierQuantities,
+  normalizeTierQuantity,
+  tierIdsFromQuantities,
+  type PackageTierQuantities,
+} from "./packageTierQuantities";
 import { persistTaskSortOrdersForTier } from "./persistTaskSortOrdersForTier";
 import { compareTasksByOrder } from "./taskOrder";
 import {
@@ -64,40 +70,28 @@ export function defaultCombinedTasksForTiers(tierIds: string[], vaultTasks: Task
   return { order, hidden_vault: [], extras: [], task_patches: {} };
 }
 
-/** When tier membership changes, drop removed tiers from order/hidden/patches and append any new tier vault rows (preserve extras + patch keys that still apply). */
+/** When tier membership or quantities change, rebuild vault task order and preserve extras/patches. */
 export function reconcileCombinedTasksForTierSelection(
   prev: PackageCombinedTasksState,
-  tierIds: string[],
+  quantities: PackageTierQuantities,
   vaultTasks: TaskRow[]
 ): PackageCombinedTasksState {
-  const tidSet = new Set(tierIds);
-  const order = prev.order.filter((e) => (e.k === "extra" ? true : tidSet.has(e.solution_tier_id)));
-  const hidden_vault = prev.hidden_vault.filter((h) => tidSet.has(h.solution_tier_id));
-
-  const keyOf = (e: PackageUnifiedOrderEntry): string =>
-    e.k === "vault" ? `v|${e.solution_tier_id}|${e.task_id}` : `e|${e.package_task_id}`;
-  const seen = new Set(order.map(keyOf));
-  const merged = [...order];
-  for (const e of defaultCombinedTasksForTiers(tierIds, vaultTasks).order) {
-    const k = keyOf(e);
-    if (!seen.has(k)) {
-      merged.push(e);
-      seen.add(k);
-    }
-  }
-
+  const activeTids = new Set(tierIdsFromQuantities(quantities));
+  const hidden_vault = prev.hidden_vault.filter((h) => activeTids.has(h.solution_tier_id));
+  const extras = prev.extras;
+  const extraOrder = prev.order.filter((e) => e.k === "extra");
+  const vaultOrder = defaultCombinedTasksForTiers(expandTierQuantities(quantities), vaultTasks).order;
   const task_patches: Record<string, PackageTaskOverride> = {};
-  for (const [pk, patch] of Object.entries(prev.task_patches)) {
-    const sep = ":::";
-    const i = pk.indexOf(sep);
-    if (i <= 0) {
-      task_patches[pk] = patch;
-      continue;
-    }
-    const tid = pk.slice(0, i);
-    if (tidSet.has(tid)) task_patches[pk] = patch;
+  for (const [key, patch] of Object.entries(prev.task_patches)) {
+    const tid = key.split(":::")[0];
+    if (tid && activeTids.has(tid)) task_patches[key] = patch;
   }
-  return { order: merged, hidden_vault, extras: prev.extras, task_patches };
+  return {
+    order: [...vaultOrder, ...extraOrder],
+    hidden_vault,
+    extras,
+    task_patches,
+  };
 }
 
 export function parsePackageCombinedTasks(raw: unknown): PackageCombinedTasksState | null {
@@ -190,13 +184,16 @@ export function deriveCombinedTasksFromLegacyLinks(
 
   for (const tid of [...tierIds].sort(sortTierIds)) {
     const link = linksByTierId.get(tid);
+    const qty = normalizeTierQuantity(link?.quantity);
     const ext = parseTaskExtensions(link?.task_extensions);
     const hiddenSet = new Set(ext.hidden_task_ids ?? []);
     for (const id of hiddenSet) hidden_vault.push({ solution_tier_id: tid, task_id: id });
     const vault = tasks.filter((t) => t.solution_tier_id === tid).sort(compareTasksByOrder);
-    for (const t of vault) {
-      if (hiddenSet.has(t.task_id)) continue;
-      order.push({ k: "vault", solution_tier_id: tid, task_id: t.task_id });
+    for (let copy = 0; copy < qty; copy++) {
+      for (const t of vault) {
+        if (hiddenSet.has(t.task_id)) continue;
+        order.push({ k: "vault", solution_tier_id: tid, task_id: t.task_id });
+      }
     }
     const ov = parseTaskOverridesMap(link?.task_overrides);
     for (const [taskId, p] of Object.entries(ov)) {

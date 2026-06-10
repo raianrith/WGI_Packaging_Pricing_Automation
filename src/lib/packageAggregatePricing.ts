@@ -13,6 +13,7 @@ import {
   PACKAGE_PRICING_OVERRIDE_KEYS,
   type PackagePricingOverrideKey,
 } from "./packagePricingTaskOverrides";
+import { normalizeTierQuantity } from "./packageTierQuantities";
 import { PRICING_HOUR_GROUP_KEYS } from "./pricingHourGroups";
 
 /** Synthetic id used only in admin UI + sparse override math for package aggregate pricing. */
@@ -61,13 +62,14 @@ export function sumHourBucketsAcrossTiers(args: {
   }
   for (const tid of [...args.tierIds].sort(sortTierIds)) {
     const merged = mergedPricingForPackageTier(tid, args.pricingRows, args.linksByTierId.get(tid));
+    const qty = normalizeTierQuantity(args.linksByTierId.get(tid)?.quantity);
     for (const g of PRICING_HOUR_GROUP_KEYS) {
       const col = HOUR_COL[g];
       const v = merged[col];
       if (typeof v === "number" && Number.isFinite(v)) {
         const cur = tmpl[col];
         const base = typeof cur === "number" && Number.isFinite(cur) ? cur : 0;
-        (tmpl[col] as number | null) = base + v;
+        (tmpl[col] as number | null) = base + v * qty;
       }
     }
   }

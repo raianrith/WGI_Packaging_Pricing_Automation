@@ -148,7 +148,7 @@ export function CatalogPlaybookBrowser({
   sort,
   onToggleSort,
   onOpenTier,
-  rowSelectHint = "Select a row to view tier detail below",
+  rowSelectHint = "Select a row to open tier detail view",
 }: Props) {
   const phaseId = useId();
   const categoryId = useId();

@@ -7970,13 +7970,6 @@ button {
   color: rgba(41, 37, 36, 0.88);
 }
 
-/* Catalog: tier detail shown under all-tiers table */
-.agency-catalog-tier-detail-below-table {
-  margin-top: 1.25rem;
-  padding-top: 1.15rem;
-  border-top: 1px solid rgba(226, 220, 211, 0.85);
-}
-
 /* Catalog: compact filters + table (all tiers tab) */
 .agency-playbook-browser {
   margin-bottom: 0.35rem;

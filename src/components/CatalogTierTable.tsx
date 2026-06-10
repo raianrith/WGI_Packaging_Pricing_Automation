@@ -53,7 +53,7 @@ export function CatalogTierTable({
   searchQuery,
   onSearchQueryChange,
   searchPlaceholder = "Tier, solution, package, tags…",
-  hint = "Rows use vault pricing. Select a row to open that tier in detail view.",
+  hint = "Rows use vault pricing. Select a row to switch to tier detail view.",
   emptyMessage,
   showTaxonomyColumns = false,
   toolbarExtra,

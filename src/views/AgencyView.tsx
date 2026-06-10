@@ -921,12 +921,23 @@ export function AgencyView({ mode }: AgencyViewProps) {
     );
   };
 
-  const selectCatalogTier = useCallback((solutionId: string, id: string) => {
-    setSolId(solutionId);
-    setTierId(id);
-    setFilterTier("");
-    setFilterSol("");
-  }, []);
+  const openCatalogTierDetail = useCallback(
+    (solutionId: string, id: string | null) => {
+      setSolId(solutionId);
+      setTierId(id);
+      setFilterTier("");
+      setFilterSol("");
+      if (mode === "catalog") setCatalogViewMode("detail");
+    },
+    [mode]
+  );
+
+  const selectCatalogTier = useCallback(
+    (solutionId: string, id: string) => {
+      openCatalogTierDetail(solutionId, id);
+    },
+    [openCatalogTierDetail]
+  );
 
   /**
    * KPIs for the package selected in the catalog (left nav / pkgId) — not derived from the
@@ -1455,9 +1466,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                   }
                                   title={tierNavTitle(t, data.solutions)}
                                   onClick={() => {
-                                    setTierId(t.solution_tier_id);
-                                    setSolId(t.solution_id);
-                                    setFilterTier("");
+                                    openCatalogTierDetail(t.solution_id, t.solution_tier_id);
                                   }}
                                 >
                                   <span className="kb-nav-item__label">{t.solution_tier_name}</span>
@@ -1529,13 +1538,10 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                 onFocus={(e) => openCatalogFlyout(s.solution_id, e.currentTarget)}
                                 onClick={(e) => {
                                   openCatalogFlyout(s.solution_id, e.currentTarget);
-                                  setSolId(s.solution_id);
                                   const tr = data.tiers
                                     .filter((tier) => tier.solution_id === s.solution_id)
-                                    .sort((a, b) =>
-                                      sortId(a.solution_tier_id, b.solution_tier_id)
-                                    )[0];
-                                  setTierId(tr?.solution_tier_id ?? null);
+                                    .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))[0];
+                                  openCatalogTierDetail(s.solution_id, tr?.solution_tier_id ?? null);
                                 }}
                               >
                                 <span className="kb-nav-item__stack">
@@ -2184,16 +2190,8 @@ export function AgencyView({ mode }: AgencyViewProps) {
               <p style={emptyHint}>Select a tier to view details.</p>
             ) : null}
 
-            {selectedTier && selectedTierDisplay ? (
-              <div
-                className={
-                  mode === "package"
-                    ? "agency-package-tier-detail-region"
-                    : catalogViewMode === "all_table"
-                      ? "agency-catalog-tier-detail-below-table"
-                      : undefined
-                }
-              >
+            {selectedTier && selectedTierDisplay && (mode === "package" || catalogViewMode === "detail") ? (
+              <div className={mode === "package" ? "agency-package-tier-detail-region" : undefined}>
                 <div className="agency-breadcrumb" style={breadcrumb}>
                   {packageForSelectedTier ? (
                     <span>
@@ -2562,8 +2560,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                               }
                               title={tierNavTitle(t, data!.solutions)}
                               onClick={() => {
-                                setTierId(t.solution_tier_id);
-                                setSolId(t.solution_id);
+                                openCatalogTierDetail(t.solution_id, t.solution_tier_id);
                               }}
                             >
                               <span className="agency-nav-flyout__item-main">

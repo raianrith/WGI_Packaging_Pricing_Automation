@@ -32,3 +32,26 @@ export function vaultTierHours(pricing: SolutionTierPricing | null, tasks: TaskR
   const s = sumTaskTimeForTier(tasks, solutionTierId);
   return s > 0 ? s : null;
 }
+
+/**
+ * Hours for catalog / proposal browse: sum of checklist task times when available
+ * (matches Solutions tier detail “Sum of task time”); falls back to stored total_hours.
+ */
+export function catalogDisplayTierHours(
+  pricing: SolutionTierPricing | null,
+  tasks: TaskRow[],
+  solutionTierId: string
+): number | null {
+  const sumTasks = sumTaskTimeForTier(tasks, solutionTierId);
+  if (sumTasks > 0) return sumTasks;
+  const vault =
+    pricing?.total_hours != null && Number.isFinite(Number(pricing.total_hours))
+      ? Number(pricing.total_hours)
+      : null;
+  return vault;
+}
+
+export function formatTierHoursDisplay(hours: number | null | undefined): string {
+  if (hours == null || !Number.isFinite(hours)) return "—";
+  return hours.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}

@@ -38,6 +38,7 @@ import {
   tierTemplatesForProposalDisplay,
 } from "../lib/tierResourceFields";
 import { computePackageWorkspaceCatalogNumbers } from "../lib/packageWorkspaceMetrics";
+import { catalogDisplayTierHours, formatTierHoursDisplay } from "../lib/vaultTierMetrics";
 import {
   loadTierPricingMathConfigFromStorage,
   normalizeTierPricingMathConfig,
@@ -130,9 +131,13 @@ function sellPriceLine(pricing: SolutionTierPricing | null): string {
   return n != null ? formatUsd(n) : "—";
 }
 
-function tierHoursLine(pricing: SolutionTierPricing | null): string {
-  if (!pricing || pricing.total_hours == null || !Number.isFinite(Number(pricing.total_hours))) return "—";
-  return `${Number(pricing.total_hours)} h`;
+function tierHoursLine(
+  tierId: string,
+  pricing: SolutionTierPricing | null,
+  tasks: TaskRow[]
+): string {
+  const h = catalogDisplayTierHours(pricing, tasks, tierId);
+  return h != null ? `${formatTierHoursDisplay(h)} h` : "—";
 }
 
 function tierPitchText(t: SolutionTier): string {
@@ -336,7 +341,7 @@ function roadmapCardExportLines(c: RoadmapCard, ctx: CatalogCtx | null): string[
         .map((pt) => ctx.packages.find((pk) => pk.package_id === pt.package_id)?.package_name ?? pt.package_id);
       out.push(`  - **Catalog:** **${sol?.solution_name ?? t.solution_id}** → tier **${t.solution_tier_name}** (\`${t.solution_tier_id}\`)`);
       if (pr) {
-        out.push(`  - **Admin pricing row:** sell **${sellPriceLine(pr)}** · recorded effort **${tierHoursLine(pr)}**`);
+        out.push(`  - **Admin pricing row:** sell **${sellPriceLine(pr)}** · checklist task time **${tierHoursLine(c.refId, pr, ctx.tasks)}**`);
       } else {
         out.push(`  - **Admin pricing row:** _none linked — add \`solution_tier_pricing\` in Admin_`);
       }
@@ -543,7 +548,7 @@ function cardForTier(t: SolutionTier, ctx: CatalogCtx, scenarioId: string, phase
     phaseId,
     t.solution_tier_name,
     desc || "No client-facing description yet — add in Admin or type here.",
-    tierHoursLine(pr),
+    tierHoursLine(t.solution_tier_id, pr, ctx.tasks),
     sellPriceLine(pr)
   );
 }
@@ -1509,13 +1514,7 @@ export function RoadmapPlanningView() {
 
   const catalogTierTableRows = useMemo((): CatalogTierTableRow[] => {
     if (!catalogCtx) return [];
-    const { tiers, packages, packageTiers, solutions, pricingMap } = catalogCtx;
-    const taskHoursByTier = new Map<string, number>();
-    for (const k of catalogCtx.tasks) {
-      if (k.task_time == null || !Number.isFinite(Number(k.task_time))) continue;
-      const tid = k.solution_tier_id;
-      taskHoursByTier.set(tid, (taskHoursByTier.get(tid) ?? 0) + Number(k.task_time));
-    }
+    const { tiers, packages, packageTiers, solutions, pricingMap, tasks } = catalogCtx;
     return [...tiers]
       .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))
       .map((tier) => {
@@ -1527,10 +1526,7 @@ export function RoadmapPlanningView() {
             "Standalone"
           : "Standalone";
         const solution = solutions.find((s) => s.solution_id === tier.solution_id);
-        const vaultHours =
-          pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
-        const sumTasks = taskHoursByTier.get(tier.solution_tier_id) ?? null;
-        const hoursNum = vaultHours ?? (sumTasks != null && sumTasks > 0 ? sumTasks : null);
+        const hoursNum = catalogDisplayTierHours(pr, tasks, tier.solution_tier_id);
         const priceNum = sellPriceNumber(pr);
         return {
           tierId: tier.solution_tier_id,
@@ -1544,7 +1540,7 @@ export function RoadmapPlanningView() {
           priceNum,
           priceDisplay: sellPriceLine(pr),
           hoursNum,
-          hoursDisplay: hoursNum != null && Number.isFinite(hoursNum) ? String(hoursNum) : "—",
+          hoursDisplay: formatTierHoursDisplay(hoursNum),
           taxable: pr?.taxable ?? false,
           taxableSort: pr?.taxable ? 1 : 0,
           taxableLabel: pr?.taxable ? "Taxable" : "Non-taxable",

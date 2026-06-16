@@ -47,6 +47,11 @@ import {
 } from "../lib/tierPricingMath";
 import { downloadProposalPdf } from "../lib/proposalPdfExport";
 import {
+  normalizeIsoDateInput,
+  proposalDateRangeLabel,
+  type ProposalOfferingDates,
+} from "../lib/proposalDates";
+import {
   cloneProposalStructure,
   parseProposalSnapshot,
   type RoadmapHorizon,
@@ -155,6 +160,15 @@ function newRoadmapCardKey(): string {
     : `${Date.now()}-${Math.random()}`;
 }
 
+function applyOfferingDates(card: RoadmapCard, dates?: ProposalOfferingDates): RoadmapCard {
+  if (!dates) return card;
+  return {
+    ...card,
+    startDate: normalizeIsoDateInput(dates.startDate) || null,
+    endDate: normalizeIsoDateInput(dates.endDate) || null,
+  };
+}
+
 function makeCard(
   kind: RoadmapCardKind,
   refId: string,
@@ -164,23 +178,27 @@ function makeCard(
   description: string,
   hours: string,
   price: string,
-  scratch?: Pick<RoadmapCard, "scratchBlendRateUsd" | "scratchRiskMult" | "scratchStrategicMult">
+  scratch?: Pick<RoadmapCard, "scratchBlendRateUsd" | "scratchRiskMult" | "scratchStrategicMult">,
+  dates?: ProposalOfferingDates
 ): RoadmapCard {
-  return {
-    key: newRoadmapCardKey(),
-    kind,
-    refId,
-    scenarioId,
-    phaseId,
-    headline,
-    description,
-    hours,
-    price,
-    scope: "included",
-    hoursOverride: null,
-    priceOverride: null,
-    ...scratch,
-  };
+  return applyOfferingDates(
+    {
+      key: newRoadmapCardKey(),
+      kind,
+      refId,
+      scenarioId,
+      phaseId,
+      headline,
+      description,
+      hours,
+      price,
+      scope: "included",
+      hoursOverride: null,
+      priceOverride: null,
+      ...scratch,
+    },
+    dates
+  );
 }
 
 const DEFAULT_SCRATCH_BLEND = 175;
@@ -216,7 +234,12 @@ function withScratchRecalculatedPrice(next: RoadmapCard, ctx: CatalogCtxLike | n
   return { ...next, price: computeScratchSellPrice(next, ctx) };
 }
 
-function cardForScratchTier(scenarioId: string, phaseId: string, ctx: CatalogCtx | null): RoadmapCard {
+function cardForScratchTier(
+  scenarioId: string,
+  phaseId: string,
+  ctx: CatalogCtx | null,
+  dates?: ProposalOfferingDates
+): RoadmapCard {
   const hours = "20 h";
   const scratch = {
     scratchBlendRateUsd: DEFAULT_SCRATCH_BLEND,
@@ -241,7 +264,7 @@ function cardForScratchTier(scenarioId: string, phaseId: string, ctx: CatalogCtx
     scratchAttachedTaskGroupIds: [],
     ...scratch,
   };
-  return { ...base, price: computeScratchSellPrice(base, ctx) };
+  return applyOfferingDates({ ...base, price: computeScratchSellPrice(base, ctx) }, dates);
 }
 
 function exportOneLine(s: string): string {
@@ -261,6 +284,10 @@ function roadmapCardExportLines(c: RoadmapCard, ctx: CatalogCtx | null): string[
   const out: string[] = [];
   const displayTitle = c.headline.trim() || "(untitled)";
   out.push(`- **${kindLabel(c.kind)}** · ${displayTitle}${exportScopeSuffix(c.scope)} (\`${c.refId}\`)`);
+  const scheduleLabel = proposalDateRangeLabel(c.startDate, c.endDate);
+  if (scheduleLabel !== "—") {
+    out.push(`  - **Schedule:** ${scheduleLabel}`);
+  }
   const boardHours = effectiveHoursStr(c);
   const boardPrice = effectivePriceStr(c, ctx, computeScratchSellPrice);
   if (c.hoursOverride?.trim()) {
@@ -507,9 +534,10 @@ function cardForVariableTier(
   ctx: CatalogCtx,
   scenarioId: string,
   phaseId: string,
-  opts?: AddVariableTierOpts
+  opts?: AddVariableTierOpts,
+  dates?: ProposalOfferingDates
 ): RoadmapCard {
-  const card = cardForTier(t, ctx, scenarioId, phaseId);
+  const card = cardForTier(t, ctx, scenarioId, phaseId, dates);
   if (opts?.travelHours != null && isTravelVariableTierRefId(t.solution_tier_id)) {
     return { ...card, variableTravelHours: opts.travelHours };
   }
@@ -522,7 +550,13 @@ function cardForVariableTier(
   return card;
 }
 
-function cardForPackage(p: Package, ctx: CatalogCtx, scenarioId: string, phaseId: string): RoadmapCard {
+function cardForPackage(
+  p: Package,
+  ctx: CatalogCtx,
+  scenarioId: string,
+  phaseId: string,
+  dates?: ProposalOfferingDates
+): RoadmapCard {
   const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
   const { hours, price } = packageHoursPriceForCatalog(p, ctx);
   const tierNames = tids
@@ -532,10 +566,16 @@ function cardForPackage(p: Package, ctx: CatalogCtx, scenarioId: string, phaseId
     tierNames.length > 0
       ? `Package includes ${tierNames.length} solution tier(s): ${tierNames.join(", ")}.`
       : "No tiers linked to this package yet.";
-  return makeCard("package", p.package_id, scenarioId, phaseId, p.package_name, desc, hours, price);
+  return makeCard("package", p.package_id, scenarioId, phaseId, p.package_name, desc, hours, price, undefined, dates);
 }
 
-function cardForTier(t: SolutionTier, ctx: CatalogCtx, scenarioId: string, phaseId: string): RoadmapCard {
+function cardForTier(
+  t: SolutionTier,
+  ctx: CatalogCtx,
+  scenarioId: string,
+  phaseId: string,
+  dates?: ProposalOfferingDates
+): RoadmapCard {
   const pr = ctx.pricingMap.get(t.solution_tier_id) ?? null;
   const pkgNames = ctx.packageTiers
     .filter((pt) => pt.solution_tier_id === t.solution_tier_id)
@@ -550,7 +590,9 @@ function cardForTier(t: SolutionTier, ctx: CatalogCtx, scenarioId: string, phase
     t.solution_tier_name,
     desc || "No client-facing description yet — add in Admin or type here.",
     tierHoursLine(t.solution_tier_id, pr, ctx.tasks),
-    sellPriceLine(pr)
+    sellPriceLine(pr),
+    undefined,
+    dates
   );
 }
 
@@ -908,6 +950,8 @@ export function RoadmapPlanningView() {
   const [roadmapTitle, setRoadmapTitle] = useState("");
   const [horizon, setHorizon] = useState<RoadmapHorizon>("6");
   const [clientBudget, setClientBudget] = useState("");
+  const [proposalStartDate, setProposalStartDate] = useState("");
+  const [proposalEndDate, setProposalEndDate] = useState("");
   const [scenarios, setScenarios] = useState<RoadmapScenario[]>(() => INITIAL_SCENARIOS_AND_PHASES.scenarios);
   const [phases, setPhases] = useState<RoadmapPhase[]>(() => INITIAL_SCENARIOS_AND_PHASES.phases);
   const [cards, setCards] = useState<RoadmapCard[]>([]);
@@ -1047,11 +1091,13 @@ export function RoadmapPlanningView() {
       roadmapTitle,
       horizon,
       clientBudget,
+      proposalStartDate,
+      proposalEndDate,
       scenarios,
       phases,
       cards,
     }),
-    [cards, clientBudget, clientLabel, horizon, phases, roadmapTitle, scenarios]
+    [cards, clientBudget, clientLabel, horizon, phases, proposalEndDate, proposalStartDate, roadmapTitle, scenarios]
   );
 
   const saveCurrentProposal = useCallback(async () => {
@@ -1142,6 +1188,8 @@ export function RoadmapPlanningView() {
         roadmapTitle,
         horizon,
         clientBudget,
+        proposalStartDate,
+        proposalEndDate,
         scenarios,
         phases,
         cards,
@@ -1153,6 +1201,8 @@ export function RoadmapPlanningView() {
     roadmapTitle,
     horizon,
     clientBudget,
+    proposalStartDate,
+    proposalEndDate,
     scenarios,
     phases,
     cards,
@@ -1185,6 +1235,8 @@ export function RoadmapPlanningView() {
       roadmapTitle: "",
       horizon: "6",
       clientBudget: "",
+      proposalStartDate: "",
+      proposalEndDate: "",
       scenarios: init.scenarios,
       phases: init.phases,
       cards: [],
@@ -1192,6 +1244,8 @@ export function RoadmapPlanningView() {
     setClientLabel("");
     setRoadmapTitle("");
     setClientBudget("");
+    setProposalStartDate("");
+    setProposalEndDate("");
     setHorizon("6");
     setScenarios(init.scenarios);
     setPhases(init.phases);
@@ -1252,6 +1306,8 @@ export function RoadmapPlanningView() {
       setRoadmapTitle(snapshot.roadmapTitle);
       setHorizon(snapshot.horizon);
       setClientBudget(snapshot.clientBudget);
+      setProposalStartDate(snapshot.proposalStartDate);
+      setProposalEndDate(snapshot.proposalEndDate);
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -1264,6 +1320,8 @@ export function RoadmapPlanningView() {
           roadmapTitle: snapshot.roadmapTitle,
           horizon: snapshot.horizon,
           clientBudget: snapshot.clientBudget,
+          proposalStartDate: snapshot.proposalStartDate,
+          proposalEndDate: snapshot.proposalEndDate,
           scenarios: nextScenarios,
           phases: nextPhases,
           cards: snapshot.cards,
@@ -1434,6 +1492,8 @@ export function RoadmapPlanningView() {
       | "variableTravelHours"
       | "variablePaidAdsSpendUsd"
       | "variableLinkedTierRefId"
+      | "startDate"
+      | "endDate"
     >
   >;
 
@@ -1798,6 +1858,10 @@ export function RoadmapPlanningView() {
     lines.push(`# ${title}`);
     if (clientLabel.trim()) lines.push(`**Client / opportunity:** ${clientLabel.trim()}`);
     lines.push(`**Horizon:** ${horizon === "custom" ? "Custom" : `${horizon} months`}`);
+    const proposalSchedule = proposalDateRangeLabel(proposalStartDate, proposalEndDate);
+    if (proposalSchedule !== "—") {
+      lines.push(`**Proposal dates:** ${proposalSchedule}`);
+    }
     if (budgetNumber != null) {
       lines.push(`**Client budget (USD):** ${formatUsd(budgetNumber)}`);
     } else if (clientBudget.trim()) {
@@ -1922,7 +1986,7 @@ export function RoadmapPlanningView() {
       lines.push("");
     }
     return lines.join("\n");
-  }, [cards, clientBudget, clientLabel, budgetNumber, horizon, scenarios, phases, roadmapTitle, catalogCtx]);
+  }, [cards, clientBudget, clientLabel, budgetNumber, horizon, proposalEndDate, proposalStartDate, scenarios, phases, roadmapTitle, catalogCtx]);
 
   const downloadPdf = useCallback(() => {
     if (!catalogCtx) return;
@@ -1932,6 +1996,8 @@ export function RoadmapPlanningView() {
         roadmapTitle,
         clientLabel,
         horizonMonths: horizon === "custom" ? "custom" : Number(horizon),
+        proposalStartDate,
+        proposalEndDate,
         clientBudgetRaw: clientBudget,
         budgetNumber,
         scenarios,
@@ -1955,6 +2021,8 @@ export function RoadmapPlanningView() {
     clientLabel,
     budgetNumber,
     horizon,
+    proposalEndDate,
+    proposalStartDate,
     phases,
     roadmapTitle,
     scenarios,
@@ -2114,7 +2182,7 @@ export function RoadmapPlanningView() {
                     <p className="proposal-step-panel__eyebrow">Step 1</p>
                     <h2 className="proposal-step-panel__title">Proposal Context</h2>
                     <p className="proposal-step-panel__lead">
-                      Name the roadmap and optional client budget so each scenario can be compared against plan.
+                      Name the roadmap, set the proposal date range, and optional client budget so each scenario can be compared against plan.
                     </p>
                   </header>
                   <div className="roadmap-meta-grid">
@@ -2151,6 +2219,29 @@ export function RoadmapPlanningView() {
                       ) : clientBudget.trim() ? (
                         <span className="roadmap-budget-warn" role="status">
                           Could not read that as a number — try digits only, commas, or 150k.
+                        </span>
+                      ) : null}
+                    </label>
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Proposal start date</span>
+                      <input
+                        type="date"
+                        className="roadmap-input"
+                        value={proposalStartDate}
+                        onChange={(e) => setProposalStartDate(normalizeIsoDateInput(e.target.value))}
+                      />
+                    </label>
+                    <label className="roadmap-field">
+                      <span className="roadmap-field__cap">Proposal end date</span>
+                      <input
+                        type="date"
+                        className="roadmap-input"
+                        value={proposalEndDate}
+                        onChange={(e) => setProposalEndDate(normalizeIsoDateInput(e.target.value))}
+                      />
+                      {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—" ? (
+                        <span className="roadmap-budget-confirm">
+                          Proposal schedule: {proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
                         </span>
                       ) : null}
                     </label>
@@ -2229,23 +2320,25 @@ export function RoadmapPlanningView() {
                   targetPhaseTitle={targetPhaseTitle}
                   filteredPackages={catalogPackages}
                   packagePreview={(p) => cardForPackage(p, ctx, targetScenarioId, targetPhaseId)}
-                  onAddPackage={(p) => {
+                  proposalStartDate={proposalStartDate}
+                  proposalEndDate={proposalEndDate}
+                  onAddPackage={(p, dates) => {
                     if (!canAddToTarget) return;
-                    addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId));
+                    addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
                   }}
-                  onAddTier={(t) => {
+                  onAddTier={(t, dates) => {
                     if (!canAddToTarget) return;
-                    addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId));
+                    addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates));
                   }}
-                  onAddVariableTier={(t, opts) => {
+                  onAddVariableTier={(t, dates, opts) => {
                     if (!canAddToTarget) return;
-                    addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts));
+                    addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts, dates));
                   }}
                   previewVariableTierPriceUsd={previewVariableTierPriceUsd}
                   variableTierLinkTargets={variableTierLinkTargets}
-                  onAddScratchTier={() => {
+                  onAddScratchTier={(dates) => {
                     if (!canAddToTarget) return;
-                    addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx));
+                    addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx, dates));
                   }}
                   canAdd={canAddToTarget}
                   catalogReloading={catalogReloading}
@@ -2317,7 +2410,11 @@ export function RoadmapPlanningView() {
                     <h2 className="proposal-step-panel__title">Review &amp; Export</h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}
-                      {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""} — {cards.length} line item
+                      {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""}
+                      {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—"
+                        ? ` · ${proposalDateRangeLabel(proposalStartDate, proposalEndDate)}`
+                        : ""}{" "}
+                      — {cards.length} line item
                       {cards.length === 1 ? "" : "s"} across {scenarios.length} scenario
                       {scenarios.length === 1 ? "" : "s"}.
                     </p>
@@ -2392,6 +2489,9 @@ export function RoadmapPlanningView() {
                   <td className="roadmap-export-table__col roadmap-export-table__col--type">
                     {kindLabel(c.kind)}
                   </td>
+                  <td className="roadmap-export-table__col roadmap-export-table__col--dates">
+                    {proposalDateRangeLabel(c.startDate, c.endDate)}
+                  </td>
                   <td className="roadmap-export-table__col roadmap-export-table__col--num">
                     {effectiveHoursStr(c) || "—"}
                   </td>
@@ -2440,6 +2540,7 @@ export function RoadmapPlanningView() {
                                 <tr>
                                   <th>Deliverable</th>
                                   <th>Type</th>
+                                  <th>Dates</th>
                                   <th>Hours</th>
                                   <th>Price</th>
                                 </tr>
@@ -2460,6 +2561,7 @@ export function RoadmapPlanningView() {
                                 <tr>
                                   <th>Deliverable</th>
                                   <th>Type</th>
+                                  <th>Dates</th>
                                   <th>Hours</th>
                                   <th>Price</th>
                                 </tr>
@@ -2480,6 +2582,7 @@ export function RoadmapPlanningView() {
                                 <tr>
                                   <th>Deliverable</th>
                                   <th>Type</th>
+                                  <th>Dates</th>
                                   <th>Hours</th>
                                   <th>Price</th>
                                 </tr>

@@ -48,6 +48,10 @@ export type RoadmapCard = {
   variablePaidAdsSpendUsd?: number | null;
   /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
   variableLinkedTierRefId?: string | null;
+  /** Scheduled start (ISO `YYYY-MM-DD`). */
+  startDate?: string | null;
+  /** Scheduled end (ISO `YYYY-MM-DD`). */
+  endDate?: string | null;
 };
 
 export type CatalogCtxLike = {

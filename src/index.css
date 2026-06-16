@@ -10663,8 +10663,8 @@ button {
   border-bottom: 1px solid rgba(226, 220, 211, 0.85);
 }
 
-.roadmap-export-table th:nth-child(3),
-.roadmap-export-table th:nth-child(4) {
+.roadmap-export-table th:nth-child(4),
+.roadmap-export-table th:nth-child(5) {
   text-align: right;
 }
 
@@ -10687,6 +10687,12 @@ button {
 .roadmap-export-table__col--type {
   color: var(--muted);
   font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.roadmap-export-table__col--dates {
+  font-size: 0.78rem;
+  color: var(--muted);
   white-space: nowrap;
 }
 
@@ -14791,6 +14797,55 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
 .proposal-organize-line__phase .roadmap-select--sm {
   min-width: 8rem;
   max-width: 100%;
+}
+
+.proposal-organize-line__dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  flex: 1 1 16rem;
+}
+
+.proposal-organize-line__date {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.proposal-organize-line__date-input {
+  min-width: 8.5rem;
+  max-width: 100%;
+  font-size: 0.78rem;
+  padding: 0.32rem 0.45rem;
+}
+
+.proposal-offering-dates-modal__item {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.proposal-offering-dates-modal__item strong {
+  color: var(--text);
+}
+
+.proposal-offering-dates-modal__date {
+  width: 100%;
+}
+
+.proposal-offering-dates-modal__preview {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: rgba(13, 92, 77, 0.92);
+}
+
+.proposal-offering-dates-modal__warn {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(180, 83, 9, 0.95);
 }
 
 .proposal-organize-line__actions {

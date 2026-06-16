@@ -10,6 +10,7 @@ import {
   sortedPhasesForScenario,
   type CatalogCtxLike,
 } from "./roadmapModel";
+import { proposalDateRangeLabel } from "./proposalDates";
 
 const BRAND_RGB: [number, number, number] = [13, 92, 77];
 const MARGIN_X = 14;
@@ -20,6 +21,8 @@ export type ProposalPdfExportInput = {
   roadmapTitle: string;
   clientLabel: string;
   horizonMonths: number | "custom";
+  proposalStartDate: string;
+  proposalEndDate: string;
   clientBudgetRaw: string;
   budgetNumber: number | null;
   scenarios: RoadmapScenario[];
@@ -105,6 +108,7 @@ function renderLineItemsTable(
     return [
       deliverable,
       kindLabel(c.kind),
+      proposalDateRangeLabel(c.startDate, c.endDate),
       effectiveHoursStr(c) || "—",
       effectivePriceStr(c, ctx, computeScratchSellPrice) || "—",
     ];
@@ -113,7 +117,7 @@ function renderLineItemsTable(
   autoTable(doc, {
     startY,
     margin: { left: MARGIN_X, right: MARGIN_X },
-    head: [["Deliverable", "Type", "Hours", "Price"]],
+    head: [["Deliverable", "Type", "Dates", "Hours", "Price"]],
     body,
     styles: { fontSize: 8.5, cellPadding: 2.5, overflow: "linebreak", valign: "top" },
     headStyles: {
@@ -124,10 +128,11 @@ function renderLineItemsTable(
     },
     alternateRowStyles: { fillColor: [248, 246, 242] },
     columnStyles: {
-      0: { cellWidth: CONTENT_W - 62 },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 18, halign: "right" },
-      3: { cellWidth: 20, halign: "right" },
+      0: { cellWidth: CONTENT_W - 88 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 16, halign: "right" },
+      4: { cellWidth: 22, halign: "right" },
     },
   });
 
@@ -166,6 +171,8 @@ export function downloadProposalPdf(input: ProposalPdfExportInput): void {
     roadmapTitle,
     clientLabel,
     horizonMonths,
+    proposalStartDate,
+    proposalEndDate,
     clientBudgetRaw,
     budgetNumber,
     scenarios,
@@ -192,6 +199,8 @@ export function downloadProposalPdf(input: ProposalPdfExportInput): void {
   const meta: string[] = [];
   if (clientLabel.trim()) meta.push(`Client: ${clientLabel.trim()}`);
   meta.push(`Horizon: ${horizonMonths === "custom" ? "Custom" : `${horizonMonths} months`}`);
+  const scheduleLabel = proposalDateRangeLabel(proposalStartDate, proposalEndDate);
+  if (scheduleLabel !== "—") meta.push(`Proposal dates: ${scheduleLabel}`);
   if (budgetNumber != null) meta.push(`Budget: ${formatUsd(budgetNumber)}`);
   else if (clientBudgetRaw.trim()) meta.push(`Budget: ${clientBudgetRaw.trim()}`);
   meta.push(`Generated: ${new Date().toLocaleDateString(undefined, { dateStyle: "medium" })}`);

@@ -3,6 +3,7 @@ import type { Package, SolutionTier } from "../../types";
 import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
+import type { ProposalOfferingDates } from "../../lib/proposalDates";
 import {
   isPaidAdsVariableTierRefId,
   isPercentVariableTierRefId,
@@ -12,6 +13,7 @@ import {
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
+import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
 import {
@@ -47,12 +49,14 @@ type Props = {
   targetPhaseTitle: string;
   filteredPackages: Package[];
   packagePreview: (p: Package) => { hours: string; price: string };
-  onAddPackage: (p: Package) => void;
-  onAddTier: (t: SolutionTier) => void;
-  onAddVariableTier: (t: SolutionTier, opts?: AddVariableTierOpts) => void;
+  proposalStartDate: string;
+  proposalEndDate: string;
+  onAddPackage: (p: Package, dates: ProposalOfferingDates) => void;
+  onAddTier: (t: SolutionTier, dates: ProposalOfferingDates) => void;
+  onAddVariableTier: (t: SolutionTier, dates: ProposalOfferingDates, opts?: AddVariableTierOpts) => void;
   previewVariableTierPriceUsd: (refId: string, opts?: AddVariableTierOpts) => number | null;
   variableTierLinkTargets: VariableTierLinkTarget[];
-  onAddScratchTier: () => void;
+  onAddScratchTier: (dates: ProposalOfferingDates) => void;
   canAdd: boolean;
   catalogReloading?: boolean;
   onReloadCatalog?: () => void;
@@ -242,6 +246,8 @@ export function ProposalCatalogPanel({
   previewVariableTierPriceUsd,
   variableTierLinkTargets,
   onAddScratchTier,
+  proposalStartDate,
+  proposalEndDate,
   canAdd,
   catalogReloading,
   onReloadCatalog,
@@ -270,6 +276,14 @@ export function ProposalCatalogPanel({
   const [paidAdsSpendStr, setPaidAdsSpendStr] = useState("");
   const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
   const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
+
+  type PendingOfferingAdd =
+    | { kind: "tier"; tier: SolutionTier }
+    | { kind: "package"; pkg: Package }
+    | { kind: "scratch" }
+    | { kind: "variable"; tier: SolutionTier; opts: AddVariableTierOpts };
+
+  const [datesModalPending, setDatesModalPending] = useState<PendingOfferingAdd | null>(null);
 
   const targetPhases = useMemo(
     () => sortedPhasesForScenario(phases, targetScenarioId),
@@ -376,12 +390,7 @@ export function ProposalCatalogPanel({
     if (!travelModalTier) return;
     const h = Number(travelHoursStr.trim());
     if (!Number.isFinite(h) || h <= 0) return;
-    onAddVariableTier(travelModalTier, { travelHours: h });
-    setJustAddedId(`tier:${travelModalTier.solution_tier_id}`);
-    window.setTimeout(
-      () => setJustAddedId((id) => (id === `tier:${travelModalTier.solution_tier_id}` ? null : id)),
-      1600
-    );
+    setDatesModalPending({ kind: "variable", tier: travelModalTier, opts: { travelHours: h } });
     closeTravelModal();
   };
 
@@ -389,23 +398,17 @@ export function ProposalCatalogPanel({
     if (!paidAdsModalTier) return;
     const spend = Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""));
     if (!Number.isFinite(spend) || spend <= 0) return;
-    onAddVariableTier(paidAdsModalTier, { paidAdsSpendUsd: spend });
-    setJustAddedId(`tier:${paidAdsModalTier.solution_tier_id}`);
-    window.setTimeout(
-      () => setJustAddedId((id) => (id === `tier:${paidAdsModalTier.solution_tier_id}` ? null : id)),
-      1600
-    );
+    setDatesModalPending({ kind: "variable", tier: paidAdsModalTier, opts: { paidAdsSpendUsd: spend } });
     closePaidAdsModal();
   };
 
   const submitLinkModal = () => {
     if (!linkModalTier || !selectedLinkedTierRefId) return;
-    onAddVariableTier(linkModalTier, { linkedTierRefId: selectedLinkedTierRefId });
-    setJustAddedId(`tier:${linkModalTier.solution_tier_id}`);
-    window.setTimeout(
-      () => setJustAddedId((id) => (id === `tier:${linkModalTier.solution_tier_id}` ? null : id)),
-      1600
-    );
+    setDatesModalPending({
+      kind: "variable",
+      tier: linkModalTier,
+      opts: { linkedTierRefId: selectedLinkedTierRefId },
+    });
     closeLinkModal();
   };
 
@@ -446,20 +449,55 @@ export function ProposalCatalogPanel({
     ? variableTierLinkTargets.find((t) => t.refId === selectedLinkedTierRefId) ?? null
     : null;
 
+  const confirmOfferingDates = (dates: ProposalOfferingDates) => {
+    const pending = datesModalPending;
+    if (!pending || !canAdd) return;
+
+    let justAdded: string | null = null;
+    switch (pending.kind) {
+      case "tier":
+        onAddTier(pending.tier, dates);
+        justAdded = `tier:${pending.tier.solution_tier_id}`;
+        break;
+      case "package":
+        onAddPackage(pending.pkg, dates);
+        justAdded = `pkg:${pending.pkg.package_id}`;
+        break;
+      case "scratch":
+        onAddScratchTier(dates);
+        justAdded = "scratch";
+        break;
+      case "variable":
+        onAddVariableTier(pending.tier, dates, pending.opts);
+        justAdded = `tier:${pending.tier.solution_tier_id}`;
+        break;
+    }
+
+    setDatesModalPending(null);
+    if (justAdded) {
+      setJustAddedId(justAdded);
+      window.setTimeout(() => setJustAddedId((id) => (id === justAdded ? null : id)), 1600);
+    }
+  };
+
+  const datesModalItemLabel = useMemo(() => {
+    const pending = datesModalPending;
+    if (!pending) return undefined;
+    if (pending.kind === "tier" || pending.kind === "variable") return pending.tier.solution_tier_name;
+    if (pending.kind === "package") return pending.pkg.package_name;
+    return "Scratch tier";
+  }, [datesModalPending]);
+
   const handleAddTier = (tierId: string) => {
     const tier = tierById.get(tierId);
     if (!tier || !canAdd) return;
-    onAddTier(tier);
-    setJustAddedId(`tier:${tierId}`);
-    window.setTimeout(() => setJustAddedId((id) => (id === `tier:${tierId}` ? null : id)), 1600);
+    setDatesModalPending({ kind: "tier", tier });
   };
 
   const handleAddPackage = (packageId: string) => {
     const pkg = ctx.packages.find((p) => p.package_id === packageId);
     if (!pkg || !canAdd) return;
-    onAddPackage(pkg);
-    setJustAddedId(`pkg:${packageId}`);
-    window.setTimeout(() => setJustAddedId((id) => (id === `pkg:${packageId}` ? null : id)), 1600);
+    setDatesModalPending({ kind: "package", pkg });
   };
 
   return (
@@ -869,7 +907,10 @@ export function ProposalCatalogPanel({
                   type="button"
                   className="roadmap-btn roadmap-btn--ghost roadmap-btn--sm"
                   disabled={!canAdd}
-                  onClick={onAddScratchTier}
+                  onClick={() => {
+                    if (!canAdd) return;
+                    setDatesModalPending({ kind: "scratch" });
+                  }}
                 >
                   + Custom one-off tier
                 </button>
@@ -1270,6 +1311,17 @@ export function ProposalCatalogPanel({
           </div>
         </div>
       ) : null}
+
+      <ProposalOfferingDatesModal
+        open={datesModalPending != null}
+        title="Set offering dates"
+        subtitle="Defaults come from your proposal schedule in Step 1. Adjust per line item if needed."
+        itemLabel={datesModalItemLabel}
+        proposalStartDate={proposalStartDate}
+        proposalEndDate={proposalEndDate}
+        onCancel={() => setDatesModalPending(null)}
+        onConfirm={confirmOfferingDates}
+      />
     </div>
   );
 }

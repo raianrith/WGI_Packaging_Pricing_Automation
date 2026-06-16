@@ -1,6 +1,8 @@
 import type { RoadmapProposalRow } from "../types";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "./roadmapModel";
 
+import { normalizeIsoDateInput } from "./proposalDates";
+
 export type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
 
 export type RoadmapProposalSnapshot = {
@@ -9,6 +11,10 @@ export type RoadmapProposalSnapshot = {
   roadmapTitle: string;
   horizon: RoadmapHorizon;
   clientBudget: string;
+  /** Proposal-level schedule start (ISO `YYYY-MM-DD`). */
+  proposalStartDate: string;
+  /** Proposal-level schedule end (ISO `YYYY-MM-DD`). */
+  proposalEndDate: string;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
@@ -34,6 +40,8 @@ export function parseProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalS
     roadmapTitle: typeof raw.roadmapTitle === "string" ? raw.roadmapTitle : row.roadmap_title,
     horizon: isRoadmapHorizon(raw.horizon) ? raw.horizon : "6",
     clientBudget: typeof raw.clientBudget === "string" ? raw.clientBudget : row.client_budget ?? "",
+    proposalStartDate: normalizeIsoDateInput(raw.proposalStartDate),
+    proposalEndDate: normalizeIsoDateInput(raw.proposalEndDate),
     scenarios: raw.scenarios as RoadmapScenario[],
     phases: raw.phases as RoadmapPhase[],
     cards: raw.cards as RoadmapCard[],

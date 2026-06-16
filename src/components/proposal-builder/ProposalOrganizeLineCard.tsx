@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { CSSProperties } from "react";
 import type { RoadmapCard, RoadmapLineScope, RoadmapPhase } from "../../lib/roadmapModel";
 import { effectiveHoursStr, effectivePriceStr } from "../../lib/roadmapModel";
+import { normalizeIsoDateInput } from "../../lib/proposalDates";
 import { isTravelVariableTierRefId, isVariableTierRefId, variableTierAppliedToLabel } from "../../lib/proposalVariableTiers";
 
 type CatalogCtxLike = Parameters<typeof effectivePriceStr>[1];
@@ -152,6 +153,33 @@ export function ProposalOrganizeLineCard({
               ))}
             </select>
           </label>
+
+          <div className="proposal-organize-line__dates" role="group" aria-label="Offering schedule">
+            <label className="proposal-organize-line__date">
+              <span className="proposal-organize-line__phase-label">Start</span>
+              <input
+                type="date"
+                className="roadmap-input proposal-organize-line__date-input"
+                value={normalizeIsoDateInput(card.startDate)}
+                onChange={(e) =>
+                  onPatch(card.key, { startDate: normalizeIsoDateInput(e.target.value) || null })
+                }
+                aria-label="Offering start date"
+              />
+            </label>
+            <label className="proposal-organize-line__date">
+              <span className="proposal-organize-line__phase-label">End</span>
+              <input
+                type="date"
+                className="roadmap-input proposal-organize-line__date-input"
+                value={normalizeIsoDateInput(card.endDate)}
+                onChange={(e) =>
+                  onPatch(card.key, { endDate: normalizeIsoDateInput(e.target.value) || null })
+                }
+                aria-label="Offering end date"
+              />
+            </label>
+          </div>
 
           <div className="proposal-organize-line__actions">
             <button

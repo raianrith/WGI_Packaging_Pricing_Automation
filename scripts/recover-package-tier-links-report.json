@@ -1,0 +1,74 @@
+{
+  "generatedAt": "2026-06-18T00:31:52.473Z",
+  "mode": "dry-run",
+  "packageCount": 19,
+  "currentLinkCount": 106,
+  "auditPackageRows": 100,
+  "packagesWithNoTiersNow": [],
+  "restoreCandidates": [
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-31",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Target Market & ICP - Advanced (4-5)"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-33",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Buyer Personas - Standard (3-4)"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-37",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Messaging Framework - Advanced"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-39",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Buyer Journey & Use Cases - Standard"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-42",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Competitive Landscape - Standard (4-5)"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-44",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Proof Points & Evidence"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-50",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Market Positioning Guide - Advanced (7-8)"
+    },
+    {
+      "package_id": "1-2",
+      "solution_tier_id": "3-8",
+      "quantity": 1,
+      "reason": "Missing vs latest audit insert @ 2026-05-26T15:00:19.518565+00:00",
+      "package_name": "1-2",
+      "tier_name": "Competitive Advantage & Positioning Statement - Basic"
+    }
+  ]
+}

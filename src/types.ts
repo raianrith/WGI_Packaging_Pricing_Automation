@@ -271,7 +271,7 @@ export type PackageTaskExtensions = {
   extra_tasks?: PackageExtraTaskRow[];
 };
 
-/** Links a tier to a package (tiers are assignable individually; each tier is in at most one package). */
+/** Links a tier to a package (same vault tier may appear in multiple packages). */
 export type PackageSolutionTier = {
   package_id: string;
   solution_tier_id: string;

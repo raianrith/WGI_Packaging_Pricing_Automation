@@ -16,11 +16,9 @@ create table if not exists public.package_solution_tiers (
 );
 
 comment on table public.package_solution_tiers is
-  'Many-to-many: which tiers belong to a package. A tier may appear in at most one package.';
+  'Many-to-many: which tiers belong to a package. The same vault tier may appear in multiple packages.';
 
--- At most one package per tier (matches previous “solution in one package” rule at tier granularity).
-create unique index if not exists package_solution_tiers_solution_tier_id_key
-  on public.package_solution_tiers (solution_tier_id);
+-- Composite primary key (package_id, solution_tier_id) prevents duplicate links within one package.
 
 -- ---------------------------------------------------------------------------
 -- Backfill from legacy solutions.package_id

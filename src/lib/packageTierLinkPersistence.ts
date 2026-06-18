@@ -82,8 +82,6 @@ export async function applyPackageTierMembership(
       quantity: normalizeTierQuantity(wantedQuantities[tid]),
     };
     if (!curSet.has(tid)) {
-      const { error: e1 } = await client.from("package_solution_tiers").delete().eq("solution_tier_id", tid);
-      if (e1) return friendlyMutationMessage(e1.message);
       const { error: e2 } = await client.from("package_solution_tiers").insert({
         package_id: packageId,
         solution_tier_id: tid,

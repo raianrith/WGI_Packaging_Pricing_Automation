@@ -205,6 +205,8 @@ type Props = {
   /** Package aggregate: sell discount % after modeled sell price. */
   packageSellDiscountPct?: string | null;
   onPackageSellDiscountPctChange?: (value: string) => void;
+  /** When true, package hour discount is read-only and sell discount is hidden (fixed tier rules). */
+  packageDiscountsReadOnly?: boolean;
 };
 
 export function PricingPanel({
@@ -242,6 +244,7 @@ export function PricingPanel({
   onPackageHourDiscountPctChange,
   packageSellDiscountPct = null,
   onPackageSellDiscountPctChange,
+  packageDiscountsReadOnly = false,
 }: Props) {
   const [tierPick, setTierPick] = useState("");
   const [scope, setScope] = useState("");
@@ -895,18 +898,29 @@ export function PricingPanel({
               value={fmtDerivedHours(derived.hoursForExpectedEffort)}
             />
           </label>
-          {persistTarget === "package" && onPackageHourDiscountPctChange ? (
+          {persistTarget === "package" && (onPackageHourDiscountPctChange || packageDiscountsReadOnly) ? (
             <label
               style={{ ...lbl, gridColumn: "1 / -1" }}
               className="admin-pricing-package-discount-field"
             >
               <AdminFieldCaption>Hour discount %</AdminFieldCaption>
               <input
-                style={input}
+                style={packageDiscountsReadOnly ? readonlyInput : input}
+                className={packageDiscountsReadOnly ? "admin-pricing-readonly" : undefined}
+                readOnly={packageDiscountsReadOnly}
+                tabIndex={packageDiscountsReadOnly ? -1 : undefined}
                 inputMode="decimal"
                 value={packageHourDiscountPct ?? ""}
-                onChange={(e) => onPackageHourDiscountPctChange(e.target.value)}
-                title="Applied evenly across all hour groups before expected effort pricing (package-level)."
+                onChange={
+                  packageDiscountsReadOnly
+                    ? undefined
+                    : (e) => onPackageHourDiscountPctChange?.(e.target.value)
+                }
+                title={
+                  packageDiscountsReadOnly
+                    ? "Fixed by package tier (Basic 20%, Standard 25%, Advanced 30%)."
+                    : "Applied evenly across all hour groups before expected effort pricing (package-level)."
+                }
               />
             </label>
           ) : null}
@@ -1041,7 +1055,7 @@ export function PricingPanel({
               value={`$${Math.round(derived.sellPrice).toLocaleString()}`}
             />
           </label>
-          {persistTarget === "package" && onPackageSellDiscountPctChange ? (
+          {persistTarget === "package" && onPackageSellDiscountPctChange && !packageDiscountsReadOnly ? (
             <label
               style={{ ...lbl, gridColumn: "1 / -1" }}
               className="admin-pricing-package-discount-field admin-pricing-package-discount-field--net"
@@ -1059,7 +1073,7 @@ export function PricingPanel({
               />
             </label>
           ) : null}
-          {persistTarget === "package" && onPackageSellDiscountPctChange ? (
+          {persistTarget === "package" && onPackageSellDiscountPctChange && !packageDiscountsReadOnly ? (
             <label style={{ ...lbl, gridColumn: "1 / -1" }} className="admin-pricing-package-discount-field">
               <AdminFieldCaption>Sell price discount %</AdminFieldCaption>
               <input

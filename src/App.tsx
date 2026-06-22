@@ -4,7 +4,9 @@ import { ProposalDraftGuardProvider } from "./context/ProposalDraftGuardContext"
 import { ToastProvider } from "./context/ToastContext";
 import { ProtectedLayout } from "./components/ProtectedLayout";
 import { AgencyPackagesHub } from "./views/AgencyPackagesHub";
+import { AgencyPackageBuilderView } from "./views/AgencyPackageBuilderView";
 import { AgencyTabsShell } from "./views/AgencyTabsShell";
+import { AgencyHomeView } from "./views/AgencyHomeView";
 import { AgencyView } from "./views/AgencyView";
 import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminView } from "./views/AdminView";
@@ -19,12 +21,14 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route element={<ProtectedLayout />}>
-          <Route path="/catalog" element={<Navigate to="/" replace />} />
+          <Route path="/catalog" element={<Navigate to="/solutions" replace />} />
           <Route path="/roadmap" element={<RoadmapPlanningView />} />
+          <Route path="/package-builder" element={<AgencyPackageBuilderView />} />
           <Route path="/" element={<AgencyTabsShell />}>
-            <Route index element={<AgencyView mode="catalog" />} />
+            <Route index element={<AgencyHomeView />} />
+            <Route path="solutions" element={<AgencyView mode="catalog" />} />
             <Route path="packages" element={<AgencyPackagesHub />} />
-            <Route path="package/standalone" element={<Navigate to="/" replace />} />
+            <Route path="package/standalone" element={<Navigate to="/solutions" replace />} />
             <Route path="package/:packageId" element={<AgencyView mode="package" />} />
           </Route>
           <Route

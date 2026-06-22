@@ -172,8 +172,6 @@ export function CatalogTierTable({
                     <div className="agency-catalog-tier-sheet__tier-title">{r.tierName}</div>
                     <div className="agency-catalog-tier-sheet__submeta">
                       <span className="agency-catalog-tier-sheet__sol-name">{r.solutionName}</span>
-                      <span className="agency-catalog-tier-sheet__subdot"> · </span>
-                      <span>{r.pname}</span>
                     </div>
                   </td>
                   {showTaxonomyColumns ? (

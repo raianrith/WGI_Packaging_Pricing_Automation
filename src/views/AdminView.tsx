@@ -24,7 +24,6 @@ import {
 } from "../lib/tierPricingMath";
 import { recomputeAllSavedTierPricing } from "../lib/recomputeAllSavedTierPricing";
 import { compareTasksByOrder } from "../lib/taskOrder";
-import { TIER_CATEGORY_OPTIONS } from "../lib/tierCategories";
 import {
   normalizeTierPhase,
   normalizeTierTactic,
@@ -1568,11 +1567,11 @@ const BULK_GLOSSARY: Record<
       },
       {
         name: "solution_tier_phase",
-        description: "Tier phase (admin-managed list; for example: Foundational, Growth Engine, Other).",
+        description: "Tier phase (admin-managed list; playbook order: Foundational, Acceleration Phase, Growth Engine, Other).",
       },
       {
         name: "solution_tier_category",
-        description: `Tier category (admin-managed list; defaults include: ${TIER_CATEGORY_OPTIONS.join("; ")}).`,
+        description: "Tier category (admin-managed list; playbook order: Discovery & Research through Operational Optimization).",
       },
       {
         name: "solution_tier_tactic",

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { TierTaxonomySelect } from "./TierTaxonomySelect";
-import { TIER_PHASE_FALLBACK } from "../lib/tierTaxonomy";
+import { TIER_PHASE_FALLBACK, tierPhaseSelectOptions } from "../lib/tierTaxonomy";
 
 type Props = {
   value: string;
@@ -15,6 +15,7 @@ export function TierPhaseSelect({ value, inputStyle, onChange, disabled, options
     <TierTaxonomySelect
       value={value}
       options={options ?? TIER_PHASE_FALLBACK}
+      buildMenuOptions={tierPhaseSelectOptions}
       placeholder="Select phase…"
       ariaLabel="Tier phase"
       inputStyle={inputStyle}

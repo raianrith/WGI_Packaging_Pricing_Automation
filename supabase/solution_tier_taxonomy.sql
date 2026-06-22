@@ -51,18 +51,19 @@ comment on table public.solution_tier_taxonomy_options is
 -- Seed option lists (idempotent)
 insert into public.solution_tier_taxonomy_options (kind, label) values
   ('phase', 'Foundational'),
+  ('phase', 'Acceleration Phase'),
   ('phase', 'Growth Engine'),
   ('phase', 'Other'),
-  ('category', 'Asset Creation'),
-  ('category', 'Billing & Engagement Modifiers'),
-  ('category', 'Brand & Style Foundation'),
-  ('category', 'Core Market Presence'),
-  ('category', 'Data & Tech Enablement'),
   ('category', 'Discovery & Research'),
+  ('category', 'Brand & Style Foundation'),
+  ('category', 'Strategic Growth Playbook'),
+  ('category', 'Data & Tech Enablement'),
+  ('category', 'Website Optimization'),
+  ('category', 'Core Market Presence'),
   ('category', 'Market Activation Campaigns'),
   ('category', 'Operational Optimization'),
-  ('category', 'Strategic Growth Playbook'),
-  ('category', 'Website Optimization'),
+  ('category', 'Asset Creation'),
+  ('category', 'Billing & Engagement Modifiers'),
   ('tactic', 'Paid Demand Capture'),
   ('tactic', 'Search & AI Visibility')
 on conflict (kind, label) do update

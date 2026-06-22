@@ -1,11 +1,23 @@
 import { useEffect, useId, useMemo } from "react";
 import type { CatalogTierTableRow, CatalogTierSortCol } from "./CatalogTierTable";
 import { CatalogTierTable } from "./CatalogTierTable";
+import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
+import { compareTierCategoryLabels } from "../lib/tierCategories";
 
 /** Filter sentinel for tiers with no value on a taxonomy field. */
 export const PLAYBOOK_UNSET = "__unset__";
 
+/** Display label for blank taxonomy values in filters and guided browse. */
+export const TAXONOMY_NOT_DEFINED_LABEL = "Not Defined";
+
 export type PlaybookFilterValue = string | null | typeof PLAYBOOK_UNSET;
+
+export function taxonomyDisplayLabel(value: string | PlaybookFilterValue | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  if (value === PLAYBOOK_UNSET) return TAXONOMY_NOT_DEFINED_LABEL;
+  const v = String(value).trim();
+  return v || TAXONOMY_NOT_DEFINED_LABEL;
+}
 
 type Props = {
   allRows: CatalogTierTableRow[];
@@ -40,7 +52,8 @@ type FilterOption = { value: PlaybookFilterValue; label: string; count: number }
 function buildFilterOptions(
   rows: CatalogTierTableRow[],
   getter: (r: CatalogTierTableRow) => string,
-  includeUnset: boolean
+  includeUnset: boolean,
+  compareFn: (a: string, b: string) => number = compareLabels
 ): FilterOption[] {
   const counts = new Map<string, number>();
   let unsetCount = 0;
@@ -55,11 +68,11 @@ function buildFilterOptions(
   const options: FilterOption[] = [
     { value: null, label: "All", count: rows.length },
     ...[...counts.entries()]
-      .sort(([a], [b]) => compareLabels(a, b))
+      .sort(([a], [b]) => compareFn(a, b))
       .map(([label, count]) => ({ value: label, label, count })),
   ];
   if (includeUnset && unsetCount > 0) {
-    options.push({ value: PLAYBOOK_UNSET, label: "Not set", count: unsetCount });
+    options.push({ value: PLAYBOOK_UNSET, label: TAXONOMY_NOT_DEFINED_LABEL, count: unsetCount });
   }
   return options;
 }
@@ -171,12 +184,12 @@ export function CatalogPlaybookBrowser({
   );
 
   const phaseOptions = useMemo(
-    () => buildFilterOptions(allRows, (r) => r.phaseRaw, true),
+    () => buildFilterOptions(allRows, (r) => r.phaseRaw, true, compareTierPhaseLabels),
     [allRows]
   );
 
   const categoryOptions = useMemo(
-    () => buildFilterOptions(rowsAfterPhase, (r) => r.categoryRaw, true),
+    () => buildFilterOptions(rowsAfterPhase, (r) => r.categoryRaw, true, compareTierCategoryLabels),
     [rowsAfterPhase]
   );
 
@@ -217,10 +230,10 @@ export function CatalogPlaybookBrowser({
             a.solutionName.localeCompare(b.solutionName, undefined, { sensitivity: "base" }) * dir;
           break;
         case "phase":
-          c = cmpStr(a.phaseRaw, b.phaseRaw);
+          c = compareTierPhaseLabels(a.phaseRaw, b.phaseRaw) * dir;
           break;
         case "category":
-          c = cmpStr(a.categoryRaw, b.categoryRaw);
+          c = compareTierCategoryLabels(a.categoryRaw, b.categoryRaw) * dir;
           break;
         case "tactic":
           c = cmpStr(a.tacticRaw, b.tacticRaw);

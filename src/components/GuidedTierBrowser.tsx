@@ -1,0 +1,419 @@
+import { useMemo, type CSSProperties } from "react";
+import type { CatalogTierTableRow } from "./CatalogTierTable";
+import {
+  filterCatalogTierRows,
+  PLAYBOOK_UNSET,
+  taxonomyDisplayLabel,
+  type PlaybookFilterValue,
+} from "./CatalogPlaybookBrowser";
+import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
+import { compareTierCategoryLabels } from "../lib/tierCategories";
+
+export type GuidedSelection = {
+  phase: PlaybookFilterValue | null;
+  category: PlaybookFilterValue | null;
+  tactic: PlaybookFilterValue | null;
+};
+
+type GuidedOption = {
+  value: PlaybookFilterValue;
+  label: string;
+  count: number;
+};
+
+function compareLabels(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: "base" });
+}
+
+function buildGuidedOptions(
+  rows: CatalogTierTableRow[],
+  getter: (r: CatalogTierTableRow) => string,
+  includeUnset: boolean,
+  compareFn: (a: string, b: string) => number = compareLabels
+): GuidedOption[] {
+  const counts = new Map<string, number>();
+  let unsetCount = 0;
+  for (const r of rows) {
+    const v = getter(r).trim();
+    if (!v) {
+      unsetCount++;
+      continue;
+    }
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  const options: GuidedOption[] = [...counts.entries()]
+    .sort(([a], [b]) => compareFn(a, b))
+    .map(([label, count]) => ({ value: label, label, count }));
+  if (includeUnset && unsetCount > 0) {
+    options.push({
+      value: PLAYBOOK_UNSET,
+      label: taxonomyDisplayLabel(PLAYBOOK_UNSET),
+      count: unsetCount,
+    });
+  }
+  return options;
+}
+
+const STEPS = [
+  {
+    key: "phase" as const,
+    n: 1,
+    title: "Phase",
+    hint: "Where does this work sit in the client journey?",
+    icon: "◈",
+    theme: "phase",
+  },
+  {
+    key: "category" as const,
+    n: 2,
+    title: "Category",
+    hint: "What kind of solution is it?",
+    icon: "◇",
+    theme: "category",
+  },
+  {
+    key: "tactic" as const,
+    n: 3,
+    title: "Tactic",
+    hint: "How do we deliver it?",
+    icon: "◎",
+    theme: "tactic",
+  },
+  {
+    key: "tiers" as const,
+    n: 4,
+    title: "Tiers",
+    hint: "Vault tiers that match your path",
+    icon: "★",
+    theme: "tiers",
+  },
+] as const;
+
+type StepTheme = (typeof STEPS)[number]["theme"];
+
+type Props = {
+  allRows: CatalogTierTableRow[];
+  selection: GuidedSelection;
+  onSelectionChange: (next: GuidedSelection) => void;
+  onOpenTier: (solutionId: string, tierId: string) => void;
+};
+
+function OptionGrid({
+  options,
+  stepLabel,
+  stepHint,
+  stepTheme,
+  stepIcon,
+  onSelect,
+}: {
+  options: GuidedOption[];
+  stepLabel: string;
+  stepHint: string;
+  stepTheme: StepTheme;
+  stepIcon: string;
+  onSelect: (value: PlaybookFilterValue) => void;
+}) {
+  if (options.length === 0) {
+    return (
+      <div className="agency-home-guide__empty" role="status">
+        <p className="agency-home-guide__empty-title">No options at this step</p>
+        <p className="agency-home-guide__empty-text">
+          Nothing in the vault matches your earlier choices. Go back and try a different path.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`agency-home-guide__picker agency-home-guide__picker--${stepTheme}`}>
+      <div className="agency-home-guide__picker-head">
+        <span className="agency-home-guide__picker-badge" aria-hidden>
+          {stepIcon}
+        </span>
+        <div>
+          <h3 className="agency-home-guide__picker-title">{stepLabel}</h3>
+          <p className="agency-home-guide__picker-hint">{stepHint}</p>
+        </div>
+      </div>
+      <div className="agency-home-guide__options" role="listbox" aria-label={stepLabel}>
+        {options.map((opt, i) => (
+          <button
+            key={String(opt.value)}
+            type="button"
+            role="option"
+            className={`agency-home-guide__option agency-home-guide__option--${stepTheme}`}
+            style={{ "--guide-stagger": i } as CSSProperties}
+            onClick={() => onSelect(opt.value)}
+          >
+            <span className="agency-home-guide__option-glow" aria-hidden />
+            <span className="agency-home-guide__option-icon" aria-hidden>
+              {stepIcon}
+            </span>
+            <span className="agency-home-guide__option-copy">
+              <span className="agency-home-guide__option-label">{opt.label}</span>
+              <span className="agency-home-guide__option-meta">
+                {opt.count} tier{opt.count === 1 ? "" : "s"}
+              </span>
+            </span>
+            <span className="agency-home-guide__option-arrow" aria-hidden>
+              →
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpenTier }: Props) {
+  const { phase, category, tactic } = selection;
+
+  const rowsAfterPhase = useMemo(() => {
+    if (phase === null) return allRows;
+    return filterCatalogTierRows(allRows, phase, null, null, "");
+  }, [allRows, phase]);
+
+  const rowsAfterCategory = useMemo(() => {
+    if (phase === null || category === null) return rowsAfterPhase;
+    return filterCatalogTierRows(allRows, phase, category, null, "");
+  }, [allRows, phase, category, rowsAfterPhase]);
+
+  const phaseOptions = useMemo(
+    () => buildGuidedOptions(allRows, (r) => r.phaseRaw, true, compareTierPhaseLabels),
+    [allRows]
+  );
+  const categoryOptions = useMemo(
+    () => buildGuidedOptions(rowsAfterPhase, (r) => r.categoryRaw, true, compareTierCategoryLabels),
+    [rowsAfterPhase]
+  );
+  const tacticOptions = useMemo(
+    () => buildGuidedOptions(rowsAfterCategory, (r) => r.tacticRaw, true),
+    [rowsAfterCategory]
+  );
+
+  const matchedTiers = useMemo(() => {
+    if (phase === null || category === null || tactic === null) return [];
+    return filterCatalogTierRows(allRows, phase, category, tactic, "").sort((a, b) =>
+      a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" })
+    );
+  }, [allRows, phase, category, tactic]);
+
+  const activeStep =
+    phase === null ? 1 : category === null ? 2 : tactic === null ? 3 : 4;
+
+  const resetFrom = (step: 1 | 2 | 3) => {
+    if (step === 1) onSelectionChange({ phase: null, category: null, tactic: null });
+    if (step === 2) onSelectionChange({ phase, category: null, tactic: null });
+    if (step === 3) onSelectionChange({ phase, category, tactic: null });
+  };
+
+  const pathSegments =
+    phase !== null
+      ? [
+          { label: taxonomyDisplayLabel(phase), step: 1 as const },
+          ...(category !== null
+            ? [{ label: taxonomyDisplayLabel(category), step: 2 as const }]
+            : []),
+          ...(tactic !== null
+            ? [{ label: taxonomyDisplayLabel(tactic), step: 3 as const }]
+            : []),
+        ]
+      : [];
+
+  return (
+    <div className="agency-home-guide__browser">
+      <div className="agency-home-guide__rail" aria-label="Guided steps">
+        <div className="agency-home-guide__rail-track" aria-hidden>
+          {STEPS.map((step, i) => {
+            const done = step.n < activeStep;
+            const active = step.n === activeStep;
+            return (
+              <div
+                key={`track-${step.key}`}
+                className={`agency-home-guide__rail-track-step agency-home-guide__rail-track-step--${step.theme}`}
+              >
+                <span
+                  className={
+                    `agency-home-guide__rail-num` +
+                    (done ? " agency-home-guide__rail-num--done" : "") +
+                    (active ? " agency-home-guide__rail-num--active" : "")
+                  }
+                >
+                  {done ? "✓" : step.icon}
+                </span>
+                {i < STEPS.length - 1 ? (
+                  <span
+                    className={
+                      "agency-home-guide__rail-line" +
+                      (done ? " agency-home-guide__rail-line--done" : "")
+                    }
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        <div className="agency-home-guide__rail-steps">
+          {STEPS.map((step) => {
+            const done = step.n < activeStep;
+            const active = step.n === activeStep;
+            return (
+              <div
+                key={step.key}
+                className={
+                  `agency-home-guide__rail-step agency-home-guide__rail-step--${step.theme}` +
+                  (done ? " agency-home-guide__rail-step--done" : "") +
+                  (active ? " agency-home-guide__rail-step--active" : "")
+                }
+              >
+                <span className="agency-home-guide__rail-text">
+                  <span className="agency-home-guide__rail-title">{step.title}</span>
+                  <span className="agency-home-guide__rail-hint">{step.hint}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {pathSegments.length > 0 ? (
+        <nav className="agency-home-guide__path" aria-label="Your selections">
+          <span className="agency-home-guide__path-label">Your path</span>
+          {pathSegments.map((seg, i) => (
+            <span key={`${seg.step}-${seg.label}`} className="agency-home-guide__path-seg">
+              {i > 0 ? (
+                <span className="agency-home-guide__path-chev" aria-hidden>
+                  ›
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="agency-home-guide__path-chip"
+                onClick={() => resetFrom(seg.step)}
+              >
+                {seg.label}
+              </button>
+            </span>
+          ))}
+          {tactic === null ? (
+            <span className="agency-home-guide__path-next">
+              <span className="agency-home-guide__path-pulse" aria-hidden />
+              Pick next
+            </span>
+          ) : (
+            <span className="agency-home-guide__path-done">Path complete</span>
+          )}
+          <button
+            type="button"
+            className="agency-home-guide__path-reset"
+            onClick={() => onSelectionChange({ phase: null, category: null, tactic: null })}
+          >
+            Start over
+          </button>
+        </nav>
+      ) : null}
+
+      {phase === null ? (
+        <OptionGrid
+          options={phaseOptions}
+          stepLabel="Choose a phase"
+          stepHint={STEPS[0].hint}
+          stepTheme={STEPS[0].theme}
+          stepIcon={STEPS[0].icon}
+          onSelect={(value) => onSelectionChange({ phase: value, category: null, tactic: null })}
+        />
+      ) : null}
+
+      {phase !== null && category === null ? (
+        <OptionGrid
+          options={categoryOptions}
+          stepLabel="Choose a category"
+          stepHint={STEPS[1].hint}
+          stepTheme={STEPS[1].theme}
+          stepIcon={STEPS[1].icon}
+          onSelect={(value) => onSelectionChange({ phase, category: value, tactic: null })}
+        />
+      ) : null}
+
+      {phase !== null && category !== null && tactic === null ? (
+        <OptionGrid
+          options={tacticOptions}
+          stepLabel="Choose a tactic"
+          stepHint={STEPS[2].hint}
+          stepTheme={STEPS[2].theme}
+          stepIcon={STEPS[2].icon}
+          onSelect={(value) => onSelectionChange({ phase, category, tactic: value })}
+        />
+      ) : null}
+
+      {phase !== null && category !== null && tactic !== null ? (
+        <section
+          className="agency-home-guide__results agency-home-guide__results--tiers"
+          aria-label="Matching solution tiers"
+        >
+          <div className="agency-home-guide__results-head">
+            <span className="agency-home-guide__results-badge" aria-hidden>
+              {STEPS[3].icon}
+            </span>
+            <div>
+              <h3 className="agency-home-guide__results-title">
+                {matchedTiers.length} tier{matchedTiers.length === 1 ? "" : "s"} in this path
+              </h3>
+              <p className="agency-home-guide__results-hint">
+                Vault pricing for each tier — tap one to dive into scope, tasks, and narrative.
+              </p>
+            </div>
+          </div>
+
+          {matchedTiers.length === 0 ? (
+            <div className="agency-home-guide__empty" role="status">
+              <p className="agency-home-guide__empty-title">No tiers on this path</p>
+              <p className="agency-home-guide__empty-text">
+                Try a different tactic or adjust your earlier selections.
+              </p>
+            </div>
+          ) : (
+            <ul className="agency-home-guide__tier-list">
+              {matchedTiers.map((row, i) => (
+                <li
+                  key={row.tierId}
+                  style={{ "--guide-stagger": i } as CSSProperties}
+                >
+                  <button
+                    type="button"
+                    className="agency-home-guide__tier-card"
+                    onClick={() => onOpenTier(row.solutionId, row.tierId)}
+                  >
+                    <span className="agency-home-guide__tier-accent" aria-hidden />
+                    <span className="agency-home-guide__tier-body">
+                      <span className="agency-home-guide__tier-main">
+                        <span className="agency-home-guide__tier-name">{row.tierName}</span>
+                        <span className="agency-home-guide__tier-solution">{row.solutionName}</span>
+                      </span>
+                      <span className="agency-home-guide__tier-metrics">
+                        <span className="agency-home-guide__tier-metric">
+                          <span className="agency-home-guide__tier-metric-label">Hours</span>
+                          <span className="agency-home-guide__tier-metric-value">
+                            {row.hoursDisplay}
+                            {row.hoursDisplay !== "—" ? " h" : ""}
+                          </span>
+                        </span>
+                        <span className="agency-home-guide__tier-metric agency-home-guide__tier-metric--sell">
+                          <span className="agency-home-guide__tier-metric-label">Net sell</span>
+                          <span className="agency-home-guide__tier-metric-value">{row.priceDisplay}</span>
+                        </span>
+                      </span>
+                    </span>
+                    <span className="agency-home-guide__tier-chevron" aria-hidden>
+                      →
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+    </div>
+  );
+}

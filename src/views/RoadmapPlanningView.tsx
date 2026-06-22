@@ -40,6 +40,7 @@ import {
 } from "../lib/tierResourceFields";
 import { computePackageWorkspaceCatalogNumbers } from "../lib/packageWorkspaceMetrics";
 import { catalogDisplayTierHours, formatTierHoursDisplay } from "../lib/vaultTierMetrics";
+import { displayTierCategoryLabel } from "../lib/tierCategories";
 import {
   loadTierPricingMathConfigFromStorage,
   normalizeTierPricingMathConfig,
@@ -1603,7 +1604,7 @@ export function RoadmapPlanningView() {
           tierName: tier.solution_tier_name,
           solutionName: solution?.solution_name ?? tier.solution_id,
           phaseRaw: tier.solution_tier_phase?.trim() ?? "",
-          categoryRaw: tier.solution_tier_category?.trim() ?? "",
+          categoryRaw: displayTierCategoryLabel(tier.solution_tier_category ?? ""),
           tacticRaw: tier.solution_tier_tactic?.trim() ?? "",
           priceNum,
           priceDisplay: sellPriceLine(pr),

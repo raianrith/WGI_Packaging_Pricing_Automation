@@ -9,6 +9,8 @@ type Props = {
   inputStyle: CSSProperties;
   onChange: (value: string) => void;
   disabled?: boolean;
+  buildMenuOptions?: (value: string, canonical: readonly string[]) => string[];
+  formatDisplay?: (label: string) => string;
 };
 
 export function TierTaxonomySelect({
@@ -19,12 +21,15 @@ export function TierTaxonomySelect({
   inputStyle,
   onChange,
   disabled,
+  buildMenuOptions,
+  formatDisplay,
 }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const menuOptions = tierTaxonomySelectOptions(value, options);
-  const display = value.trim() || placeholder;
+  const menuOptions = (buildMenuOptions ?? tierTaxonomySelectOptions)(value, options);
+  const format = formatDisplay ?? ((label: string) => label);
+  const display = value.trim() ? format(value) : placeholder;
 
   useEffect(() => {
     if (!open) return;
@@ -96,7 +101,7 @@ export function TierTaxonomySelect({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(label)}
                 >
-                  {label}
+                  {format(label)}
                 </button>
               </li>
             );

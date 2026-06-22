@@ -9,8 +9,17 @@ export const APP_TITLE = `${APP_BRAND_NAME} · ${APP_SCOPE_LABEL}`;
 /** Main heading on the Agency (read-only) view hero. */
 export const AGENCY_HERO_TITLE = "Solutions Directory";
 
-/** Top navigation: catalog / package workspace (was “Agency”). */
-export const NAV_SOLUTIONS_OVERVIEW = "Solutions Overview";
+/** Home tab: guided tier browser hero. */
+export const AGENCY_HOME_TITLE = "Solution tier guide";
+
+export const AGENCY_HOME_DESCRIPTION =
+  "Start with phase, then category, then tactic to surface vault tiers that match your playbook path. Blank taxonomy fields appear as Not Defined. Open any tier for full scope, pricing, and tasks.";
+
+/** Top navigation: catalog, package library, and package workspaces. */
+export const NAV_SOLUTIONS_OVERVIEW = "Solutions & Package Overview";
+
+/** Top navigation: guided Build a Package flow. */
+export const NAV_PACKAGE_BUILDER = "Package Builder";
 
 /** Top navigation: roadmap workspace (was “Roadmap planning”). */
 export const NAV_PROPOSAL_BUILDER = "Proposal Builder";
@@ -32,6 +41,12 @@ export const AUTH_HERO_DESCRIPTION =
 /** Shorter hero copy on the Agency package hub (package-first landing). */
 export const AGENCY_HUB_DESCRIPTION =
   "Each card opens a dedicated workspace for that bundle: solutions, tier sell prices, scope KPIs, and task detail—read only, synced from Supabase. Solutions without a package live on the Solutions tab, not here.";
+
+/** Hero copy on the Package Builder page. */
+export const PACKAGE_BUILDER_TITLE = "Package Builder";
+
+export const PACKAGE_BUILDER_DESCRIPTION =
+  "Assemble a new bundle in four guided steps—pick a package family, choose a tier slot, add vault solution tiers, and confirm pricing. When you’re done, we open the package workspace so you can refine scope and copy.";
 
 /** Subtitle copy on the Admin view hero. */
 export const ADMIN_VIEW_DESCRIPTION =

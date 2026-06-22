@@ -3,6 +3,8 @@ import type { CSSProperties } from "react";
 import { getSupabase } from "../lib/supabase";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
+import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
+import { compareTierCategoryLabels } from "../lib/tierCategories";
 import type { SolutionTier, SolutionTierTaxonomyOptionRow, TierTaxonomyKind } from "../types";
 
 type Props = {
@@ -68,7 +70,11 @@ function TierTaxonomySection({
     () =>
       rows
         .filter((r) => r.kind === kind)
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
+        .sort((a, b) => {
+          if (kind === "phase") return compareTierPhaseLabels(a.label, b.label);
+          if (kind === "category") return compareTierCategoryLabels(a.label, b.label);
+          return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+        }),
     [rows, kind]
   );
   const [labelField, setLabelField] = useState("");
@@ -284,8 +290,7 @@ export function TierTaxonomyListsPanel({
       <div className="admin-editor-layout admin-editor-layout--wide">
         <h2 style={h2}>Phase, category &amp; tactic lists</h2>
         <p className="admin-intro" style={muted}>
-          Manage dropdown values for solution tiers (listed A–Z). <strong>Phase</strong> appears above category;{" "}
-          <strong>tactic</strong> appears below category in create and update forms.
+          Manage dropdown values for solution tiers. Phases and categories follow the playbook org chart order; tactics are A–Z.{" "}
         </p>
         {loadNote ? (
           <p style={{ ...muted, color: "var(--warn, #b45309)" }} role="status">

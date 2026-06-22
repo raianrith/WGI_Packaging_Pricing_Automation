@@ -1,56 +1,32 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { Link } from "react-router-dom";
+import { AgencyPackageEditModal } from "../components/AgencyPackageEditModal";
 import {
   AGENCY_HERO_TITLE,
-  AGENCY_VIEW_DESCRIPTION,
+  AGENCY_HUB_DESCRIPTION,
 } from "../branding";
-import { todayISODate } from "../lib/dates";
 import { insertAuditLog } from "../lib/audit";
-import { notifyPackagingDataChanged } from "../lib/packagingEvents";
-import {
-  defaultPackageBuilderSlots,
-  defaultPackageBuilderTypes,
-  fetchPackageBuilderCatalog,
-  isVaultTierAllowedForSlot,
-  slotEnforcesHourCeiling,
-  slotEnforcesPriceCeiling,
-  slotEnforcesTierCountLimit,
-  slotTierNotes,
-  slotsForPackageType,
-} from "../lib/packageBuilderSlots";
-import {
-  applyPackageTierMembership,
-  emptyPackageLinkPayload,
-} from "../lib/packageTierLinkPersistence";
-import {
-  adjustTierQuantity,
-  catalogUsageFromQuantities,
-  emptyTierQuantities,
-  tierIdsFromQuantities,
-  totalTierLineCount,
-  type PackageTierQuantities,
-} from "../lib/packageTierQuantities";
+import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
-import { loadTierPricingMathConfigFromStorage, normalizeTierPricingMathConfig } from "../lib/tierPricingMath";
 import {
-  computePackageWizardDiscountPreview,
-  computePackageWorkspaceFormMetrics,
-  parsePackageDiscountPct,
-} from "../lib/packageWorkspaceMetrics";
+  loadTierPricingMathConfigFromStorage,
+  normalizeTierPricingMathConfig,
+  type TierPricingMathConfig,
+} from "../lib/tierPricingMath";
+import { computePackageWorkspaceFormMetrics } from "../lib/packageWorkspaceMetrics";
 import {
   browserKeyConfigurationError,
   envConfigured,
   getSupabase,
 } from "../lib/supabase";
-import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { useToast } from "../context/ToastContext";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
   Package,
   PackageBuilderPackageType,
-  PackageBuilderSlotTemplate,
   PackageSolutionTier,
   Solution,
   SolutionTier,
@@ -69,16 +45,6 @@ function sortId(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function nextAutoPackageId(packages: Package[]): string {
-  let max = 0;
-  const re = /^1-(\d+)$/i;
-  for (const p of packages) {
-    const m = p.package_id.trim().match(re);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `1-${max + 1}`;
-}
-
 function fmtUsd(n: number): string {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
@@ -87,121 +53,6 @@ function fmtHoursTotal(n: number): string {
   if (!Number.isFinite(n)) return "—";
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
-function displayTierLabel(typeName: string, slotLabel: string): string {
-  const label = slotLabel.trim();
-  const name = typeName.trim();
-  if (!name) return label || "Tier";
-  const prefixes = [`${name} - `, `${name} – `, `${name}: `];
-  for (const prefix of prefixes) {
-    if (label.toLowerCase().startsWith(prefix.toLowerCase())) {
-      return label.slice(prefix.length).trim() || label;
-    }
-  }
-  return label || "Tier";
-}
-
-function slotLimitTags(slot: PackageBuilderSlotTemplate): string[] {
-  const tags: string[] = [];
-  if (slotEnforcesHourCeiling(slot)) {
-    tags.push(`${slot.hour_ceiling}h max`);
-  }
-  if (slotEnforcesPriceCeiling(slot)) {
-    tags.push(`${fmtUsd(Number(slot.price_ceiling))} max`);
-  }
-  if (slotEnforcesTierCountLimit(slot)) {
-    tags.push(`${slot.solution_tier_limit} tier${slot.solution_tier_limit === 1 ? "" : "s"} max`);
-  }
-  if (slot.allowed_solution_tier_ids.length > 0) {
-    tags.push(`${slot.allowed_solution_tier_ids.length} allowed vault tiers`);
-  }
-  if (tags.length === 0) tags.push("No limits");
-  return tags;
-}
-
-type WizardStep = 1 | 2 | 3 | 4;
-
-function WizardStepper({ step }: { step: WizardStep }) {
-  const steps = [
-    { n: 1 as const, label: "Package type" },
-    { n: 2 as const, label: "Package tier" },
-    { n: 3 as const, label: "Solution tiers" },
-    { n: 4 as const, label: "Discounts" },
-  ];
-  return (
-    <ol className="agency-pkg-wizard__steps" aria-label="Progress">
-      {steps.map((s) => (
-        <li
-          key={s.n}
-          className={[
-            "agency-pkg-wizard__step",
-            step > s.n ? "is-done" : "",
-            step === s.n ? "is-current" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          aria-current={step === s.n ? "step" : undefined}
-        >
-          <span className="agency-pkg-wizard__step-num">{s.n}</span>
-          {s.label}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function PackageTierDisclaimer({ notes }: { notes: string | null }) {
-  if (!notes) return null;
-  return (
-    <div className="agency-pkg-wizard__disclaimer" role="note" aria-live="polite">
-      <div className="agency-pkg-wizard__disclaimer-inner">
-        <span className="agency-pkg-wizard__disclaimer-icon" aria-hidden>
-          !
-        </span>
-        <div className="agency-pkg-wizard__disclaimer-body">
-          <span className="agency-pkg-wizard__disclaimer-label">Important</span>
-          <p className="agency-pkg-wizard__disclaimer-text">{notes}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WizardMeter({
-  label,
-  value,
-  max,
-  format,
-  over,
-  note,
-}: {
-  label: string;
-  value: number;
-  max: number | null;
-  format: (n: number) => string;
-  over?: boolean;
-  note?: string | null;
-}) {
-  const hasMax = max != null && Number.isFinite(max) && max > 0;
-  const pct = hasMax ? Math.min(100, (value / max) * 100) : 0;
-  return (
-    <div className={over ? "agency-pkg-wizard__meter is-over" : "agency-pkg-wizard__meter"}>
-      <div className="agency-pkg-wizard__meter-head">
-        <span className="agency-pkg-wizard__meter-label">{label}</span>
-        <span className="agency-pkg-wizard__meter-value">
-          {format(value)}
-          {hasMax ? ` / ${format(max)}` : ""}
-        </span>
-      </div>
-      {hasMax ? (
-        <div className="agency-pkg-wizard__meter-bar" aria-hidden="true">
-          <div className="agency-pkg-wizard__meter-fill" style={{ width: `${pct}%` }} />
-        </div>
-      ) : null}
-      {note ? <p className="agency-pkg-wizard__meter-note">{note}</p> : null}
-    </div>
-  );
 }
 
 type PackageCardRollup = {
@@ -213,6 +64,230 @@ type PackageCardRollup = {
 };
 
 type PackageSourceFilter = "prebuilt" | "custom";
+type PackageLayoutMode = "cards" | "list";
+type PackageListSortCol = "package" | "tiers" | "creator" | "hours" | "sell";
+type PackageListSort = { col: PackageListSortCol; dir: "asc" | "desc" };
+
+const PKG_LAYOUT_STORAGE_KEY = "wgi-packages-hub-layout";
+
+const EMPTY_PACKAGE_ROLLUP: PackageCardRollup = {
+  tierCount: 0,
+  hoursSum: 0,
+  priceSum: 0,
+  hoursPartial: false,
+  pricePartial: false,
+};
+
+function loadPackageLayoutMode(): PackageLayoutMode {
+  if (typeof globalThis.window === "undefined") return "cards";
+  return globalThis.window.localStorage.getItem(PKG_LAYOUT_STORAGE_KEY) === "list" ? "list" : "cards";
+}
+
+type PackageHubItemMeta = {
+  rollup: PackageCardRollup;
+  ws: ReturnType<typeof computePackageWorkspaceFormMetrics> | undefined;
+  wsOk: boolean;
+  tierLabel: string;
+  vaultHoursDisplay: string;
+  vaultPriceDisplay: string;
+  workspaceHoursDisplay: string;
+  workspaceSellDisplay: string;
+  isCustomPackage: boolean;
+  sourceLabel: string;
+  creatorEmail: string | null;
+  partialNote: string | null;
+  a11yLabel: string;
+};
+
+function buildPackageHubItemMeta(
+  p: Package,
+  pkgRollupById: Map<string, PackageCardRollup>,
+  pkgWorkspaceById: Map<string, ReturnType<typeof computePackageWorkspaceFormMetrics>>,
+  packageTypeNameSet: Set<string>,
+  packageCreatorById: Map<string, string>
+): PackageHubItemMeta {
+  const rollup = pkgRollupById.get(p.package_id) ?? {
+    tierCount: 0,
+    hoursSum: 0,
+    priceSum: 0,
+    hoursPartial: false,
+    pricePartial: false,
+  };
+  const ws = pkgWorkspaceById.get(p.package_id);
+  const wsOk = ws?.ok === true;
+  const tierLabel =
+    rollup.tierCount === 0 ? "No tiers" : rollup.tierCount === 1 ? "1 tier" : `${rollup.tierCount} tiers`;
+  const vaultHoursDisplay =
+    rollup.tierCount === 0 ? "—" : `${fmtHoursTotal(rollup.hoursSum)} h${rollup.hoursPartial ? " *" : ""}`;
+  const vaultPriceDisplay =
+    rollup.tierCount === 0 ? "—" : fmtUsd(rollup.priceSum) + (rollup.pricePartial ? " *" : "");
+  const workspaceHoursDisplay =
+    rollup.tierCount === 0 ? "—" : wsOk ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} h` : "—";
+  const workspaceSellDisplay =
+    rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
+  const isCustomPackage = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
+  const sourceLabel = isCustomPackage ? "Custom package" : "Preset";
+  const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
+  const partialNote =
+    rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
+      ? "* Some linked tiers have no hours or sell price in the vault."
+      : null;
+  const a11yLabel = [
+    p.package_name,
+    sourceLabel,
+    creatorEmail ? `Created by ${creatorEmail}` : null,
+    tierLabel,
+    rollup.tierCount === 0
+      ? "No linked tiers"
+      : [
+          wsOk
+            ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} workspace hours after hour discount`
+            : null,
+          wsOk ? `${fmtUsd(Math.round(ws.netSellAfterSellDiscount))} workspace net sell` : null,
+          `Σ vault ${fmtHoursTotal(rollup.hoursSum)} hours`,
+          rollup.hoursPartial ? "vault hours incomplete" : null,
+          `Σ vault sell ${fmtUsd(rollup.priceSum)}`,
+          rollup.pricePartial ? "vault pricing incomplete" : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+    `Reference ${p.package_id}`,
+  ]
+    .filter(Boolean)
+    .join(". ");
+
+  return {
+    rollup,
+    ws,
+    wsOk,
+    tierLabel,
+    vaultHoursDisplay,
+    vaultPriceDisplay,
+    workspaceHoursDisplay,
+    workspaceSellDisplay,
+    isCustomPackage,
+    sourceLabel,
+    creatorEmail,
+    partialNote,
+    a11yLabel,
+  };
+}
+
+function compareStringsNullLast(a: string | null | undefined, b: string | null | undefined): number {
+  const av = (a ?? "").trim();
+  const bv = (b ?? "").trim();
+  if (!av && !bv) return 0;
+  if (!av) return 1;
+  if (!bv) return -1;
+  return av.localeCompare(bv, undefined, { sensitivity: "base" });
+}
+
+function compareNumbersNullLast(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+function packageWorkspaceHours(
+  p: Package,
+  rollup: PackageCardRollup,
+  pkgWorkspaceById: Map<string, ReturnType<typeof computePackageWorkspaceFormMetrics>>
+): number | null {
+  if (rollup.tierCount === 0) return null;
+  const ws = pkgWorkspaceById.get(p.package_id);
+  if (ws?.ok !== true) return null;
+  return ws.totalResourceHoursAfterDiscount;
+}
+
+function packageWorkspaceSell(
+  p: Package,
+  rollup: PackageCardRollup,
+  pkgWorkspaceById: Map<string, ReturnType<typeof computePackageWorkspaceFormMetrics>>
+): number | null {
+  if (rollup.tierCount === 0) return null;
+  const ws = pkgWorkspaceById.get(p.package_id);
+  if (ws?.ok !== true) return null;
+  return ws.netSellAfterSellDiscount;
+}
+
+function comparePackagesForListSort(
+  a: Package,
+  b: Package,
+  col: PackageListSortCol,
+  pkgRollupById: Map<string, PackageCardRollup>,
+  pkgWorkspaceById: Map<string, ReturnType<typeof computePackageWorkspaceFormMetrics>>,
+  packageCreatorById: Map<string, string>
+): number {
+  const rollupA = pkgRollupById.get(a.package_id) ?? EMPTY_PACKAGE_ROLLUP;
+  const rollupB = pkgRollupById.get(b.package_id) ?? EMPTY_PACKAGE_ROLLUP;
+
+  let cmp = 0;
+  switch (col) {
+    case "package": {
+      cmp = compareStringsNullLast(a.package_name, b.package_name);
+      break;
+    }
+    case "tiers": {
+      cmp = compareNumbersNullLast(rollupA.tierCount, rollupB.tierCount);
+      break;
+    }
+    case "creator": {
+      cmp = compareStringsNullLast(packageCreatorById.get(a.package_id), packageCreatorById.get(b.package_id));
+      break;
+    }
+    case "hours": {
+      cmp = compareNumbersNullLast(
+        packageWorkspaceHours(a, rollupA, pkgWorkspaceById),
+        packageWorkspaceHours(b, rollupB, pkgWorkspaceById)
+      );
+      break;
+    }
+    case "sell": {
+      cmp = compareNumbersNullLast(
+        packageWorkspaceSell(a, rollupA, pkgWorkspaceById),
+        packageWorkspaceSell(b, rollupB, pkgWorkspaceById)
+      );
+      break;
+    }
+    default:
+      cmp = 0;
+  }
+
+  if (cmp !== 0) return cmp;
+  return sortId(a.package_id, b.package_id);
+}
+
+function PackageListSortTh({
+  col,
+  label,
+  align,
+  sort,
+  onToggle,
+}: {
+  col: PackageListSortCol;
+  label: string;
+  align?: "left" | "right";
+  sort: PackageListSort;
+  onToggle: (col: PackageListSortCol) => void;
+}) {
+  return (
+    <th scope="col" className={align === "right" ? "agency-pkg-hub__list-th--num" : undefined}>
+      <button
+        type="button"
+        className="agency-pkg-hub__list-th-btn"
+        onClick={() => onToggle(col)}
+        aria-sort={sort.col === col ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        {label}
+        <span className="agency-pkg-hub__list-th-sort" aria-hidden>
+          {sort.col === col ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 const shell: CSSProperties = {
   width: "100%",
@@ -234,8 +309,7 @@ const subtitle: CSSProperties = {
 };
 
 export function AgencyPackagesHub() {
-  const navigate = useNavigate();
-  const { toastError, toastNote } = useToast();
+  const { toastError, setOpErr, setOpOk } = useToast();
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
@@ -246,27 +320,22 @@ export function AgencyPackagesHub() {
   const [packageTiers, setPackageTiers] = useState<PackageSolutionTier[]>([]);
   const [packageCreateAuditRows, setPackageCreateAuditRows] = useState<AuditLogRow[]>([]);
   const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
-  const defaultTypeSeed = defaultPackageBuilderTypes()[0]!;
-  const [packageTypes, setPackageTypes] = useState<PackageBuilderPackageType[]>(() =>
-    defaultPackageBuilderTypes().map((t) => ({ ...t }))
-  );
-  const [slots, setSlots] = useState<PackageBuilderSlotTemplate[]>(() =>
-    defaultPackageBuilderSlots(defaultTypeSeed.id).map((r) => ({ ...r }))
-  );
+  const [packageTypes, setPackageTypes] = useState<PackageBuilderPackageType[]>([]);
   const [pkgFilter, setPkgFilter] = useState("");
   const [packageSourceFilter, setPackageSourceFilter] = useState<PackageSourceFilter>("prebuilt");
+  const [packageLayoutMode, setPackageLayoutMode] = useState<PackageLayoutMode>(() => loadPackageLayoutMode());
+  const [packageListSort, setPackageListSort] = useState<PackageListSort>({ col: "package", dir: "asc" });
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
+  const [editPackageId, setEditPackageId] = useState<string | null>(null);
+  const [tierPricingMathConfig] = useState<TierPricingMathConfig>(() => loadTierPricingMathConfigFromStorage());
 
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizStep, setWizStep] = useState<WizardStep>(1);
-  const [hourDiscountPctStr, setHourDiscountPctStr] = useState("0");
-  const [sellDiscountPctStr, setSellDiscountPctStr] = useState("0");
-  const [selectedPackageType, setSelectedPackageType] = useState<PackageBuilderPackageType | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<PackageBuilderSlotTemplate | null>(null);
-  const [tierPickQty, setTierPickQty] = useState<PackageTierQuantities>(() => emptyTierQuantities());
-  const [tierSearch, setTierSearch] = useState("");
-  const [pkgName, setPkgName] = useState("");
-  const [createBusy, setCreateBusy] = useState(false);
+  const logAudit = useCallback(
+    async (client: SupabaseClient, params: Parameters<typeof insertAuditLog>[1]) => {
+      const { error } = await insertAuditLog(client, params);
+      if (error) toastError(`Audit log failed: ${error}`);
+    },
+    [toastError]
+  );
 
   const load = useCallback(async () => {
     const keyErr = browserKeyConfigurationError();
@@ -344,19 +413,12 @@ export function AgencyPackagesHub() {
     setPackageCreateAuditRows(auditRes.error ? [] : ((auditRes.data ?? []) as AuditLogRow[]));
     setImplementerHourGroups(implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]));
     setPackageTypes(slotPack.catalog.types.map((t) => ({ ...t })));
-    setSlots(slotPack.catalog.slots.map((r) => ({ ...r })));
     setLoading(false);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const solutionById = useMemo(() => {
-    const m = new Map<string, Solution>();
-    for (const s of solutions) m.set(s.solution_id, s);
-    return m;
-  }, [solutions]);
 
   const pricingByTierId = useMemo(() => {
     const m = new Map<string, SolutionTierPricing>();
@@ -471,6 +533,30 @@ export function AgencyPackagesHub() {
     if (!packageCreatorOptions.includes(packageCreatorFilter)) setPackageCreatorFilter("all");
   }, [packageCreatorFilter, packageCreatorOptions]);
 
+  const editPackage = useMemo(
+    () => (editPackageId ? packages.find((p) => p.package_id === editPackageId) ?? null : null),
+    [editPackageId, packages]
+  );
+
+  const closePackageEdit = useCallback(() => {
+    setEditPackageId(null);
+    setOpErr(null);
+    setOpOk(null);
+  }, [setOpErr, setOpOk]);
+
+  const setLayoutMode = useCallback((mode: PackageLayoutMode) => {
+    setPackageLayoutMode(mode);
+    if (typeof globalThis.window !== "undefined") {
+      globalThis.window.localStorage.setItem(PKG_LAYOUT_STORAGE_KEY, mode);
+    }
+  }, []);
+
+  const togglePackageListSort = useCallback((col: PackageListSortCol) => {
+    setPackageListSort((prev) =>
+      prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
+    );
+  }, []);
+
   const filteredPackages = useMemo(() => {
     const q = pkgFilter.trim().toLowerCase();
     return packages.filter((p) => {
@@ -483,199 +569,37 @@ export function AgencyPackagesHub() {
     });
   }, [packages, pkgFilter, packageSourceFilter, packageTypeNameSet, packageCreatorFilter, packageCreatorById]);
 
-  const slotsForSelectedType = useMemo(() => {
-    if (!selectedPackageType) return [];
-    return slotsForPackageType(slots, selectedPackageType.id);
-  }, [slots, selectedPackageType]);
-
-  const tierRows = useMemo(() => {
-    const q = tierSearch.trim().toLowerCase();
-    let rows = [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    if (selectedSlot) {
-      rows = rows.filter((t) => isVaultTierAllowedForSlot(selectedSlot, t.solution_tier_id));
-    }
-    if (!q) return rows;
-    return rows.filter((t) => {
-      const sol = solutionById.get(t.solution_id);
-      const solName = sol?.solution_name?.toLowerCase() ?? "";
-      return (
-        t.solution_tier_name.toLowerCase().includes(q) ||
-        t.solution_tier_id.toLowerCase().includes(q) ||
-        t.solution_id.toLowerCase().includes(q) ||
-        solName.includes(q)
-      );
-    });
-  }, [tiers, tierSearch, solutionById, selectedSlot]);
-
-  const usage = useMemo(
-    () => catalogUsageFromQuantities(tierPickQty, pricingByTierId, tasks),
-    [tierPickQty, pricingByTierId, tasks]
-  );
-
-  const tierLineCount = totalTierLineCount(tierPickQty);
-
-  const ceiling = selectedSlot;
-  const overHours =
-    ceiling != null &&
-    slotEnforcesHourCeiling(ceiling) &&
-    usage.hours > (ceiling.hour_ceiling ?? 0);
-  const overPrice =
-    ceiling != null &&
-    slotEnforcesPriceCeiling(ceiling) &&
-    usage.price > (ceiling.price_ceiling ?? 0);
-  const overTierCount =
-    ceiling != null &&
-    slotEnforcesTierCountLimit(ceiling) &&
-    tierLineCount > (ceiling.solution_tier_limit ?? 0);
-  const tierStepValid =
-    ceiling != null &&
-    selectedPackageType != null &&
-    pkgName.trim().length > 0 &&
-    tierLineCount > 0 &&
-    !overHours &&
-    !overPrice &&
-    !overTierCount;
-
-  const canCreate = tierStepValid && !createBusy;
-
-  const discountPreview = useMemo(() => {
-    return computePackageWizardDiscountPreview({
-      tierQuantities: tierPickQty,
-      pricingRows: pricing,
-      vaultTasks: tasks,
-      catalogHours: usage.hours,
-      catalogSell: usage.price,
-      missingHours: usage.missingHours,
-      missingPrice: usage.missingPrice,
-      hourPct: parsePackageDiscountPct(hourDiscountPctStr),
-      sellPct: parsePackageDiscountPct(sellDiscountPctStr),
-    });
-  }, [hourDiscountPctStr, sellDiscountPctStr, usage, tierPickQty, pricing, tasks]);
-
-  const resetWizardDiscounts = () => {
-    setHourDiscountPctStr("0");
-    setSellDiscountPctStr("0");
-  };
-
-  const beginPackageBuild = (packageType: PackageBuilderPackageType) => {
-    setWizardOpen(true);
-    setWizStep(2);
-    setSelectedPackageType({ ...packageType });
-    setSelectedSlot(null);
-    setTierPickQty(emptyTierQuantities());
-    setTierSearch("");
-    setPkgName(`${packageType.name} package`);
-    resetWizardDiscounts();
-  };
-
-  const closeWizard = () => {
-    if (createBusy) return;
-    setWizardOpen(false);
-    resetWizardDiscounts();
-  };
-
-  const changeTierQty = (tierId: string, delta: number) => {
-    if (delta > 0 && selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tierId)) return;
-    const maxTiers =
-      selectedSlot && slotEnforcesTierCountLimit(selectedSlot)
-        ? selectedSlot.solution_tier_limit
-        : null;
-    setTierPickQty((prev) => {
-      const result = adjustTierQuantity(prev, tierId, delta, maxTiers);
-      if (result.blockedByMaxTiers && selectedSlot) {
-        queueMicrotask(() =>
-          toastNote(
-            `This package tier allows at most ${selectedSlot.solution_tier_limit} vault tier line${
-              selectedSlot.solution_tier_limit === 1 ? "" : "s"
-            }. Remove one to add another.`
-          )
-        );
-      }
-      return result.quantities;
-    });
-  };
-
-  const createPackage = async () => {
-    const client = getSupabase();
-    if (!client || !ceiling) return;
-    const name = pkgName.trim();
-    if (!name) {
-      toastError("Enter a package name.");
-      return;
-    }
-    const wantedIds = tierIdsFromQuantities(tierPickQty);
-    for (const tid of wantedIds) {
-      const t = tiers.find((x) => x.solution_tier_id === tid);
-      if (!t?.solution_tier_name.trim()) {
-        toastError(`Tier ${tid} needs a name in the vault before it can be added to a package.`);
-        return;
-      }
-    }
-    setCreateBusy(true);
-    try {
-      const today = todayISODate();
-      const newId = nextAutoPackageId(packages);
-      const hourPct = parsePackageDiscountPct(hourDiscountPctStr);
-      const sellPct = parsePackageDiscountPct(sellDiscountPctStr);
-      const row: Package = {
-        package_id: newId,
-        package_name: name,
-        package_create_date: today,
-        package_modified_date: today,
-        package_category: selectedPackageType?.name?.trim() || null,
-        package_hour_discount_pct: hourPct,
-        package_sell_discount_pct: sellPct,
-      };
-      const { error: insErr } = await client.from("packages").insert(row);
-      if (insErr) {
-        toastError(friendlyMutationMessage(insErr.message));
-        return;
-      }
-      const payloadByTier: Record<string, ReturnType<typeof emptyPackageLinkPayload>> = {};
-      for (const tid of wantedIds) payloadByTier[tid] = emptyPackageLinkPayload();
-      const assignErr = await applyPackageTierMembership(client, newId, tierPickQty, payloadByTier);
-      if (assignErr) {
-        toastError(
-          `${assignErr} Package ${newId} was created; fix tier links in Admin → Package Builder if needed.`
-        );
-        notifyPackagingDataChanged();
-        await load();
-        return;
-      }
-      const { error: auditErr } = await insertAuditLog(client, {
-        entityType: "packages",
-        entityId: newId,
-        action: "insert",
-        before: null,
-        after: {
-          ...(JSON.parse(JSON.stringify(row)) as Record<string, unknown>),
-          solution_tier_ids: wantedIds,
-          solution_tier_quantities: tierPickQty,
-        },
-      });
-      if (auditErr) {
-        toastNote(
-          `Package created, but change history was not recorded (${auditErr}). Run the audit_log migration in Supabase if this persists.`
-        );
-      }
-      notifyPackagingDataChanged();
-      toastNote(`Package ${newId} created (${tierLineCount} tier line(s)).`);
-      setWizardOpen(false);
-      await load();
-      navigate(`/package/${encodeURIComponent(newId)}`);
-    } finally {
-      setCreateBusy(false);
-    }
-  };
+  const sortedListPackages = useMemo(() => {
+    const rows = [...filteredPackages];
+    const dir = packageListSort.dir === "asc" ? 1 : -1;
+    rows.sort(
+      (a, b) =>
+        comparePackagesForListSort(
+          a,
+          b,
+          packageListSort.col,
+          pkgRollupById,
+          pkgWorkspaceById,
+          packageCreatorById
+        ) * dir
+    );
+    return rows;
+  }, [
+    filteredPackages,
+    packageListSort,
+    pkgRollupById,
+    pkgWorkspaceById,
+    packageCreatorById,
+  ]);
 
   return (
     <div className="agency-view-shell" style={shell}>
       <header className="agency-page-header">
         <h1 style={title}>{AGENCY_HERO_TITLE}</h1>
         <p className="agency-hero__desc" style={subtitle}>
-          {AGENCY_VIEW_DESCRIPTION}{" "}
-          <Link className="agency-hub__link" to="/">
-            Solutions overview
+          {AGENCY_HUB_DESCRIPTION}{" "}
+          <Link className="agency-hub__link" to="/package-builder">
+            Build a new package
           </Link>
         </p>
       </header>
@@ -692,54 +616,6 @@ export function AgencyPackagesHub() {
 
       {!loading && !loadErr && (
         <>
-          <section className="agency-pkg-build-start" aria-labelledby="pkg-build-start-title">
-            <div className="agency-pkg-build-start__copy">
-              <span className="agency-pkg-build-start__eyebrow">Build a Package</span>
-              <h2 id="pkg-build-start-title" className="agency-pkg-build-start__title">
-                Step 1: choose the kind of package you are building
-              </h2>
-              <p className="agency-pkg-build-start__lead">
-                Pick a package family below. We’ll open the tier setup next, then you can add vault solution tiers.
-                Limits are managed in{" "}
-                <Link className="agency-hub__link" to="/admin">
-                  Admin → Build-a-Package configuration
-                </Link>
-                .
-              </p>
-            </div>
-
-            {packageTypes.length === 0 ? (
-              <p className="agency-pkg-build-start__empty">
-                No package types are configured yet.
-              </p>
-            ) : (
-              <div className="agency-pkg-build-start__grid">
-                {packageTypes.map((pt, index) => {
-                  const tierCount = slotsForPackageType(slots, pt.id).length;
-                  return (
-                    <button
-                      key={pt.id}
-                      type="button"
-                      className="agency-pkg-build-start__card"
-                      onClick={() => beginPackageBuild(pt)}
-                    >
-                      <span className="agency-pkg-build-start__card-num">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <span className="agency-pkg-build-start__card-title">{pt.name}</span>
-                      <span className="agency-pkg-build-start__card-meta">
-                        {tierCount} package tier{tierCount === 1 ? "" : "s"}
-                      </span>
-                      <span className="agency-pkg-build-start__card-cta">
-                        Choose type <span aria-hidden>→</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
           <section className="agency-pkg-open-panel" aria-labelledby="pkg-open-title">
             <div className="agency-pkg-open-panel__head">
               <div>
@@ -794,176 +670,305 @@ export function AgencyPackagesHub() {
               </div>
             </div>
 
-            <div className="agency-pkg-open-panel__filters" role="tablist" aria-label="Package library">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={packageSourceFilter === "prebuilt"}
-                className={
-                  packageSourceFilter === "prebuilt"
-                    ? "agency-pkg-open-panel__filter is-active"
-                    : "agency-pkg-open-panel__filter"
-                }
-                onClick={() => setPackageSourceFilter("prebuilt")}
-              >
-                <span>Preset Packages</span>
-                <strong>{packageSourceCounts.prebuilt}</strong>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={packageSourceFilter === "custom"}
-                className={
-                  packageSourceFilter === "custom"
-                    ? "agency-pkg-open-panel__filter is-active"
-                    : "agency-pkg-open-panel__filter"
-                }
-                onClick={() => setPackageSourceFilter("custom")}
-              >
-                <span>Custom Packages</span>
-                <strong>{packageSourceCounts.custom}</strong>
-              </button>
+            <div className="agency-pkg-open-panel__filters-row">
+              <div className="agency-pkg-open-panel__filters" role="tablist" aria-label="Package library">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={packageSourceFilter === "prebuilt"}
+                  className={
+                    packageSourceFilter === "prebuilt"
+                      ? "agency-pkg-open-panel__filter is-active"
+                      : "agency-pkg-open-panel__filter"
+                  }
+                  onClick={() => setPackageSourceFilter("prebuilt")}
+                >
+                  <span>Preset Packages</span>
+                  <strong>{packageSourceCounts.prebuilt}</strong>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={packageSourceFilter === "custom"}
+                  className={
+                    packageSourceFilter === "custom"
+                      ? "agency-pkg-open-panel__filter is-active"
+                      : "agency-pkg-open-panel__filter"
+                  }
+                  onClick={() => setPackageSourceFilter("custom")}
+                >
+                  <span>Custom Packages</span>
+                  <strong>{packageSourceCounts.custom}</strong>
+                </button>
+              </div>
+              <div className="agency-pkg-open-panel__layout">
+                <span className="agency-pkg-open-panel__layout-label" id="hub-pkg-layout-label">
+                  Layout
+                </span>
+                <div
+                  className="agency-catalog-segment agency-catalog-segment--compact"
+                  role="group"
+                  aria-labelledby="hub-pkg-layout-label"
+                >
+                  <button
+                    type="button"
+                    className={
+                      packageLayoutMode === "cards"
+                        ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
+                        : "agency-catalog-segment__btn"
+                    }
+                    onClick={() => setLayoutMode("cards")}
+                    aria-pressed={packageLayoutMode === "cards"}
+                  >
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      packageLayoutMode === "list"
+                        ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
+                        : "agency-catalog-segment__btn"
+                    }
+                    onClick={() => setLayoutMode("list")}
+                    aria-pressed={packageLayoutMode === "list"}
+                  >
+                    List
+                  </button>
+                </div>
+              </div>
             </div>
 
             {filteredPackages.length === 0 ? (
               <p className="agency-pkg-open-panel__empty">
                 {packages.length === 0 ? "No packages in the vault yet." : "No packages match this filter."}
               </p>
-            ) : (
-              <ul className="agency-pkg-hub__grid" role="list" aria-label="Packages">
-                {filteredPackages.map((p) => {
-                  const rollup = pkgRollupById.get(p.package_id) ?? {
-                    tierCount: 0,
-                    hoursSum: 0,
-                    priceSum: 0,
-                    hoursPartial: false,
-                    pricePartial: false,
-                  };
-                  const ws = pkgWorkspaceById.get(p.package_id);
-                  const wsOk = ws?.ok === true;
-                  const tierLabel =
-                    rollup.tierCount === 0
-                      ? "No tiers"
-                      : rollup.tierCount === 1
-                        ? "1 tier"
-                        : `${rollup.tierCount} tiers`;
-                  const vaultHoursDisplay =
-                    rollup.tierCount === 0
-                      ? "—"
-                      : `${fmtHoursTotal(rollup.hoursSum)} h${rollup.hoursPartial ? " *" : ""}`;
-                  const vaultPriceDisplay =
-                    rollup.tierCount === 0 ? "—" : fmtUsd(rollup.priceSum) + (rollup.pricePartial ? " *" : "");
-                  const workspaceHoursDisplay =
-                    rollup.tierCount === 0
-                      ? "—"
-                      : wsOk
-                        ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} h`
-                        : "—";
-                  const workspaceSellDisplay =
-                    rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
-                  const isCustomPackage = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
-                  const sourceLabel = isCustomPackage ? "Custom package" : "Preset";
-                  const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
-                  const partialNote =
-                    rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
-                      ? "* Some linked tiers have no hours or sell price in the vault."
-                      : null;
-                  const a11yLabel = [
-                    p.package_name,
-                    sourceLabel,
-                    creatorEmail ? `Created by ${creatorEmail}` : null,
-                    tierLabel,
-                    rollup.tierCount === 0
-                      ? "No linked tiers"
-                      : [
-                          wsOk
-                            ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} workspace hours after hour discount`
-                            : null,
-                          wsOk ? `${fmtUsd(Math.round(ws.netSellAfterSellDiscount))} workspace net sell` : null,
-                          `Σ vault ${fmtHoursTotal(rollup.hoursSum)} hours`,
-                          rollup.hoursPartial ? "vault hours incomplete" : null,
-                          `Σ vault sell ${fmtUsd(rollup.priceSum)}`,
-                          rollup.pricePartial ? "vault pricing incomplete" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(", "),
-                    `Reference ${p.package_id}`,
-                  ]
-                    .filter(Boolean)
-                    .join(". ");
-                  return (
-                    <li key={p.package_id}>
-                      <Link
-                        className="agency-pkg-hub__card"
-                        to={`/package/${encodeURIComponent(p.package_id)}`}
-                        aria-label={a11yLabel}
-                      >
-                        <div className="agency-pkg-hub__card-body">
-                          <div className="agency-pkg-hub__card-head">
-                            <h3 className="agency-pkg-hub__card-title">{p.package_name}</h3>
-                            <span className="agency-pkg-hub__pills">
+            ) : packageLayoutMode === "list" ? (
+              <div className="agency-pkg-hub__list-wrap">
+                <table className="agency-pkg-hub__list" aria-label="Packages">
+                  <thead>
+                    <tr>
+                      <PackageListSortTh col="package" label="Package" sort={packageListSort} onToggle={togglePackageListSort} />
+                      <PackageListSortTh
+                        col="tiers"
+                        label="Tiers"
+                        align="right"
+                        sort={packageListSort}
+                        onToggle={togglePackageListSort}
+                      />
+                      <PackageListSortTh col="creator" label="Created by" sort={packageListSort} onToggle={togglePackageListSort} />
+                      <PackageListSortTh
+                        col="hours"
+                        label="Hours"
+                        align="right"
+                        sort={packageListSort}
+                        onToggle={togglePackageListSort}
+                      />
+                      <PackageListSortTh
+                        col="sell"
+                        label="Net sell"
+                        align="right"
+                        sort={packageListSort}
+                        onToggle={togglePackageListSort}
+                      />
+                      <th scope="col" className="agency-pkg-hub__list-th--actions">
+                        <span className="agency-pkg-hub__list-sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedListPackages.map((p) => {
+                      const meta = buildPackageHubItemMeta(
+                        p,
+                        pkgRollupById,
+                        pkgWorkspaceById,
+                        packageTypeNameSet,
+                        packageCreatorById
+                      );
+                      const workspacePath = `/package/${encodeURIComponent(p.package_id)}`;
+                      return (
+                        <tr key={p.package_id} className="agency-pkg-hub__list-row">
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--name">
+                            <div className="agency-pkg-hub__list-name-wrap">
+                              {meta.isCustomPackage ? (
+                                <span className="agency-pkg-hub__list-name">{p.package_name}</span>
+                              ) : (
+                                <Link className="agency-pkg-hub__list-name-link" to={workspacePath}>
+                                  {p.package_name}
+                                </Link>
+                              )}
                               <span
                                 className={
-                                  isCustomPackage
+                                  meta.isCustomPackage
                                     ? "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom"
                                     : "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--prebuilt"
                                 }
                               >
-                                {sourceLabel}
+                                {meta.sourceLabel}
                               </span>
-                              <span
-                                className={
-                                  rollup.tierCount === 0
-                                    ? "agency-pkg-hub__tier-pill agency-pkg-hub__tier-pill--empty"
-                                    : "agency-pkg-hub__tier-pill"
-                                }
-                              >
-                                {tierLabel}
-                              </span>
+                            </div>
+                          </td>
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--tiers">
+                            <span
+                              className={
+                                meta.rollup.tierCount === 0
+                                  ? "agency-pkg-hub__tier-pill agency-pkg-hub__tier-pill--empty agency-pkg-hub__list-tier-pill"
+                                  : "agency-pkg-hub__tier-pill agency-pkg-hub__list-tier-pill"
+                              }
+                            >
+                              {meta.tierLabel}
                             </span>
-                          </div>
-                          {creatorEmail ? (
-                            <p className="agency-pkg-hub__creator">Created by {creatorEmail}</p>
-                          ) : null}
-                          <div
-                            className="agency-pkg-hub__card-stats"
-                            aria-label="Package workspace totals from Package Builder pricing"
+                          </td>
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--creator">
+                            {meta.creatorEmail ?? "—"}
+                          </td>
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--num">
+                            <span className="agency-pkg-hub__list-metric">{meta.workspaceHoursDisplay}</span>
+                          </td>
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--num">
+                            <span className="agency-pkg-hub__list-metric agency-pkg-hub__list-metric--sell">
+                              {meta.workspaceSellDisplay}
+                            </span>
+                          </td>
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--actions">
+                            {meta.isCustomPackage ? (
+                              <div className="agency-pkg-hub__list-actions">
+                                <button
+                                  type="button"
+                                  className="agency-pkg-hub__card-edit agency-pkg-hub__list-edit"
+                                  onClick={() => setEditPackageId(p.package_id)}
+                                >
+                                  Edit
+                                </button>
+                                <Link className="agency-pkg-hub__card-open agency-pkg-hub__list-open" to={workspacePath}>
+                                  Open
+                                </Link>
+                              </div>
+                            ) : (
+                              <Link className="agency-pkg-hub__card-open agency-pkg-hub__list-open" to={workspacePath}>
+                                Open workspace
+                              </Link>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <ul className="agency-pkg-hub__grid" role="list" aria-label="Packages">
+                {filteredPackages.map((p) => {
+                  const meta = buildPackageHubItemMeta(
+                    p,
+                    pkgRollupById,
+                    pkgWorkspaceById,
+                    packageTypeNameSet,
+                    packageCreatorById
+                  );
+                  const cardBody = (
+                    <div className="agency-pkg-hub__card-body">
+                      <div className="agency-pkg-hub__card-head">
+                        <h3 className="agency-pkg-hub__card-title">{p.package_name}</h3>
+                        <span className="agency-pkg-hub__pills">
+                          <span
+                            className={
+                              meta.isCustomPackage
+                                ? "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom"
+                                : "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--prebuilt"
+                            }
                           >
-                            <div className="agency-pkg-hub__stat agency-pkg-hub__stat--hours">
-                              <div className="agency-pkg-hub__stat-inner">
-                                <span className="agency-pkg-hub__stat-label">Hours</span>
-                                <span className="agency-pkg-hub__stat-hint">Workspace · after hour discount %</span>
-                                <span className="agency-pkg-hub__stat-value">{workspaceHoursDisplay}</span>
-                              </div>
-                            </div>
-                            <div className="agency-pkg-hub__stat agency-pkg-hub__stat--sell">
-                              <div className="agency-pkg-hub__stat-inner">
-                                <span className="agency-pkg-hub__stat-label">Net sell</span>
-                                <span className="agency-pkg-hub__stat-hint">Workspace · after sell discount %</span>
-                                <span className="agency-pkg-hub__stat-value">{workspaceSellDisplay}</span>
-                              </div>
-                            </div>
+                            {meta.sourceLabel}
+                          </span>
+                          <span
+                            className={
+                              meta.rollup.tierCount === 0
+                                ? "agency-pkg-hub__tier-pill agency-pkg-hub__tier-pill--empty"
+                                : "agency-pkg-hub__tier-pill"
+                            }
+                          >
+                            {meta.tierLabel}
+                          </span>
+                        </span>
+                      </div>
+                      {meta.creatorEmail ? (
+                        <p className="agency-pkg-hub__creator">Created by {meta.creatorEmail}</p>
+                      ) : null}
+                      <div
+                        className="agency-pkg-hub__card-stats"
+                        aria-label="Package workspace totals from Package Builder pricing"
+                      >
+                        <div className="agency-pkg-hub__stat agency-pkg-hub__stat--hours">
+                          <div className="agency-pkg-hub__stat-inner">
+                            <span className="agency-pkg-hub__stat-label">Hours</span>
+                            <span className="agency-pkg-hub__stat-hint">Workspace · after hour discount %</span>
+                            <span className="agency-pkg-hub__stat-value">{meta.workspaceHoursDisplay}</span>
                           </div>
-                          {rollup.tierCount > 0 ? (
-                            <p className="agency-pkg-hub__vault-mini">
-                              Σ vault tiers (catalog){rollup.hoursPartial || rollup.pricePartial ? " *" : ""}:{" "}
-                              {vaultHoursDisplay} · {vaultPriceDisplay}
-                            </p>
-                          ) : null}
-                          {rollup.tierCount > 0 && !wsOk ? (
-                            <p className="agency-pkg-hub__card-partial">Workspace totals could not be calculated.</p>
-                          ) : null}
-                          {partialNote ? (
-                            <p className="agency-pkg-hub__card-partial">{partialNote}</p>
-                          ) : null}
-                          <div className="agency-pkg-hub__card-foot">
-                            <span className="agency-pkg-hub__card-cta">Open workspace</span>
+                        </div>
+                        <div className="agency-pkg-hub__stat agency-pkg-hub__stat--sell">
+                          <div className="agency-pkg-hub__stat-inner">
+                            <span className="agency-pkg-hub__stat-label">Net sell</span>
+                            <span className="agency-pkg-hub__stat-hint">Workspace · after sell discount %</span>
+                            <span className="agency-pkg-hub__stat-value">{meta.workspaceSellDisplay}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {meta.rollup.tierCount > 0 ? (
+                        <p className="agency-pkg-hub__vault-mini">
+                          Σ vault tiers (catalog)
+                          {meta.rollup.hoursPartial || meta.rollup.pricePartial ? " *" : ""}:{" "}
+                          {meta.vaultHoursDisplay} · {meta.vaultPriceDisplay}
+                        </p>
+                      ) : null}
+                      {meta.rollup.tierCount > 0 && !meta.wsOk ? (
+                        <p className="agency-pkg-hub__card-partial">Workspace totals could not be calculated.</p>
+                      ) : null}
+                      {meta.partialNote ? (
+                        <p className="agency-pkg-hub__card-partial">{meta.partialNote}</p>
+                      ) : null}
+                      {meta.isCustomPackage ? (
+                        <div className="agency-pkg-hub__card-foot agency-pkg-hub__card-foot--actions">
+                          <button
+                            type="button"
+                            className="agency-pkg-hub__card-edit"
+                            onClick={() => setEditPackageId(p.package_id)}
+                          >
+                            Edit package
+                          </button>
+                          <Link
+                            className="agency-pkg-hub__card-open"
+                            to={`/package/${encodeURIComponent(p.package_id)}`}
+                          >
+                            Open workspace
                             <span className="agency-pkg-hub__card-arrow" aria-hidden="true">
                               →
                             </span>
-                          </div>
+                          </Link>
                         </div>
-                      </Link>
+                      ) : (
+                        <div className="agency-pkg-hub__card-foot">
+                          <span className="agency-pkg-hub__card-cta">Open workspace</span>
+                          <span className="agency-pkg-hub__card-arrow" aria-hidden="true">
+                            →
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <li key={p.package_id}>
+                      {meta.isCustomPackage ? (
+                        <article className="agency-pkg-hub__card agency-pkg-hub__card--static" aria-label={meta.a11yLabel}>
+                          {cardBody}
+                        </article>
+                      ) : (
+                        <Link
+                          className="agency-pkg-hub__card"
+                          to={`/package/${encodeURIComponent(p.package_id)}`}
+                          aria-label={meta.a11yLabel}
+                        >
+                          {cardBody}
+                        </Link>
+                      )}
                     </li>
                   );
                 })}
@@ -973,520 +978,25 @@ export function AgencyPackagesHub() {
         </>
       )}
 
-      {wizardOpen && (
-        <div className="agency-pkg-wizard-overlay" role="presentation" onClick={closeWizard}>
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pkg-wiz-title"
-            className={wizStep >= 3 ? "agency-pkg-wizard agency-pkg-wizard--wide" : "agency-pkg-wizard"}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="agency-pkg-wizard__header">
-              <h2 id="pkg-wiz-title" className="agency-pkg-wizard__title">
-                Build a Package
-              </h2>
-              <WizardStepper step={wizStep} />
-            </header>
-
-            <div className="agency-pkg-wizard__body">
-              {wizStep === 1 && (
-                <>
-                  <p className="agency-pkg-wizard__lead">
-                    Choose the kind of package you are building. Limits for each tier are configured in{" "}
-                    <Link className="agency-hub__link" to="/admin">
-                      Admin → Build-a-Package configuration
-                    </Link>
-                    .
-                  </p>
-                  <div className="agency-pkg-wizard__choice-grid">
-                    {packageTypes.map((pt) => {
-                      const active = selectedPackageType?.id === pt.id;
-                      const tierCount = slotsForPackageType(slots, pt.id).length;
-                      return (
-                        <button
-                          key={pt.id}
-                          type="button"
-                          className={
-                            active
-                              ? "agency-pkg-wizard__choice is-selected"
-                              : "agency-pkg-wizard__choice"
-                          }
-                          onClick={() => {
-                            setSelectedPackageType({ ...pt });
-                            setSelectedSlot(null);
-                            setTierPickQty(emptyTierQuantities());
-                          }}
-                        >
-                          <span className="agency-pkg-wizard__choice-title">{pt.name}</span>
-                          <span className="agency-pkg-wizard__choice-meta">
-                            {tierCount} package tier{tierCount === 1 ? "" : "s"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {wizStep === 2 && selectedPackageType && (
-                <>
-                  <div className="agency-pkg-wizard__context">
-                    <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
-                  </div>
-                  <p className="agency-pkg-wizard__lead">
-                    Pick a tier level. Each option can enforce hour, price, and vault tier limits.
-                  </p>
-                  <div className="agency-pkg-wizard__tier-pick-block">
-                  <div className="agency-pkg-wizard__choice-grid">
-                    {slotsForSelectedType.map((s) => {
-                      const active = selectedSlot?.id === s.id;
-                      const tags = slotLimitTags(s);
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className={
-                            active
-                              ? "agency-pkg-wizard__choice is-selected"
-                              : "agency-pkg-wizard__choice"
-                          }
-                          onClick={() => {
-                            setSelectedSlot({ ...s });
-                            setTierPickQty(emptyTierQuantities());
-                          }}
-                        >
-                          <span className="agency-pkg-wizard__choice-title">
-                            {displayTierLabel(selectedPackageType.name, s.label)}
-                          </span>
-                          <span className="agency-pkg-wizard__choice-tags">
-                            {tags.map((tag) => (
-                              <span key={tag} className="agency-pkg-wizard__choice-tag">
-                                {tag}
-                              </span>
-                            ))}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <PackageTierDisclaimer
-                    notes={selectedSlot ? slotTierNotes(selectedSlot) : null}
-                  />
-                  </div>
-                </>
-              )}
-
-              {wizStep === 3 && selectedSlot && selectedPackageType && (
-                <>
-                  <div className="agency-pkg-wizard__context">
-                    <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
-                    <span className="agency-pkg-wizard__chip">
-                      {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
-                    </span>
-                  </div>
-                  <div className="agency-pkg-wizard__solution-step-block">
-                  <p className="agency-pkg-wizard__lead">
-                    Set how many of each vault tier to include. Use the + button to add duplicates — for example,
-                    3× Customer Interviews - Basic. Running totals multiply catalog hours and sell by quantity.
-                  </p>
-
-                  <PackageTierDisclaimer notes={slotTierNotes(selectedSlot)} />
-
-                  <div className="agency-pkg-wizard__meters">
-                    {slotEnforcesHourCeiling(selectedSlot) ? (
-                      <WizardMeter
-                        label="Hours"
-                        value={usage.hours}
-                        max={selectedSlot.hour_ceiling}
-                        format={(n) => fmtHoursTotal(n) + "h"}
-                        over={overHours}
-                        note={
-                          usage.missingHours
-                            ? "Some selected tiers have no hour total in the vault."
-                            : null
-                        }
-                      />
-                    ) : null}
-                    {slotEnforcesPriceCeiling(selectedSlot) ? (
-                      <WizardMeter
-                        label="Sell price"
-                        value={usage.price}
-                        max={Number(selectedSlot.price_ceiling) || 0}
-                        format={fmtUsd}
-                        over={overPrice}
-                        note={
-                          usage.missingPrice
-                            ? "Some selected tiers have no sell price in the vault."
-                            : null
-                        }
-                      />
-                    ) : null}
-                    {slotEnforcesTierCountLimit(selectedSlot) ? (
-                      <WizardMeter
-                        label="Tiers selected"
-                        value={tierLineCount}
-                        max={selectedSlot.solution_tier_limit}
-                        format={(n) => String(Math.round(n))}
-                        over={overTierCount}
-                      />
-                    ) : null}
-                  </div>
-
-                  {(overHours || overPrice || overTierCount) && (
-                    <p className="agency-pkg-wizard__alert" role="alert">
-                      You are over a configured limit. Remove tiers or go back and choose a different package tier.
-                    </p>
-                  )}
-                  </div>
-
-                  <label className="agency-pkg-wizard__field">
-                    <span className="agency-pkg-wizard__field-label">Package name</span>
-                    <input
-                      className="agency-pkg-wizard__field-input"
-                      value={pkgName}
-                      onChange={(e) => setPkgName(e.target.value)}
-                      placeholder="Display name for this package"
-                      autoComplete="off"
-                    />
-                  </label>
-
-                  <div className="agency-nav-sol-filter agency-pkg-wizard__filter">
-                    <label className="agency-nav-sol-filter__label" htmlFor="wiz-tier-search">
-                      Solution tiers
-                    </label>
-                    <div className="agency-nav-sol-filter__row">
-                      <input
-                        id="wiz-tier-search"
-                        type="search"
-                        className="agency-nav-sol-filter__input"
-                        value={tierSearch}
-                        onChange={(e) => setTierSearch(e.target.value)}
-                        placeholder="Filter by solution or tier name…"
-                        autoComplete="off"
-                      />
-                      {tierSearch ? (
-                        <button
-                          type="button"
-                          className="agency-nav-sol-filter__clear"
-                          onClick={() => setTierSearch("")}
-                        >
-                          Clear
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="agency-pkg-wizard__table-wrap">
-                    <div className="agency-pkg-wizard__table-scroll">
-                      <table className="agency-pkg-wizard__table">
-                        <thead>
-                          <tr>
-                            <th className="col-qty" scope="col">
-                              Qty
-                            </th>
-                            <th scope="col">Solution</th>
-                            <th scope="col">Tier</th>
-                            <th className="col-hours" scope="col">
-                              Hours
-                            </th>
-                            <th className="col-sell" scope="col">
-                              Sell
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tierRows.map((t) => {
-                            const pr = pricingByTierId.get(t.solution_tier_id) ?? null;
-                            const h = vaultTierHours(pr, tasks, t.solution_tier_id);
-                            const usd = vaultSellPriceUsd(pr);
-                            const sol = solutionById.get(t.solution_id);
-                            const qty = tierPickQty[t.solution_tier_id] ?? 0;
-                            const lineHours = h != null ? h * Math.max(qty, 1) : null;
-                            const lineSell = usd != null && qty > 0 ? usd * qty : null;
-                            return (
-                              <tr
-                                key={t.solution_tier_id}
-                                className={qty > 0 ? "is-selected" : undefined}
-                              >
-                                <td className="col-qty">
-                                  <div className="agency-pkg-wizard__qty">
-                                    <button
-                                      type="button"
-                                      className="agency-pkg-wizard__qty-btn"
-                                      aria-label={`Decrease quantity for ${t.solution_tier_name}`}
-                                      disabled={qty <= 0}
-                                      onClick={() => changeTierQty(t.solution_tier_id, -1)}
-                                    >
-                                      −
-                                    </button>
-                                    <span className="agency-pkg-wizard__qty-value" aria-live="polite">
-                                      {qty}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="agency-pkg-wizard__qty-btn"
-                                      aria-label={`Increase quantity for ${t.solution_tier_name}`}
-                                      onClick={() => changeTierQty(t.solution_tier_id, 1)}
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </td>
-                                <td>{sol?.solution_name ?? t.solution_id}</td>
-                                <td>{t.solution_tier_name}</td>
-                                <td className="col-hours">
-                                  {qty > 0 && h != null
-                                    ? lineHours!.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                                    : h != null
-                                      ? h.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                                      : "—"}
-                                </td>
-                                <td className="col-sell">
-                                  {qty > 0 && usd != null ? fmtUsd(lineSell!) : usd != null ? fmtUsd(usd) : "—"}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {wizStep === 4 && selectedSlot && selectedPackageType && (
-                <>
-                  <div className="agency-pkg-wizard__context">
-                    <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
-                    <span className="agency-pkg-wizard__chip">
-                      {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
-                    </span>
-                    <span className="agency-pkg-wizard__chip">{tierLineCount} tier lines</span>
-                  </div>
-                  <p className="agency-pkg-wizard__lead">
-                    Optional package-level discounts. Leave at 0% if you do not need them — you can change these later in
-                    Package Builder.
-                  </p>
-
-                  <div className="agency-pkg-wizard__discount-grid">
-                    <div className="agency-pkg-wizard__discount-card">
-                      <div className="agency-pkg-wizard__discount-card-head">
-                        <h3 className="agency-pkg-wizard__discount-title">Hour Discount</h3>
-                        <p className="agency-pkg-wizard__discount-hint">
-                          Lowers catalog hours and scales each tier’s sell in proportion (same totals as step 3).
-                        </p>
-                      </div>
-                      <label className="agency-pkg-wizard__discount-field">
-                        <span className="agency-pkg-wizard__discount-field-label">Discount %</span>
-                        <div className="agency-pkg-wizard__discount-input-wrap">
-                          <input
-                            className="agency-pkg-wizard__field-input agency-pkg-wizard__discount-input"
-                            inputMode="decimal"
-                            value={hourDiscountPctStr}
-                            onChange={(e) => setHourDiscountPctStr(e.target.value)}
-                            aria-label="Hour discount percent"
-                          />
-                          <span className="agency-pkg-wizard__discount-suffix" aria-hidden>
-                            %
-                          </span>
-                        </div>
-                      </label>
-                      <p className="agency-pkg-wizard__discount-result">
-                        Hours{" "}
-                        {usage.missingHours ? (
-                          <strong>—</strong>
-                        ) : (
-                          <>
-                            <span className="agency-pkg-wizard__discount-was">{fmtHoursTotal(discountPreview.catalogHours)} h</span>
-                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
-                              →
-                            </span>
-                            <strong>{fmtHoursTotal(discountPreview.hoursAfter ?? 0)} h</strong>
-                          </>
-                        )}
-                      </p>
-                      <p className="agency-pkg-wizard__discount-result">
-                        Catalog sell{" "}
-                        {discountPreview.modeledSellBeforeHourDiscount == null ? (
-                          <strong>—</strong>
-                        ) : (
-                          <>
-                            <span className="agency-pkg-wizard__discount-was">
-                              {fmtUsd(discountPreview.modeledSellBeforeHourDiscount)}
-                            </span>
-                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
-                              →
-                            </span>
-                            <strong>{fmtUsd(discountPreview.modeledSellAfterHourDiscount ?? 0)}</strong>
-                          </>
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="agency-pkg-wizard__discount-card">
-                      <div className="agency-pkg-wizard__discount-card-head">
-                        <h3 className="agency-pkg-wizard__discount-title">Sell Price Discount</h3>
-                        <p className="agency-pkg-wizard__discount-hint">
-                          Taken off modeled sell after any hour discount. Does not change hour buckets.
-                        </p>
-                      </div>
-                      <label className="agency-pkg-wizard__discount-field">
-                        <span className="agency-pkg-wizard__discount-field-label">Discount %</span>
-                        <div className="agency-pkg-wizard__discount-input-wrap">
-                          <input
-                            className="agency-pkg-wizard__field-input agency-pkg-wizard__discount-input"
-                            inputMode="decimal"
-                            value={sellDiscountPctStr}
-                            onChange={(e) => setSellDiscountPctStr(e.target.value)}
-                            aria-label="Sell price discount percent"
-                          />
-                          <span className="agency-pkg-wizard__discount-suffix" aria-hidden>
-                            %
-                          </span>
-                        </div>
-                      </label>
-                      <p className="agency-pkg-wizard__discount-result">
-                        Net sell{" "}
-                        {discountPreview.modeledSellAfterHourDiscount == null ||
-                        discountPreview.netSellAfterSellDiscount == null ? (
-                          <strong>—</strong>
-                        ) : (
-                          <>
-                            <span className="agency-pkg-wizard__discount-was">
-                              {fmtUsd(discountPreview.modeledSellAfterHourDiscount)}
-                            </span>
-                            <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
-                              →
-                            </span>
-                            <strong>{fmtUsd(discountPreview.netSellAfterSellDiscount)}</strong>
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="agency-pkg-wizard__discount-footnote">
-                    Estimates use vault tier totals from your selection. Package Builder refines totals from the full task
-                    checklist.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <footer className="agency-pkg-wizard__footer">
-              {wizStep === 1 && (
-                <>
-                  <button type="button" className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary" onClick={closeWizard}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
-                    disabled={!selectedPackageType}
-                    onClick={() => {
-                      if (!selectedPackageType) return;
-                      setWizStep(2);
-                      setPkgName((n) => (n.trim() ? n : `${selectedPackageType.name} package`));
-                    }}
-                  >
-                    Next: package tier
-                  </button>
-                </>
-              )}
-              {wizStep === 2 && selectedPackageType && (
-                <>
-                  <button type="button" className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary" onClick={closeWizard}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    onClick={() => {
-                      setWizardOpen(false);
-                      setSelectedSlot(null);
-                    }}
-                  >
-                    Change package type
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
-                    disabled={!selectedSlot}
-                    onClick={() => {
-                      if (!selectedSlot) return;
-                      setWizStep(3);
-                      setPkgName((n) =>
-                        n.trim()
-                          ? n
-                          : `${selectedPackageType.name} — ${displayTierLabel(selectedPackageType.name, selectedSlot.label)}`
-                      );
-                    }}
-                  >
-                    Next: solution tiers
-                  </button>
-                </>
-              )}
-              {wizStep === 3 && selectedSlot && selectedPackageType && (
-                <>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    disabled={createBusy}
-                    onClick={closeWizard}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    disabled={createBusy}
-                    onClick={() => setWizStep(2)}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
-                    disabled={!tierStepValid || createBusy}
-                    onClick={() => setWizStep(4)}
-                  >
-                    Next: package discounts
-                  </button>
-                </>
-              )}
-              {wizStep === 4 && selectedSlot && selectedPackageType && (
-                <>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    disabled={createBusy}
-                    onClick={closeWizard}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    disabled={createBusy}
-                    onClick={() => setWizStep(3)}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
-                    disabled={!canCreate}
-                    onClick={() => void createPackage()}
-                  >
-                    {createBusy ? "Creating…" : "Create package"}
-                  </button>
-                </>
-              )}
-            </footer>
-          </div>
-        </div>
-      )}
+      {editPackage ? (
+        <AgencyPackageEditModal
+          packageId={editPackage.package_id}
+          packageName={editPackage.package_name ?? editPackage.package_id}
+          packages={packages}
+          solutions={solutions}
+          tiers={tiers}
+          tasks={tasks}
+          tierPricing={pricing}
+          packageTiers={packageTiers}
+          implementerHourGroups={implementerHourGroups}
+          tierPricingMathConfig={normalizeTierPricingMathConfig(tierPricingMathConfig)}
+          onClose={closePackageEdit}
+          onSaved={load}
+          setOpErr={setOpErr}
+          setOpOk={setOpOk}
+          logAudit={logAudit}
+        />
+      ) : null}
     </div>
   );
 }

@@ -6,12 +6,13 @@ import {
   APP_TITLE,
   CLAUDE_AI_CHAT_PROJECT_URL,
   NAV_AI_CHAT,
+  NAV_PACKAGE_BUILDER,
   NAV_PROPOSAL_BUILDER,
   NAV_SOLUTIONS_OVERVIEW,
 } from "../branding";
 import { useAuth } from "../context/AuthContext";
 import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
-import { isAgencyRoute } from "../lib/agencyRoutes";
+import { isAgencyRoute, isPackageBuilderRoute } from "../lib/agencyRoutes";
 import { getSupabase } from "../lib/supabase";
 import {
   presenceHeartbeatIntervalMs,
@@ -93,14 +94,13 @@ function ThemeToggle({
 
   return (
     <div className="app-theme-control">
-      <span className="app-theme-control__label">{label}</span>
       <button
         type="button"
         className="app-user-menu__theme-toggle"
         onClick={onToggle}
         aria-label={label}
         aria-pressed={theme === "dark"}
-        title={theme === "dark" ? "Light mode" : "Dark mode"}
+        title={label}
       >
         <span className="app-user-menu__theme-toggle-track" aria-hidden>
           <span className="app-user-menu__theme-toggle-thumb">
@@ -116,6 +116,7 @@ export function ProtectedLayout() {
   const { session, loading, configured, profileLoading, isAdmin } = useAuth();
   const location = useLocation();
   const agencyTabActive = isAgencyRoute(location.pathname);
+  const packageBuilderTabActive = isPackageBuilderRoute(location.pathname);
   const [theme, setTheme] = useState<AppTheme>(() => readInitialTheme());
 
   useEffect(() => {
@@ -169,9 +170,7 @@ export function ProtectedLayout() {
       <header className="app-top-bar">
         <div className="app-top-bar__inner">
           <div className="app-top-bar__brand" aria-label={APP_TITLE}>
-            <div className="app-top-bar__brand-lockup">
-              <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
-            </div>
+            <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
             <span className="app-top-bar__brand-divider" aria-hidden />
             <span className="app-top-bar__brand-scope">{APP_SCOPE_LABEL}</span>
           </div>
@@ -184,7 +183,16 @@ export function ProtectedLayout() {
                 `app-module-tab${agencyTabActive ? " app-module-tab--active" : ""}`
               }
             >
-              {NAV_SOLUTIONS_OVERVIEW}
+              <span className="app-module-tab__label app-module-tab__label--full">{NAV_SOLUTIONS_OVERVIEW}</span>
+              <span className="app-module-tab__label app-module-tab__label--short">Solutions</span>
+            </GuardedNavLink>
+            <GuardedNavLink
+              to="/package-builder"
+              className={() =>
+                `app-module-tab${packageBuilderTabActive ? " app-module-tab--active" : ""}`
+              }
+            >
+              {NAV_PACKAGE_BUILDER}
             </GuardedNavLink>
             <NavLink
               to="/roadmap"
@@ -218,16 +226,15 @@ export function ProtectedLayout() {
           <div className="app-top-bar__account">
             <div className="app-top-bar__account-controls">
               <div className="app-user-menu">
-              <span className="app-user-menu__avatar" aria-hidden>
-                {(email || "?").slice(0, 1).toUpperCase()}
-              </span>
-              <span className="app-user-menu__details">
-                <span className="app-user-menu__label">Signed in</span>
-                <span className="app-user-menu__email" title={email}>
-                  {email}
+                <span className="app-user-menu__avatar" aria-hidden>
+                  {(email || "?").slice(0, 1).toUpperCase()}
                 </span>
-              </span>
-              <SignOutButton />
+                <span className="app-user-menu__details">
+                  <span className="app-user-menu__email" title={email}>
+                    {email}
+                  </span>
+                </span>
+                <SignOutButton />
               </div>
               <ThemeToggle
                 theme={theme}

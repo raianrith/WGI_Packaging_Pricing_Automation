@@ -244,6 +244,10 @@ export type PackagesBuilderPanelProps = {
   setOpOk: (s: string | null) => void;
   logAudit: (client: SupabaseClient, p: Parameters<typeof insertAuditLog>[1]) => Promise<void>;
   styles: PackagesBuilderPanelStyles;
+  /** Hub modal: pre-select package and hide chrome (title, intro, package picker). */
+  embedded?: boolean;
+  initialEditPackageId?: string | null;
+  onPackageDeleted?: () => void;
 };
 
 export function PackagesBuilderPanel({
@@ -263,6 +267,9 @@ export function PackagesBuilderPanel({
   setOpOk,
   logAudit,
   styles: s,
+  embedded = false,
+  initialEditPackageId = null,
+  onPackageDeleted,
 }: PackagesBuilderPanelProps) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnDangerSm, btnSm, tbl, th, td, h2, muted } = s;
 
@@ -274,7 +281,6 @@ export function PackagesBuilderPanel({
   const [packageDetails, setPackageDetails] =
     useState<Record<PackageDetailFieldKey, string>>(emptyPackageDetails);
   const [hourDiscountPctStr, setHourDiscountPctStr] = useState("0");
-  const [sellDiscountPctStr, setSellDiscountPctStr] = useState("0");
   const [storedPackagePricingOverrides, setStoredPackagePricingOverrides] = useState<PackagePricingOverrides | null>(
     null
   );
@@ -338,8 +344,6 @@ export function PackagesBuilderPanel({
       setPackageDetails(packageRowToDetailsValues(pkg ?? null));
       const h = pkg?.package_hour_discount_pct;
       setHourDiscountPctStr(h != null && Number.isFinite(Number(h)) ? String(Number(h)) : "0");
-      const sd = pkg?.package_sell_discount_pct;
-      setSellDiscountPctStr(sd != null && Number.isFinite(Number(sd)) ? String(Number(sd)) : "0");
       setStoredPackagePricingOverrides(parsePricingOverrides(pkg?.package_pricing_overrides ?? null));
 
       const tierIds = tierIdsFromQuantities(tierQuantitiesFromLinks(links));
@@ -355,6 +359,13 @@ export function PackagesBuilderPanel({
     },
     [packages]
   );
+
+  useEffect(() => {
+    if (!embedded || subTab !== "update" || !initialEditPackageId) return;
+    setPkgEditId(initialEditPackageId);
+    const p = packages.find((x) => x.package_id === initialEditPackageId);
+    setNameField(p?.package_name ?? "");
+  }, [embedded, subTab, initialEditPackageId, packages]);
 
   useEffect(() => {
     if (subTab !== "update" || !pkgEditId) return;
@@ -435,7 +446,6 @@ export function PackagesBuilderPanel({
     setPackageDetails(emptyPackageDetails());
     setCombinedTasks(emptyCombinedTasksState());
     setHourDiscountPctStr("0");
-    setSellDiscountPctStr("0");
     setStoredPackagePricingOverrides(null);
     aggregatePricingDraftRef.current = null;
     setModelSellBeforeDiscount(null);
@@ -450,7 +460,7 @@ export function PackagesBuilderPanel({
     const today = todayISODate();
     const wanted = [...selectedTierIds].sort(sortId);
     const hourPct = parseDiscountPct(hourDiscountPctStr);
-    const sellPct = parseDiscountPct(sellDiscountPctStr);
+    const sellPct = 0;
 
     for (const tid of wanted) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
@@ -520,7 +530,7 @@ export function PackagesBuilderPanel({
     const today = todayISODate();
     const wanted = [...selectedTierIds].sort(sortId);
     const hourPct = parseDiscountPct(hourDiscountPctStr);
-    const sellPct = parseDiscountPct(sellDiscountPctStr);
+    const sellPct = 0;
 
     for (const tid of wanted) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
@@ -628,6 +638,7 @@ export function PackagesBuilderPanel({
     setPkgEditId(null);
     startNewCreate();
     await onSaved();
+    if (embedded) onPackageDeleted?.();
   };
 
   const onPackagePricingDraft = useCallback((row: SolutionTierPricing) => {
@@ -965,33 +976,46 @@ export function PackagesBuilderPanel({
   const showPackageWorkbench =
     (subTab === "create" && selectedTierLineCount > 0) || (subTab === "update" && Boolean(pkgEditId));
 
-  const sellPctApplied = parseDiscountPct(sellDiscountPctStr);
+  const sellPctApplied = 0;
   const sellAfterPackageDiscount =
     modelSellBeforeDiscount != null && Number.isFinite(modelSellBeforeDiscount)
       ? modelSellBeforeDiscount * (1 - sellPctApplied / 100)
       : null;
 
-  return (
-    <section className="admin-panel admin-panel--editor admin-packages-builder" style={panel}>
-      <div className="admin-editor-layout">
-        <h2 style={h2}>Package Builder</h2>
-        {subTab === "create" ? (
-          <p className="admin-intro" style={muted}>
-            Name the bundle, pick solution tiers, then fill in <strong>package-level</strong> copy, reorder or remove vault
-            tasks, add package-only rows, tune combined pricing (hour buckets roll up from those tasks, then discounts), and
-            create once. Vault tier descriptions are edited only in Solutions Builder. Build-a-Package ceilings live under{" "}
-            <strong>Build-a-Package configuration</strong>.
-          </p>
-        ) : (
-          <p className="admin-intro" style={muted}>
-            Packages store narrative and aggregate pricing on the <strong>packages</strong> row; tier links carry task
-            visibility and package-only extras. Pricing hour buckets roll up from the tasks you list below (then package hour
-            discount %), before the usual sell math (plus optional sell discount %). Vault tier narratives are not editable
-            here.
-          </p>
-        )}
+  const panelStyle = embedded ? { ...panel, marginBottom: 0, padding: 0 } : panel;
 
-        {subTab === "update" && (
+  return (
+    <section
+      className={
+        embedded
+          ? "admin-panel admin-panel--editor admin-packages-builder admin-packages-builder--embedded"
+          : "admin-panel admin-panel--editor admin-packages-builder"
+      }
+      style={panelStyle}
+    >
+      <div className="admin-editor-layout">
+        {!embedded ? (
+          <>
+            <h2 style={h2}>Package Builder</h2>
+            {subTab === "create" ? (
+              <p className="admin-intro" style={muted}>
+                Name the bundle, pick solution tiers, then fill in <strong>package-level</strong> copy, reorder or remove
+                vault tasks, add package-only rows, tune combined pricing (hour buckets roll up from those tasks, then
+                discounts), and create once. Vault tier descriptions are edited only in Solutions Builder. Build-a-Package
+                ceilings live under <strong>Build-a-Package configuration</strong>.
+              </p>
+            ) : (
+              <p className="admin-intro" style={muted}>
+                Packages store narrative and aggregate pricing on the <strong>packages</strong> row; tier links carry task
+                visibility and package-only extras. Pricing hour buckets roll up from the tasks you list below (then package
+                hour discount %), before the usual sell math (plus optional sell discount %). Vault tier narratives are not
+                editable here.
+              </p>
+            )}
+          </>
+        ) : null}
+
+        {subTab === "update" && !embedded ? (
           <div className="admin-form-stack" style={{ ...formGrid, marginBottom: "0.75rem" }}>
             <label style={lbl}>
               <FieldCaption>Package to edit</FieldCaption>
@@ -1016,7 +1040,7 @@ export function PackagesBuilderPanel({
               </select>
             </label>
           </div>
-        )}
+        ) : null}
 
         <div className="admin-form-stack" style={formGrid}>
           {subTab === "create" && (
@@ -1390,9 +1414,8 @@ export function PackagesBuilderPanel({
                 taskHourRollup={packageTaskHourRollupDiscounted}
                 onPackagePricingDraft={onPackagePricingDraft}
                 packageHourDiscountPct={hourDiscountPctStr}
-                onPackageHourDiscountPctChange={setHourDiscountPctStr}
-                packageSellDiscountPct={sellDiscountPctStr}
-                onPackageSellDiscountPctChange={setSellDiscountPctStr}
+                packageDiscountsReadOnly
+                packageSellDiscountPct="0"
               />
             ) : null}
           </div>

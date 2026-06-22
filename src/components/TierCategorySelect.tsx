@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { TierTaxonomySelect } from "./TierTaxonomySelect";
-import { tierCategorySelectOptions } from "../lib/tierCategories";
+import { TIER_CATEGORY_OPTIONS, displayTierCategoryLabel, tierCategorySelectOptions } from "../lib/tierCategories";
 
 type Props = {
   value: string;
@@ -12,16 +12,17 @@ type Props = {
 };
 
 export function TierCategorySelect({ value, inputStyle, onChange, disabled, options }: Props) {
-  const canonical = options ?? tierCategorySelectOptions("");
   return (
     <TierTaxonomySelect
       value={value}
-      options={canonical}
+      options={options ?? TIER_CATEGORY_OPTIONS}
+      buildMenuOptions={tierCategorySelectOptions}
       placeholder="Select category…"
       ariaLabel="Tier category"
       inputStyle={inputStyle}
       onChange={onChange}
       disabled={disabled}
+      formatDisplay={displayTierCategoryLabel}
     />
   );
 }

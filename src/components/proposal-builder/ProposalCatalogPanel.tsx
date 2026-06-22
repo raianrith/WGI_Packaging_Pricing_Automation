@@ -25,6 +25,8 @@ import {
   ProposalCatalogLinesPanel,
   ProposalCatalogListSearch,
 } from "./ProposalCatalogLineRow";
+import { compareTierPhaseLabels } from "../../lib/tierTaxonomy";
+import { compareTierCategoryLabels } from "../../lib/tierCategories";
 
 const UNSET = "Not classified";
 /** Sentinel: skip this drill-down level and show all tiers at the current scope. */
@@ -82,7 +84,23 @@ function compareLabels(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
 }
 
-function countGroups(rows: CatalogTierTableRow[], field: (r: CatalogTierTableRow) => string): { label: string; count: number }[] {
+function comparePhaseGroupLabels(a: string, b: string): number {
+  if (a === UNSET && b !== UNSET) return 1;
+  if (b === UNSET && a !== UNSET) return -1;
+  return compareTierPhaseLabels(a, b);
+}
+
+function compareCategoryGroupLabels(a: string, b: string): number {
+  if (a === UNSET && b !== UNSET) return 1;
+  if (b === UNSET && a !== UNSET) return -1;
+  return compareTierCategoryLabels(a, b);
+}
+
+function countGroups(
+  rows: CatalogTierTableRow[],
+  field: (r: CatalogTierTableRow) => string,
+  compareFn: (a: string, b: string) => number = compareLabels
+): { label: string; count: number }[] {
   const m = new Map<string, number>();
   for (const r of rows) {
     const k = normLabel(field(r));
@@ -90,7 +108,7 @@ function countGroups(rows: CatalogTierTableRow[], field: (r: CatalogTierTableRow
   }
   return [...m.entries()]
     .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => compareLabels(a.label, b.label));
+    .sort((a, b) => compareFn(a.label, b.label));
 }
 
 function BrowseCard({
@@ -139,7 +157,7 @@ function SolutionTierBrowsePath({
   onReset,
   onBackToPhases,
   onBackToCategories,
-  onBackToTracks,
+  onBackToTactics,
 }: {
   browsePhase: string | null;
   browseCategory: string | null;
@@ -148,7 +166,7 @@ function SolutionTierBrowsePath({
   onReset: () => void;
   onBackToPhases: () => void;
   onBackToCategories: () => void;
-  onBackToTracks: () => void;
+  onBackToTactics: () => void;
 }) {
   if (browsePhase === null) {
     return (
@@ -205,19 +223,19 @@ function SolutionTierBrowsePath({
       ) : null}
 
       {browseLevel === "tactic" ? (
-        <span className="proposal-catalog-crumb__current"> / Track</span>
+        <span className="proposal-catalog-crumb__current"> / Tactic</span>
       ) : null}
 
       {tacticName !== null && browseLevel === "tiers" ? (
         <>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTracks}>
+          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTactics}>
             {" "}
-            / Track
+            / Tactic
           </button>
           <span className="proposal-catalog-crumb__sep" aria-hidden>
             :
           </span>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTracks}>
+          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTactics}>
             {tacticName}
           </button>
         </>
@@ -324,7 +342,7 @@ export function ProposalCatalogPanel({
   const stepPrompt = useMemo(() => {
     if (browseLevel === "phase") return "Pick A Phase";
     if (browseLevel === "category") return "Pick A Category";
-    if (browseLevel === "tactic") return "Pick A Track";
+    if (browseLevel === "tactic") return "Pick A Tactic";
     if (browsePhase === BROWSE_SHOW_ALL) return "All Tiers";
     if (browseCategory === BROWSE_SHOW_ALL) return `All Tiers In ${phaseContextLabel(browsePhase)}`;
     if (browseTactic === BROWSE_SHOW_ALL) {
@@ -343,8 +361,14 @@ export function ProposalCatalogPanel({
     });
   }, [rowsForTactic, searchLower]);
 
-  const phaseGroups = useMemo(() => countGroups(catalogTierTableRows, (r) => r.phaseRaw), [catalogTierTableRows]);
-  const categoryGroups = useMemo(() => countGroups(rowsForPhase, (r) => r.categoryRaw), [rowsForPhase]);
+  const phaseGroups = useMemo(
+    () => countGroups(catalogTierTableRows, (r) => r.phaseRaw, comparePhaseGroupLabels),
+    [catalogTierTableRows]
+  );
+  const categoryGroups = useMemo(
+    () => countGroups(rowsForPhase, (r) => r.categoryRaw, compareCategoryGroupLabels),
+    [rowsForPhase]
+  );
   const tacticGroups = useMemo(() => countGroups(rowsForCategory, (r) => r.tacticRaw), [rowsForCategory]);
 
   const resetBrowse = () => {
@@ -506,7 +530,7 @@ export function ProposalCatalogPanel({
         <p className="proposal-step-panel__eyebrow">Step 3</p>
         <h2 className="proposal-step-panel__title">Add Offerings</h2>
         <p className="proposal-step-panel__lead">
-          Choose where items land, then add <strong>Solution Tiers</strong> (phase → category → track),{" "}
+          Choose where items land, then add <strong>Solution Tiers</strong> (phase → category → tactic),{" "}
           <strong>Packages</strong>, or <strong>Variable Tiers</strong> with dynamic pricing. Use{" "}
           <strong>Show All</strong> to skip a drill-down level.
         </p>
@@ -668,7 +692,7 @@ export function ProposalCatalogPanel({
               setBrowseTactic(null);
               setSearch("");
             }}
-            onBackToTracks={() => {
+            onBackToTactics={() => {
               setBrowseTactic(null);
               setSearch("");
             }}
@@ -828,7 +852,7 @@ export function ProposalCatalogPanel({
                   key={label}
                   label={label}
                   count={count}
-                  sub="Then pick a track"
+                  sub="Then pick a tactic"
                   onClick={() => {
                     setBrowseCategory(label);
                     setBrowseTactic(null);
@@ -839,7 +863,7 @@ export function ProposalCatalogPanel({
           ) : null}
 
           {browseLevel === "tactic" ? (
-            <div className="proposal-catalog-browse-grid" role="list" aria-label="Tracks">
+            <div className="proposal-catalog-browse-grid" role="list" aria-label="Tactics">
               <BrowseCard
                 label="Show All"
                 count={rowsForCategory.length}
@@ -878,7 +902,7 @@ export function ProposalCatalogPanel({
                 count={tierRows.length}
                 isEmpty={tierRows.length === 0}
                 emptyTitle="No tiers match"
-                emptyText="Try search or go back and pick another track."
+                emptyText="Try search or go back and pick another tactic."
               >
                 {tierRows.map((r) => {
                   const onProposal = addedTierRefIds.has(r.tierId);

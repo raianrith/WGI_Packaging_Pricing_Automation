@@ -8,7 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import {
   AGENCY_HERO_TITLE,
@@ -68,6 +68,7 @@ import {
   type PlaybookFilterValue,
 } from "../components/CatalogPlaybookBrowser";
 import type { CatalogTierSortCol } from "../components/CatalogTierTable";
+import { displayTierCategoryLabel } from "../lib/tierCategories";
 
 type CatalogViewMode = "detail" | "all_table";
 
@@ -262,8 +263,13 @@ type AgencyViewProps = {
   mode: AgencyWorkspaceMode;
 };
 
+type AgencyTierDetailNavState = {
+  openTierDetail?: { solutionId: string; tierId: string };
+};
+
 export function AgencyView({ mode }: AgencyViewProps) {
   const { packageId: packageIdParam } = useParams<{ packageId: string }>();
+  const location = useLocation();
 
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [pkgId, setPkgId] = useState<string | null>(null);
@@ -302,6 +308,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const emptyVaultNotified = useRef(false);
   const routeInvalidNotified = useRef(false);
   const catalogFlyoutCloseTimer = useRef<number | null>(null);
+  const pendingTierDetailRef = useRef<{ solutionId: string; tierId: string } | null>(null);
 
   const clearCatalogFlyoutCloseTimer = useCallback(() => {
     if (catalogFlyoutCloseTimer.current != null) {
@@ -414,17 +421,19 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     if (mode === "catalog") {
       setPkgId(null);
-      const sortedSols = [...solutions].sort((a, b) =>
-        sortId(a.solution_id, b.solution_id)
-      );
-      const firstSol = sortedSols[0];
-      setSolId(firstSol?.solution_id ?? null);
-      const tr = firstSol
-        ? [...tiers]
-            .filter((t) => t.solution_id === firstSol.solution_id)
-            .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))[0]
-        : null;
-      setTierId(tr?.solution_tier_id ?? null);
+      if (!pendingTierDetailRef.current) {
+        const sortedSols = [...solutions].sort((a, b) =>
+          sortId(a.solution_id, b.solution_id)
+        );
+        const firstSol = sortedSols[0];
+        setSolId(firstSol?.solution_id ?? null);
+        const tr = firstSol
+          ? [...tiers]
+              .filter((t) => t.solution_id === firstSol.solution_id)
+              .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))[0]
+          : null;
+        setTierId(tr?.solution_tier_id ?? null);
+      }
       return;
     }
   }, [mode]);
@@ -444,6 +453,28 @@ export function AgencyView({ mode }: AgencyViewProps) {
     }
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (mode !== "catalog") return;
+    const nav = location.state as AgencyTierDetailNavState | null;
+    const target = nav?.openTierDetail;
+    if (!target?.solutionId || !target?.tierId) return;
+    pendingTierDetailRef.current = target;
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, mode, navigate]);
+
+  useEffect(() => {
+    if (mode !== "catalog" || state.status !== "ok") return;
+    const pending = pendingTierDetailRef.current;
+    if (!pending) return;
+    pendingTierDetailRef.current = null;
+    setPkgId(null);
+    setSolId(pending.solutionId);
+    setTierId(pending.tierId);
+    setCatalogViewMode("detail");
+    setFilterTier("");
+    setFilterSol("");
+  }, [mode, state.status]);
 
   useEffect(
     () => () => {
@@ -871,7 +902,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
         const solutionName = solution?.solution_name ?? tier.solution_id;
         const tierName = tier.solution_tier_name;
         const phaseRaw = tier.solution_tier_phase?.trim() ?? "";
-        const categoryRaw = tier.solution_tier_category?.trim() ?? "";
+        const categoryRaw = displayTierCategoryLabel(tier.solution_tier_category ?? "");
         const tacticRaw = tier.solution_tier_tactic?.trim() ?? "";
         const priceNum = sellPriceNumber(pr);
         const priceDisplay = sellPriceDisplay(pr);
@@ -1307,12 +1338,19 @@ export function AgencyView({ mode }: AgencyViewProps) {
           {AGENCY_VIEW_DESCRIPTION}{" "}
           {mode === "catalog" ? (
             <>
-              Use the <Link className="agency-hub__link" to="/packages">Packages</Link> tab to build a new bundle or
-              open an existing package workspace.
+              Use{" "}
+              <Link className="agency-hub__link" to="/package-builder">
+                Package Builder
+              </Link>{" "}
+              to build a new bundle or the{" "}
+              <Link className="agency-hub__link" to="/packages">
+                Packages
+              </Link>{" "}
+              tab to open an existing package workspace.
             </>
           ) : (
             <>
-              Use the <Link className="agency-hub__link" to="/">Solutions</Link> tab to search
+              Use the <Link className="agency-hub__link" to="/solutions">Solutions</Link> tab to search
               tiers across the entire catalog.
             </>
           )}
@@ -1570,7 +1608,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
           >
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
-                <Link className="agency-hub__link agency-package-workspace-bar__back" to="/">
+                <Link className="agency-hub__link agency-package-workspace-bar__back" to="/solutions">
                   ← Solutions
                 </Link>
                 {selectedPackageOverview && (
@@ -2117,7 +2155,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
                         onClick={() => setCatalogViewMode("all_table")}
                         aria-pressed={catalogViewMode === "all_table"}
                       >
-                        All tiers
+                        All tiers table
                       </button>
                       <button
                         type="button"

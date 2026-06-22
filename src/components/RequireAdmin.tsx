@@ -34,7 +34,7 @@ function AdminAccessDenied() {
           (SQL or Table Editor).
         </p>
         <Link className="admin-access-denied__link" to="/">
-          ← Back to Solutions Overview
+          ← Back to Solutions & Package Overview
         </Link>
       </div>
     </div>

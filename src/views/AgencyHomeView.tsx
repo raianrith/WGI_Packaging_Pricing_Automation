@@ -23,9 +23,25 @@ export function AgencyHomeView() {
 
   const openTier = useCallback(
     (solutionId: string, tierId: string) => {
-      navigate("/solutions", {
+      navigate("/directory-details", {
         state: { openTierDetail: { solutionId, tierId } },
       });
+    },
+    [navigate]
+  );
+
+  const openPackageType = useCallback(
+    (packageTypeId: string) => {
+      navigate("/package-builder", {
+        state: { packageBuilderTypeId: packageTypeId },
+      });
+    },
+    [navigate]
+  );
+
+  const openPresetPackage = useCallback(
+    (packageId: string) => {
+      navigate(`/package/${encodeURIComponent(packageId)}`);
     },
     [navigate]
   );
@@ -35,7 +51,7 @@ export function AgencyHomeView() {
       <div className="agency-home-view__glow" aria-hidden />
       <header className="agency-home-guide__hero">
         <div className="agency-home-guide__hero-top">
-          <span className="agency-hub__eyebrow">Guided browse</span>
+          <span className="agency-hub__eyebrow">Guided Browse</span>
           {catalog.status === "ok" ? (
             <button
               type="button"
@@ -49,21 +65,21 @@ export function AgencyHomeView() {
         </div>
         <h1 className="agency-hub__title">{AGENCY_HOME_TITLE}</h1>
         <p className="agency-hub__lede">
-          {AGENCY_HOME_DESCRIPTION} Browse the full{" "}
+          {AGENCY_HOME_DESCRIPTION} Or browse the full{" "}
           <Link className="agency-hub__link" to="/solutions">
-            Solutions
+            Directory
           </Link>{" "}
-          directory or open a{" "}
+          and{" "}
           <Link className="agency-hub__link" to="/packages">
             Packages
           </Link>{" "}
-          workspace.
+          workspaces.
         </p>
       </header>
 
       {catalog.status === "loading" || catalog.status === "idle" ? (
         <div className="agency-home-guide__loading" role="status">
-          Loading solution tiers from Supabase…
+          Loading playbook catalog from Supabase…
         </div>
       ) : null}
 
@@ -76,9 +92,14 @@ export function AgencyHomeView() {
       {catalog.status === "ok" ? (
         <GuidedTierBrowser
           allRows={catalog.rows}
+          packageTypes={catalog.packageTypes}
+          presetPackages={catalog.presetPackages}
+          packageBuilderSlots={catalog.packageBuilderSlots}
           selection={selection}
           onSelectionChange={setSelection}
           onOpenTier={openTier}
+          onOpenPackageType={openPackageType}
+          onOpenPresetPackage={openPresetPackage}
         />
       ) : null}
     </div>

@@ -2,12 +2,21 @@ import { useMemo, type CSSProperties } from "react";
 import type { CatalogTierTableRow } from "./CatalogTierTable";
 import {
   filterCatalogTierRows,
-  PLAYBOOK_UNSET,
   taxonomyDisplayLabel,
   type PlaybookFilterValue,
 } from "./CatalogPlaybookBrowser";
 import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
 import { compareTierCategoryLabels } from "../lib/tierCategories";
+import {
+  buildGuidedBrowseOptions,
+  filterPackageTypesByGuidedPath,
+  filterPresetPackagesByGuidedPath,
+  guidedOptionMeta,
+  guidedOptionStatSlots,
+  type GuidedBrowseOption,
+} from "../lib/packageBuilderTypeTaxonomy";
+import { slotsForPackageType } from "../lib/packageBuilderSlots";
+import type { Package, PackageBuilderPackageType, PackageBuilderSlotTemplate } from "../types";
 
 export type GuidedSelection = {
   phase: PlaybookFilterValue | null;
@@ -15,43 +24,10 @@ export type GuidedSelection = {
   tactic: PlaybookFilterValue | null;
 };
 
-type GuidedOption = {
-  value: PlaybookFilterValue;
-  label: string;
-  count: number;
-};
+type GuidedOption = GuidedBrowseOption;
 
 function compareLabels(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
-}
-
-function buildGuidedOptions(
-  rows: CatalogTierTableRow[],
-  getter: (r: CatalogTierTableRow) => string,
-  includeUnset: boolean,
-  compareFn: (a: string, b: string) => number = compareLabels
-): GuidedOption[] {
-  const counts = new Map<string, number>();
-  let unsetCount = 0;
-  for (const r of rows) {
-    const v = getter(r).trim();
-    if (!v) {
-      unsetCount++;
-      continue;
-    }
-    counts.set(v, (counts.get(v) ?? 0) + 1);
-  }
-  const options: GuidedOption[] = [...counts.entries()]
-    .sort(([a], [b]) => compareFn(a, b))
-    .map(([label, count]) => ({ value: label, label, count }));
-  if (includeUnset && unsetCount > 0) {
-    options.push({
-      value: PLAYBOOK_UNSET,
-      label: taxonomyDisplayLabel(PLAYBOOK_UNSET),
-      count: unsetCount,
-    });
-  }
-  return options;
 }
 
 const STEPS = [
@@ -83,7 +59,7 @@ const STEPS = [
     key: "tiers" as const,
     n: 4,
     title: "Tiers",
-    hint: "Vault tiers that match your path",
+    hint: "Vault tiers, preset packages, and configurable packages on this path",
     icon: "★",
     theme: "tiers",
   },
@@ -93,9 +69,14 @@ type StepTheme = (typeof STEPS)[number]["theme"];
 
 type Props = {
   allRows: CatalogTierTableRow[];
+  packageTypes: PackageBuilderPackageType[];
+  presetPackages: Package[];
+  packageBuilderSlots: PackageBuilderSlotTemplate[];
   selection: GuidedSelection;
   onSelectionChange: (next: GuidedSelection) => void;
   onOpenTier: (solutionId: string, tierId: string) => void;
+  onOpenPackageType: (packageTypeId: string) => void;
+  onOpenPresetPackage: (packageId: string) => void;
 };
 
 function OptionGrid({
@@ -136,36 +117,60 @@ function OptionGrid({
         </div>
       </div>
       <div className="agency-home-guide__options" role="listbox" aria-label={stepLabel}>
-        {options.map((opt, i) => (
+        {options.map((opt, i) => {
+          const statSlots = guidedOptionStatSlots(opt);
+          return (
           <button
             key={String(opt.value)}
             type="button"
             role="option"
             className={`agency-home-guide__option agency-home-guide__option--${stepTheme}`}
             style={{ "--guide-stagger": i } as CSSProperties}
+            aria-label={`${opt.label}. ${guidedOptionMeta(opt)}`}
             onClick={() => onSelect(opt.value)}
           >
             <span className="agency-home-guide__option-glow" aria-hidden />
-            <span className="agency-home-guide__option-icon" aria-hidden>
-              {stepIcon}
-            </span>
-            <span className="agency-home-guide__option-copy">
+            <span className="agency-home-guide__option-accent" aria-hidden />
+            <span className="agency-home-guide__option-top">
+              <span className="agency-home-guide__option-icon" aria-hidden>
+                {stepIcon}
+              </span>
               <span className="agency-home-guide__option-label">{opt.label}</span>
-              <span className="agency-home-guide__option-meta">
-                {opt.count} tier{opt.count === 1 ? "" : "s"}
+              <span className="agency-home-guide__option-arrow" aria-hidden>
+                →
               </span>
             </span>
-            <span className="agency-home-guide__option-arrow" aria-hidden>
-              →
+            <span className="agency-home-guide__option-stats" aria-hidden>
+              {statSlots.map((slot) => (
+                <span
+                  key={slot.key}
+                  className={`agency-home-guide__option-stat agency-home-guide__option-stat--${slot.tone}${
+                    slot.visible ? "" : " agency-home-guide__option-stat--placeholder"
+                  }`}
+                >
+                  {slot.label}
+                </span>
+              ))}
             </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpenTier }: Props) {
+export function GuidedTierBrowser({
+  allRows,
+  packageTypes,
+  presetPackages,
+  packageBuilderSlots,
+  selection,
+  onSelectionChange,
+  onOpenTier,
+  onOpenPackageType,
+  onOpenPresetPackage,
+}: Props) {
   const { phase, category, tactic } = selection;
 
   const rowsAfterPhase = useMemo(() => {
@@ -179,16 +184,49 @@ export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpe
   }, [allRows, phase, category, rowsAfterPhase]);
 
   const phaseOptions = useMemo(
-    () => buildGuidedOptions(allRows, (r) => r.phaseRaw, true, compareTierPhaseLabels),
-    [allRows]
+    () =>
+      buildGuidedBrowseOptions(
+        allRows,
+        packageTypes,
+        presetPackages,
+        (r) => r.phaseRaw,
+        true,
+        compareTierPhaseLabels,
+        null,
+        null,
+        "phase"
+      ),
+    [allRows, packageTypes, presetPackages]
   );
   const categoryOptions = useMemo(
-    () => buildGuidedOptions(rowsAfterPhase, (r) => r.categoryRaw, true, compareTierCategoryLabels),
-    [rowsAfterPhase]
+    () =>
+      buildGuidedBrowseOptions(
+        rowsAfterPhase,
+        packageTypes,
+        presetPackages,
+        (r) => r.categoryRaw,
+        true,
+        compareTierCategoryLabels,
+        phase,
+        null,
+        "category"
+      ),
+    [rowsAfterPhase, packageTypes, presetPackages, phase]
   );
   const tacticOptions = useMemo(
-    () => buildGuidedOptions(rowsAfterCategory, (r) => r.tacticRaw, true),
-    [rowsAfterCategory]
+    () =>
+      buildGuidedBrowseOptions(
+        rowsAfterCategory,
+        packageTypes,
+        presetPackages,
+        (r) => r.tacticRaw,
+        true,
+        compareLabels,
+        phase,
+        category,
+        "tactic"
+      ),
+    [rowsAfterCategory, packageTypes, presetPackages, phase, category]
   );
 
   const matchedTiers = useMemo(() => {
@@ -197,6 +235,20 @@ export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpe
       a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" })
     );
   }, [allRows, phase, category, tactic]);
+
+  const matchedPackageTypes = useMemo(() => {
+    if (phase === null || category === null || tactic === null) return [];
+    return filterPackageTypesByGuidedPath(packageTypes, phase, category, tactic).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  }, [packageTypes, phase, category, tactic]);
+
+  const matchedPresetPackages = useMemo(() => {
+    if (phase === null || category === null || tactic === null) return [];
+    return filterPresetPackagesByGuidedPath(presetPackages, phase, category, tactic).sort((a, b) =>
+      a.package_name.localeCompare(b.package_name, undefined, { sensitivity: "base" })
+    );
+  }, [presetPackages, phase, category, tactic]);
 
   const activeStep =
     phase === null ? 1 : category === null ? 2 : tactic === null ? 3 : 4;
@@ -349,7 +401,7 @@ export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpe
       {phase !== null && category !== null && tactic !== null ? (
         <section
           className="agency-home-guide__results agency-home-guide__results--tiers"
-          aria-label="Matching solution tiers"
+          aria-label="Matching solution tiers and packages"
         >
           <div className="agency-home-guide__results-head">
             <span className="agency-home-guide__results-badge" aria-hidden>
@@ -357,61 +409,145 @@ export function GuidedTierBrowser({ allRows, selection, onSelectionChange, onOpe
             </span>
             <div>
               <h3 className="agency-home-guide__results-title">
-                {matchedTiers.length} tier{matchedTiers.length === 1 ? "" : "s"} in this path
+                {matchedTiers.length} Solution Tier{matchedTiers.length === 1 ? "" : "s"}
+                {matchedPresetPackages.length > 0
+                  ? ` · ${matchedPresetPackages.length} Preset Package${
+                      matchedPresetPackages.length === 1 ? "" : "s"
+                    }`
+                  : ""}
+                {matchedPackageTypes.length > 0
+                  ? ` · ${matchedPackageTypes.length} Configurable Package${
+                      matchedPackageTypes.length === 1 ? "" : "s"
+                    }`
+                  : ""}{" "}
+                on this path
               </h3>
               <p className="agency-home-guide__results-hint">
-                Vault pricing for each tier — tap one to dive into scope, tasks, and narrative.
+                Open a vault tier for scope and pricing, open a preset package workspace, or start
+                building from a configurable package family.
               </p>
             </div>
           </div>
 
-          {matchedTiers.length === 0 ? (
+          {matchedPresetPackages.length > 0 ? (
+            <div className="agency-home-guide__package-block agency-home-guide__package-block--preset">
+              <h4 className="agency-home-guide__package-block-title">Preset packages</h4>
+              <ul className="agency-home-guide__package-list">
+                {matchedPresetPackages.map((pkg, i) => (
+                  <li key={pkg.package_id} style={{ "--guide-stagger": i } as CSSProperties}>
+                    <button
+                      type="button"
+                      className="agency-home-guide__package-card agency-home-guide__package-card--preset"
+                      onClick={() => onOpenPresetPackage(pkg.package_id)}
+                    >
+                      <span className="agency-home-guide__package-accent" aria-hidden />
+                      <span className="agency-home-guide__package-body">
+                        <span className="agency-home-guide__package-name">{pkg.package_name}</span>
+                        <span className="agency-home-guide__package-meta">
+                          Open package workspace
+                        </span>
+                      </span>
+                      <span className="agency-home-guide__package-chevron" aria-hidden>
+                        →
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {matchedPackageTypes.length > 0 ? (
+            <div className="agency-home-guide__package-block">
+              <h4 className="agency-home-guide__package-block-title">Configurable packages</h4>
+              <ul className="agency-home-guide__package-list">
+                {matchedPackageTypes.map((pt, i) => {
+                  const tierSlotCount = slotsForPackageType(packageBuilderSlots, pt.id).length;
+                  return (
+                    <li
+                      key={pt.id}
+                      style={{ "--guide-stagger": i } as CSSProperties}
+                    >
+                      <button
+                        type="button"
+                        className="agency-home-guide__package-card"
+                        onClick={() => onOpenPackageType(pt.id)}
+                      >
+                        <span className="agency-home-guide__package-accent" aria-hidden />
+                        <span className="agency-home-guide__package-body">
+                          <span className="agency-home-guide__package-name">{pt.name}</span>
+                          <span className="agency-home-guide__package-meta">
+                            {tierSlotCount} package tier{tierSlotCount === 1 ? "" : "s"} · Build in
+                            Package Builder
+                          </span>
+                        </span>
+                        <span className="agency-home-guide__package-chevron" aria-hidden>
+                          →
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {matchedTiers.length > 0 ? (
+            <div className="agency-home-guide__tier-block">
+              {matchedPackageTypes.length > 0 || matchedPresetPackages.length > 0 ? (
+                <h4 className="agency-home-guide__tier-block-title">Vault tiers</h4>
+              ) : null}
+              <ul className="agency-home-guide__tier-list">
+                {matchedTiers.map((row, i) => (
+                  <li
+                    key={row.tierId}
+                    style={{ "--guide-stagger": i } as CSSProperties}
+                  >
+                    <button
+                      type="button"
+                      className="agency-home-guide__tier-card"
+                      onClick={() => onOpenTier(row.solutionId, row.tierId)}
+                    >
+                      <span className="agency-home-guide__tier-accent" aria-hidden />
+                      <span className="agency-home-guide__tier-body">
+                        <span className="agency-home-guide__tier-main">
+                          <span className="agency-home-guide__tier-name">{row.tierName}</span>
+                          <span className="agency-home-guide__tier-solution">{row.solutionName}</span>
+                        </span>
+                        <span className="agency-home-guide__tier-metrics">
+                          <span className="agency-home-guide__tier-metric">
+                            <span className="agency-home-guide__tier-metric-label">Hours</span>
+                            <span className="agency-home-guide__tier-metric-value">
+                              {row.hoursDisplay}
+                              {row.hoursDisplay !== "—" ? " h" : ""}
+                            </span>
+                          </span>
+                          <span className="agency-home-guide__tier-metric agency-home-guide__tier-metric--sell">
+                            <span className="agency-home-guide__tier-metric-label">Net sell</span>
+                            <span className="agency-home-guide__tier-metric-value">{row.priceDisplay}</span>
+                          </span>
+                        </span>
+                      </span>
+                      <span className="agency-home-guide__tier-chevron" aria-hidden>
+                        →
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {matchedTiers.length === 0 &&
+          matchedPackageTypes.length === 0 &&
+          matchedPresetPackages.length === 0 ? (
             <div className="agency-home-guide__empty" role="status">
-              <p className="agency-home-guide__empty-title">No tiers on this path</p>
+              <p className="agency-home-guide__empty-title">Nothing on this path</p>
               <p className="agency-home-guide__empty-text">
                 Try a different tactic or adjust your earlier selections.
               </p>
             </div>
-          ) : (
-            <ul className="agency-home-guide__tier-list">
-              {matchedTiers.map((row, i) => (
-                <li
-                  key={row.tierId}
-                  style={{ "--guide-stagger": i } as CSSProperties}
-                >
-                  <button
-                    type="button"
-                    className="agency-home-guide__tier-card"
-                    onClick={() => onOpenTier(row.solutionId, row.tierId)}
-                  >
-                    <span className="agency-home-guide__tier-accent" aria-hidden />
-                    <span className="agency-home-guide__tier-body">
-                      <span className="agency-home-guide__tier-main">
-                        <span className="agency-home-guide__tier-name">{row.tierName}</span>
-                        <span className="agency-home-guide__tier-solution">{row.solutionName}</span>
-                      </span>
-                      <span className="agency-home-guide__tier-metrics">
-                        <span className="agency-home-guide__tier-metric">
-                          <span className="agency-home-guide__tier-metric-label">Hours</span>
-                          <span className="agency-home-guide__tier-metric-value">
-                            {row.hoursDisplay}
-                            {row.hoursDisplay !== "—" ? " h" : ""}
-                          </span>
-                        </span>
-                        <span className="agency-home-guide__tier-metric agency-home-guide__tier-metric--sell">
-                          <span className="agency-home-guide__tier-metric-label">Net sell</span>
-                          <span className="agency-home-guide__tier-metric-value">{row.priceDisplay}</span>
-                        </span>
-                      </span>
-                    </span>
-                    <span className="agency-home-guide__tier-chevron" aria-hidden>
-                      →
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          ) : null}
         </section>
       ) : null}
     </div>

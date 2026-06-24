@@ -41,6 +41,7 @@ type Props = {
   values: Partial<Record<PackageDetailFieldKey, string>>;
   onChange: (key: PackageDetailFieldKey, value: string) => void;
   styles: PackageDetailsFormBlockStyles;
+  hideCategory?: boolean;
 };
 
 export function emptyPackageDetails(): Record<PackageDetailFieldKey, string> {
@@ -79,7 +80,13 @@ export function packageRowToDetailsValues(
 }
 
 /** Same narrative layout as Solutions Builder tier form, stored on `packages` (not tier overlays). */
-export function PackageDetailsFormBlock({ packageIdReadonly, values, onChange, styles: s }: Props) {
+export function PackageDetailsFormBlock({
+  packageIdReadonly,
+  values,
+  onChange,
+  styles: s,
+  hideCategory = false,
+}: Props) {
   const { lbl, input, textarea, formGrid } = s;
   const v = (k: PackageDetailFieldKey) => values[k] ?? "";
 
@@ -91,10 +98,12 @@ export function PackageDetailsFormBlock({ packageIdReadonly, values, onChange, s
           <input style={input} readOnly tabIndex={-1} value={packageIdReadonly} />
         </label>
       ) : null}
-      <label style={lbl}>
-        <span className="admin-field-caption">Package category</span>
-        <input style={input} value={v("package_category")} onChange={(e) => onChange("package_category", e.target.value)} />
-      </label>
+      {!hideCategory ? (
+        <label style={lbl}>
+          <span className="admin-field-caption">Package category</span>
+          <input style={input} value={v("package_category")} onChange={(e) => onChange("package_category", e.target.value)} />
+        </label>
+      ) : null}
       <label style={lbl}>
         <span className="admin-field-caption">Package owner</span>
         <input style={input} value={v("package_owner")} onChange={(e) => onChange("package_owner", e.target.value)} />

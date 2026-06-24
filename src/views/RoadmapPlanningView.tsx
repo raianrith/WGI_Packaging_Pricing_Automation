@@ -62,6 +62,9 @@ import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCo
 import { ProposalSaveReminderBanner } from "../components/proposal-builder/ProposalSaveReminderBanner";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
+import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import { filterPresetPackages } from "../lib/presetPackages";
+import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
 import {
   applyVariableTierPricingToCards,
   computeVariableTierSellUsd,
@@ -81,6 +84,8 @@ import type {
   Solution,
   SolutionTier,
   SolutionTierPricing,
+  PackageBuilderPackageType,
+  PackageBuilderSlotTemplate,
   TaskGroupLineRow,
   TaskGroupRow,
   TaskRow,
@@ -100,6 +105,8 @@ type LoadState =
       tierPricing: SolutionTierPricing[];
       taskGroupLines: TaskGroupLineRow[];
       implementerHourGroups: ImplementerHourGroupRow[];
+      packageTypes: PackageBuilderPackageType[];
+      packageBuilderSlots: PackageBuilderSlotTemplate[];
     };
 
 type CatalogCtx = {
@@ -994,7 +1001,7 @@ export function RoadmapPlanningView() {
     }
     if (preserveCurrentProposal) setCatalogReloading(true);
     else setState({ status: "loading" });
-    const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes, implRes] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes, implRes, builderPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -1004,6 +1011,7 @@ export function RoadmapPlanningView() {
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("task_group_lines").select("*").order("sort_order"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
+      fetchPackageBuilderCatalog(client),
     ]);
     const err =
       pRes.error ||
@@ -1050,6 +1058,8 @@ export function RoadmapPlanningView() {
       tierPricing,
       taskGroupLines,
       implementerHourGroups,
+      packageTypes: builderPack.catalog.types,
+      packageBuilderSlots: builderPack.catalog.slots,
     });
     if (preserveCurrentProposal) {
       setCatalogReloading(false);
@@ -2082,6 +2092,11 @@ export function RoadmapPlanningView() {
     return [...catalogCtx.packages].sort((a, b) => sortId(a.package_id, b.package_id));
   }, [catalogCtx]);
 
+  const presetCatalogPackages = useMemo(() => {
+    if (!data?.packageTypes) return [];
+    return filterPresetPackages(catalogPackages, data.packageTypes);
+  }, [catalogPackages, data?.packageTypes]);
+
   if (state.status === "error") {
     return (
       <div className="roadmap-page">
@@ -2123,6 +2138,112 @@ export function RoadmapPlanningView() {
     sortedPhasesForScenario(phases, targetScenarioId).find((p) => p.id === targetPhaseId)?.title.trim() || "Phase";
   const totalOptionalCount = cards.filter((c) => c.scope === "optional").length;
   const totalDeferredCount = cards.filter((c) => c.scope === "deferred").length;
+
+  const renderConfigurablePackagesPanel = () => {
+    if (!data) return null;
+    return (
+    <ProposalConfigurablePackagesPanel
+      packageTypes={data.packageTypes}
+      slots={data.packageBuilderSlots}
+      packages={ctx.packages}
+      solutions={ctx.solutions}
+      tiers={ctx.tiers}
+      tasks={ctx.tasks}
+      pricing={[...ctx.pricingMap.values()]}
+      scenarios={scenarios}
+      phases={phases}
+      targetScenarioId={targetScenarioId}
+      targetPhaseId={targetPhaseId}
+      onTargetScenarioChange={setTargetScenarioId}
+      onTargetPhaseChange={setTargetPhaseId}
+      targetScenarioTitle={targetScenarioTitle}
+      targetPhaseTitle={targetPhaseTitle}
+      proposalStartDate={proposalStartDate}
+      proposalEndDate={proposalEndDate}
+      onAddPackage={(p, dates) => {
+        if (!canAddToTarget) return;
+        addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
+      }}
+      canAdd={canAddToTarget}
+      catalogReloading={catalogReloading}
+      onReloadCatalog={async () => {
+        await load(true);
+      }}
+      budget={budgetNumber}
+      scenarioBudgetBars={scenarios.map((s, i) => ({
+        scenarioId: s.id,
+        title: s.title,
+        includedSubtotal: scenarioRollups[i]?.priceSubtotal ?? 0,
+        isActive: s.id === targetScenarioId,
+      }))}
+      formatUsd={formatUsd}
+      addedLines={catalogAddedLines}
+      onRemoveAdded={removeCard}
+      copyFromScenarios={copyFromScenarios}
+      onCopyFromScenario={copyOfferingsFromScenario}
+    />
+    );
+  };
+
+  const renderCatalogPanel = (
+    panelVariant: "offerings" | "preset_packages" | "configurable_packages",
+    filteredPackages: Package[]
+  ) => (
+    <ProposalCatalogPanel
+      panelVariant={panelVariant}
+      ctx={ctx}
+      catalogTierTableRows={playbookCatalogTierTableRows}
+      variableTierTableRows={variableCatalogTierTableRows}
+      scenarios={scenarios}
+      phases={phases}
+      targetScenarioId={targetScenarioId}
+      targetPhaseId={targetPhaseId}
+      onTargetScenarioChange={setTargetScenarioId}
+      onTargetPhaseChange={setTargetPhaseId}
+      targetScenarioTitle={targetScenarioTitle}
+      targetPhaseTitle={targetPhaseTitle}
+      filteredPackages={filteredPackages}
+      packagePreview={(p) => cardForPackage(p, ctx, targetScenarioId, targetPhaseId)}
+      proposalStartDate={proposalStartDate}
+      proposalEndDate={proposalEndDate}
+      onAddPackage={(p, dates) => {
+        if (!canAddToTarget) return;
+        addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
+      }}
+      onAddTier={(t, dates) => {
+        if (!canAddToTarget) return;
+        addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates));
+      }}
+      onAddVariableTier={(t, dates, opts) => {
+        if (!canAddToTarget) return;
+        addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts, dates));
+      }}
+      previewVariableTierPriceUsd={previewVariableTierPriceUsd}
+      variableTierLinkTargets={variableTierLinkTargets}
+      onAddScratchTier={(dates) => {
+        if (!canAddToTarget) return;
+        addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx, dates));
+      }}
+      canAdd={canAddToTarget}
+      catalogReloading={catalogReloading}
+      onReloadCatalog={() => void load(true)}
+      budget={budgetNumber}
+      formatUsd={formatUsd}
+      scenarioBudgetBars={scenarios.map((s, i) => ({
+        scenarioId: s.id,
+        title: s.title,
+        includedSubtotal: scenarioRollups[i]?.priceSubtotal ?? 0,
+        isActive: s.id === targetScenarioId,
+      }))}
+      addedLines={catalogAddedLines}
+      onRemoveAdded={removeCard}
+      addedTierRefIds={addedTierRefIds}
+      addedPackageRefIds={addedPackageRefIds}
+      copyFromScenarios={copyFromScenarios}
+      onCopyFromScenario={copyOfferingsFromScenario}
+    />
+  );
+
   return (
     <div className="roadmap-page">
       <div className="roadmap-page__inner roadmap-page__inner--wide">
@@ -2132,8 +2253,9 @@ export function RoadmapPlanningView() {
               <p className="roadmap-hero__eyebrow">Sales &amp; Strategy Workspace</p>
               <h1 className="roadmap-hero__title">Proposal Builder</h1>
               <p className="roadmap-hero__lead">
-                Build client proposals step by step — set context, compare scenarios, add catalog offerings by playbook,
-                organize phases, then save and export. Catalog data lives in <Link to="/admin">Admin</Link>.
+                Build client proposals step by step — set context, compare scenarios, add preset and configurable
+                packages, add solution tiers, organize phases, then save and export. Catalog data lives in{" "}
+                <Link to="/admin">Admin</Link>.
               </p>
             </div>
             <div className="roadmap-hero__mode-tabs">
@@ -2299,6 +2421,30 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="scenarios"
                   onStepChange={setBuilderStep}
+                  nextLabel="Continue to preset packages"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "preset_packages" ? (
+              <>
+                {renderCatalogPanel("preset_packages", presetCatalogPackages)}
+                <ProposalStepNav
+                  step="preset_packages"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Continue to configurable packages"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "configurable_packages" ? (
+              <>
+                {renderConfigurablePackagesPanel()}
+                <ProposalStepNav
+                  step="configurable_packages"
+                  onStepChange={setBuilderStep}
                   nextLabel="Continue to add offerings"
                   {...proposalStepSaveProps}
                 />
@@ -2307,58 +2453,7 @@ export function RoadmapPlanningView() {
 
             {builderStep === "catalog" ? (
               <>
-                <ProposalCatalogPanel
-                  ctx={ctx}
-                  catalogTierTableRows={playbookCatalogTierTableRows}
-                  variableTierTableRows={variableCatalogTierTableRows}
-                  scenarios={scenarios}
-                  phases={phases}
-                  targetScenarioId={targetScenarioId}
-                  targetPhaseId={targetPhaseId}
-                  onTargetScenarioChange={setTargetScenarioId}
-                  onTargetPhaseChange={setTargetPhaseId}
-                  targetScenarioTitle={targetScenarioTitle}
-                  targetPhaseTitle={targetPhaseTitle}
-                  filteredPackages={catalogPackages}
-                  packagePreview={(p) => cardForPackage(p, ctx, targetScenarioId, targetPhaseId)}
-                  proposalStartDate={proposalStartDate}
-                  proposalEndDate={proposalEndDate}
-                  onAddPackage={(p, dates) => {
-                    if (!canAddToTarget) return;
-                    addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
-                  }}
-                  onAddTier={(t, dates) => {
-                    if (!canAddToTarget) return;
-                    addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates));
-                  }}
-                  onAddVariableTier={(t, dates, opts) => {
-                    if (!canAddToTarget) return;
-                    addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts, dates));
-                  }}
-                  previewVariableTierPriceUsd={previewVariableTierPriceUsd}
-                  variableTierLinkTargets={variableTierLinkTargets}
-                  onAddScratchTier={(dates) => {
-                    if (!canAddToTarget) return;
-                    addCard(cardForScratchTier(targetScenarioId, targetPhaseId, ctx, dates));
-                  }}
-                  canAdd={canAddToTarget}
-                  catalogReloading={catalogReloading}
-                  onReloadCatalog={() => void load(true)}
-                  budget={budgetNumber}
-                  formatUsd={formatUsd}
-                  scenarioBudgetBars={scenarios.map((s, i) => ({
-                    scenarioId: s.id,
-                    title: s.title,
-                    includedSubtotal: scenarioRollups[i]?.priceSubtotal ?? 0,
-                    isActive: s.id === targetScenarioId,
-                  }))}
-                  addedLines={catalogAddedLines}
-                  onRemoveAdded={removeCard}
-                  addedTierRefIds={addedTierRefIds}
-                  addedPackageRefIds={addedPackageRefIds}
-                  copyFromScenarios={copyFromScenarios}
-                  onCopyFromScenario={copyOfferingsFromScenario}
-                />
+                {renderCatalogPanel("offerings", catalogPackages)}
                 <ProposalStepNav
                   step="catalog"
                   onStepChange={setBuilderStep}
@@ -2407,7 +2502,7 @@ export function RoadmapPlanningView() {
               <>
                 <section className="roadmap-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">Step 5</p>
+                    <p className="proposal-step-panel__eyebrow">Step 7</p>
                     <h2 className="proposal-step-panel__title">Review &amp; Export</h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}

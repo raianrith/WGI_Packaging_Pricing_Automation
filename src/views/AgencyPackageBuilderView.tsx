@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { PackageBuildWizard } from "../components/PackageBuildWizard";
 import {
   PACKAGE_BUILDER_DESCRIPTION,
@@ -51,6 +51,9 @@ const BUILD_STEPS = [
 
 export function AgencyPackageBuilderView() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialPackageTypeId =
+    (location.state as { packageBuilderTypeId?: string } | null)?.packageBuilderTypeId ?? null;
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
@@ -137,18 +140,33 @@ export function AgencyPackageBuilderView() {
     void load();
   }, [load]);
 
+  const familyCount = packageTypes.length;
+
   return (
     <div className="agency-view-shell pkg-builder-page" style={shell}>
+      <div className="pkg-builder-page__glow" aria-hidden />
       <div className="pkg-builder-page__shell">
         <header className="pkg-builder-page__header">
           <div className="pkg-builder-page__header-copy">
-            <p className="pkg-builder-page__eyebrow">Guided workflow</p>
+            <div className="pkg-builder-page__header-top">
+              <p className="pkg-builder-page__eyebrow">Guided workflow</p>
+              {!loading && !loadErr && familyCount > 0 ? (
+                <span className="pkg-builder-page__stat">
+                  {familyCount} {familyCount === 1 ? "family" : "families"}
+                </span>
+              ) : null}
+            </div>
             <h1 className="pkg-builder-page__title">{PACKAGE_BUILDER_TITLE}</h1>
             <p className="pkg-builder-page__lead">{PACKAGE_BUILDER_DESCRIPTION}</p>
           </div>
           <Link className="pkg-builder-page__library-link" to="/packages">
+            <span className="pkg-builder-page__library-icon" aria-hidden>
+              ◫
+            </span>
             Browse package library
-            <span aria-hidden>→</span>
+            <span className="pkg-builder-page__library-arrow" aria-hidden>
+              →
+            </span>
           </Link>
         </header>
 
@@ -202,6 +220,7 @@ export function AgencyPackageBuilderView() {
               pricing={pricing}
               onReload={load}
               onCreated={(id) => navigate(`/package/${encodeURIComponent(id)}`)}
+              initialPackageTypeId={initialPackageTypeId}
             />
           )}
         </div>

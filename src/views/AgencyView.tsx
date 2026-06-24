@@ -25,6 +25,8 @@ import {
   parseTierOverrides,
 } from "../lib/packageTierOverrides";
 import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
+import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import { buildCatalogDirectoryRows } from "../lib/buildCatalogDirectoryRows";
 import { anchorTierForPackage } from "../lib/packageCombinedTasks";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
 import {
@@ -52,23 +54,25 @@ import {
   getSupabase,
 } from "../lib/supabase";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
+import {
+  CatalogDirectoryBrowser,
+  filterCatalogDirectoryRows,
+  type CatalogDirectoryTypeFilter,
+} from "../components/CatalogDirectoryBrowser";
+import { type PlaybookFilterValue } from "../components/CatalogPlaybookBrowser";
+import type { CatalogDirectorySortCol } from "../components/CatalogDirectoryTable";
 import { useToast } from "../context/ToastContext";
 import type {
   ImplementerHourGroupRow,
   Package,
+  PackageBuilderPackageType,
+  PackageBuilderSlotTemplate,
   PackageSolutionTier,
   Solution,
   SolutionTier,
   SolutionTierPricing,
   TaskRow,
 } from "../types";
-import {
-  CatalogPlaybookBrowser,
-  filterCatalogTierRows,
-  type PlaybookFilterValue,
-} from "../components/CatalogPlaybookBrowser";
-import type { CatalogTierSortCol } from "../components/CatalogTierTable";
-import { displayTierCategoryLabel } from "../lib/tierCategories";
 
 type CatalogViewMode = "detail" | "all_table";
 
@@ -254,29 +258,43 @@ function firstTierCategory(
 }
 
 export type AgencyWorkspaceMode = "package" | "catalog";
+export type AgencyCatalogSubview = "directory" | "detail";
 
 type AgencyViewProps = {
   mode: AgencyWorkspaceMode;
+  /** Catalog tab sub-view: directory table vs. tier detail (set by route). */
+  catalogSubview?: AgencyCatalogSubview;
 };
 
 type AgencyTierDetailNavState = {
   openTierDetail?: { solutionId: string; tierId: string };
 };
 
-export function AgencyView({ mode }: AgencyViewProps) {
+function readTierDetailFromNavigation(
+  locationState: unknown
+): { solutionId: string; tierId: string } | null {
+  const nav = locationState as AgencyTierDetailNavState | null;
+  const target = nav?.openTierDetail;
+  if (!target?.solutionId || !target?.tierId) return null;
+  return target;
+}
+
+export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewProps) {
   const { packageId: packageIdParam } = useParams<{ packageId: string }>();
   const location = useLocation();
+  const catalogViewMode: CatalogViewMode = catalogSubview === "detail" ? "detail" : "all_table";
+  const navTierSelection = readTierDetailFromNavigation(location.state);
 
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [pkgId, setPkgId] = useState<string | null>(null);
-  const [solId, setSolId] = useState<string | null>(null);
-  const [tierId, setTierId] = useState<string | null>(null);
+  const [solId, setSolId] = useState<string | null>(navTierSelection?.solutionId ?? null);
+  const [tierId, setTierId] = useState<string | null>(navTierSelection?.tierId ?? null);
   const [filterSol, setFilterSol] = useState("");
   const [filterPkg, setFilterPkg] = useState("");
   const [filterTier, setFilterTier] = useState("");
-  /** Catalog: all-tiers browser (default) vs. single-tier KPI detail. */
-  const [catalogViewMode, setCatalogViewMode] = useState<CatalogViewMode>("all_table");
+  /** Catalog: directory table vs. tier detail — driven by route (`catalogSubview`). */
   const [catalogTierTableQuery, setCatalogTierTableQuery] = useState("");
+  const [playbookItemType, setPlaybookItemType] = useState<CatalogDirectoryTypeFilter>(null);
   const [playbookPhase, setPlaybookPhase] = useState<PlaybookFilterValue>(null);
   const [playbookCategory, setPlaybookCategory] = useState<PlaybookFilterValue>(null);
   const [playbookTactic, setPlaybookTactic] = useState<PlaybookFilterValue>(null);
@@ -291,9 +309,12 @@ export function AgencyView({ mode }: AgencyViewProps) {
   );
   const solutionsScrollRef = useRef<HTMLDivElement>(null);
   const [catalogTierSort, setCatalogTierSort] = useState<{
-    col: CatalogTierSortCol;
+    col: CatalogDirectorySortCol;
     dir: "asc" | "desc";
-  }>({ col: "tier", dir: "asc" });
+  }>({ col: "name", dir: "asc" });
+  const [expandedSolutionIds, setExpandedSolutionIds] = useState<Set<string>>(() => new Set());
+  const [packageBuilderTypes, setPackageBuilderTypes] = useState<PackageBuilderPackageType[]>([]);
+  const [packageBuilderSlots, setPackageBuilderSlots] = useState<PackageBuilderSlotTemplate[]>([]);
   const solSearchFieldId = useId();
   const pkgSearchFieldId = useId();
   const tierSearchFieldId = useId();
@@ -304,7 +325,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
   const emptyVaultNotified = useRef(false);
   const routeInvalidNotified = useRef(false);
   const catalogFlyoutCloseTimer = useRef<number | null>(null);
-  const pendingTierDetailRef = useRef<{ solutionId: string; tierId: string } | null>(null);
+  const pendingTierDetailRef = useRef<{ solutionId: string; tierId: string } | null>(navTierSelection);
 
   const clearCatalogFlyoutCloseTimer = useCallback(() => {
     if (catalogFlyoutCloseTimer.current != null) {
@@ -353,7 +374,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -361,6 +382,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
+      fetchPackageBuilderCatalog(client),
     ]);
 
     const err =
@@ -411,25 +433,14 @@ export function AgencyView({ mode }: AgencyViewProps) {
       pricing,
       implementerHourGroups: implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]),
     });
+    setPackageBuilderTypes(slotPack.catalog.types.map((t) => ({ ...t })));
+    setPackageBuilderSlots(slotPack.catalog.slots.map((r) => ({ ...r })));
 
     if (mode === "package") {
       return;
     }
     if (mode === "catalog") {
       setPkgId(null);
-      if (!pendingTierDetailRef.current) {
-        const sortedSols = [...solutions].sort((a, b) =>
-          sortId(a.solution_id, b.solution_id)
-        );
-        const firstSol = sortedSols[0];
-        setSolId(firstSol?.solution_id ?? null);
-        const tr = firstSol
-          ? [...tiers]
-              .filter((t) => t.solution_id === firstSol.solution_id)
-              .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))[0]
-          : null;
-        setTierId(tr?.solution_tier_id ?? null);
-      }
       return;
     }
   }, [mode]);
@@ -467,7 +478,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
     setPkgId(null);
     setSolId(pending.solutionId);
     setTierId(pending.tierId);
-    setCatalogViewMode("detail");
     setFilterTier("");
     setFilterSol("");
   }, [mode, state.status]);
@@ -633,11 +643,15 @@ export function AgencyView({ mode }: AgencyViewProps) {
       if (catalogFlyoutPlacement !== null) setCatalogFlyoutPlacement(null);
       return;
     }
+    if (catalogViewMode === "all_table" && catalogFlyoutPlacement !== null) {
+      setCatalogFlyoutPlacement(null);
+      return;
+    }
     if (!catalogFlyoutPlacement) return;
     if (!solutionsNavRows.some((row) => row.solution_id === catalogFlyoutPlacement.solutionId)) {
       setCatalogFlyoutPlacement(null);
     }
-  }, [mode, catalogFlyoutPlacement, solutionsNavRows]);
+  }, [mode, catalogViewMode, catalogFlyoutPlacement, solutionsNavRows]);
 
   useEffect(() => {
     const el = solutionsScrollRef.current;
@@ -870,93 +884,100 @@ export function AgencyView({ mode }: AgencyViewProps) {
     return "Scope: pick a tier in the sidebar to show pricing and task KPIs.";
   }, [data, tierId, selectedTier, selectedTierDisplay, solutionForSelectedTier, packageForSelectedTier]);
 
-  const taskTimeSumByTierId = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!data) return m;
-    for (const k of data.tasks) {
-      if (k.task_time == null || !Number.isFinite(Number(k.task_time))) continue;
-      const tid = k.solution_tier_id;
-      m.set(tid, (m.get(tid) ?? 0) + Number(k.task_time));
-    }
-    return m;
-  }, [data]);
+  const tierPricingMathConfig = useMemo(
+    () => normalizeTierPricingMathConfig(loadTierPricingMathConfigFromStorage()),
+    []
+  );
 
-  /** One row per vault tier for catalog “all tiers” table (vault pricing only). */
-  const catalogTierTableRows = useMemo(() => {
+  const catalogDirectoryRows = useMemo(() => {
     if (!data) return [];
-    return [...data.tiers]
-      .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id))
-      .map((tier) => {
-        const pr = data.pricing.find((p) => p.solution_tier_id === tier.solution_tier_id) ?? null;
-        const link = data.packageTiers.find((r) => r.solution_tier_id === tier.solution_tier_id);
-        const pname = link
-          ? data.packages.find((p) => p.package_id === link.package_id)?.package_name?.trim() ||
-            link.package_id ||
-            "Standalone"
-          : "Standalone";
-        const solution = data.solutions.find((s) => s.solution_id === tier.solution_id);
-        const solutionName = solution?.solution_name ?? tier.solution_id;
-        const tierName = tier.solution_tier_name;
-        const phaseRaw = tier.solution_tier_phase?.trim() ?? "";
-        const categoryRaw = displayTierCategoryLabel(tier.solution_tier_category ?? "");
-        const tacticRaw = tier.solution_tier_tactic?.trim() ?? "";
-        const priceNum = sellPriceNumber(pr);
-        const priceDisplay = sellPriceDisplay(pr);
-        const vaultHours = pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
-        const sumTasks = taskTimeSumByTierId.get(tier.solution_tier_id) ?? null;
-        const hoursNum = vaultHours ?? (sumTasks != null && sumTasks > 0 ? sumTasks : null);
-        const hoursDisplay =
-          hoursNum != null && Number.isFinite(hoursNum) ? formatKpiNumber(hoursNum) : "—";
-        const taxable = pr?.taxable ?? false;
-        const tagsRaw = pr?.tags?.trim() ?? "";
-        return {
-          tierId: tier.solution_tier_id,
-          solutionId: tier.solution_id,
-          pname,
-          tierName,
-          solutionName,
-          phaseRaw,
-          categoryRaw,
-          tacticRaw,
-          priceNum,
-          priceDisplay,
-          hoursNum,
-          hoursDisplay,
-          taxable,
-          taxableSort: taxable ? 1 : 0,
-          taxableLabel: taxable ? "Taxable" : "Non-taxable",
-          tagsRaw,
-        };
-      });
-  }, [data, taskTimeSumByTierId]);
+    return buildCatalogDirectoryRows(
+      {
+        packages: data.packages,
+        solutions: data.solutions,
+        tiers: data.tiers,
+        packageTiers: data.packageTiers,
+        tasks: data.tasks,
+        pricing: data.pricing,
+      },
+      packageBuilderTypes,
+      packageBuilderSlots,
+      data.implementerHourGroups,
+      tierPricingMathConfig
+    );
+  }, [data, packageBuilderTypes, packageBuilderSlots, tierPricingMathConfig]);
 
-  const catalogAllTiersFilteredCount = useMemo(
+  const catalogDirectoryFilteredCount = useMemo(
     () =>
-      filterCatalogTierRows(
-        catalogTierTableRows,
+      filterCatalogDirectoryRows(
+        catalogDirectoryRows,
+        playbookItemType,
         playbookPhase,
         playbookCategory,
         playbookTactic,
         catalogTierTableQuery
       ).length,
-    [catalogTierTableRows, playbookPhase, playbookCategory, playbookTactic, catalogTierTableQuery]
+    [catalogDirectoryRows, playbookItemType, playbookPhase, playbookCategory, playbookTactic, catalogTierTableQuery]
   );
 
-  const toggleCatalogTierSort = (col: CatalogTierSortCol) => {
+  const toggleCatalogTierSort = (col: CatalogDirectorySortCol) => {
     setCatalogTierSort((prev) =>
       prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
     );
   };
 
+  const toggleExpandedSolution = useCallback((solutionId: string) => {
+    setExpandedSolutionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(solutionId)) next.delete(solutionId);
+      else next.add(solutionId);
+      return next;
+    });
+  }, []);
+
+  const openPresetPackage = useCallback(
+    (packageId: string) => {
+      navigate(`/package/${encodeURIComponent(packageId)}`);
+    },
+    [navigate]
+  );
+
+  const openConfigurablePackage = useCallback(
+    (packageBuilderTypeId: string) => {
+      navigate("/package-builder", { state: { packageBuilderTypeId } });
+    },
+    [navigate]
+  );
+
   const openCatalogTierDetail = useCallback(
     (solutionId: string, id: string | null) => {
+      if (mode === "catalog") {
+        if (location.pathname === "/directory-details") {
+          setSolId(solutionId);
+          setTierId(id);
+          setFilterTier("");
+          setFilterSol("");
+          return;
+        }
+        if (id) {
+          navigate("/directory-details", {
+            state: { openTierDetail: { solutionId, tierId: id } } satisfies AgencyTierDetailNavState,
+          });
+        } else {
+          navigate("/directory-details");
+          setSolId(solutionId);
+          setTierId(null);
+          setFilterTier("");
+          setFilterSol("");
+        }
+        return;
+      }
       setSolId(solutionId);
       setTierId(id);
       setFilterTier("");
       setFilterSol("");
-      if (mode === "catalog") setCatalogViewMode("detail");
     },
-    [mode]
+    [mode, navigate, location.pathname]
   );
 
   const selectCatalogTier = useCallback(
@@ -1278,6 +1299,15 @@ export function AgencyView({ mode }: AgencyViewProps) {
         if (solId !== null) setSolId(null);
         return;
       }
+
+      if (tierId) {
+        const tier = data.tiers.find((t) => t.solution_tier_id === tierId);
+        if (tier) {
+          if (solId !== tier.solution_id) setSolId(tier.solution_id);
+          return;
+        }
+      }
+
       if (!solId || !sorted.some((s) => s.solution_id === solId)) {
         setSolId(sorted[0].solution_id);
       }
@@ -1292,7 +1322,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
     if (!solId || !solutionsVisible.some((s) => s.solution_id === solId)) {
       setSolId(solutionsVisible[0]?.solution_id ?? null);
     }
-  }, [data, mode, pkgId, solutionsVisible, solId]);
+  }, [data, mode, pkgId, solutionsVisible, solId, tierId]);
 
   useEffect(() => {
     if (!data) return;
@@ -1321,7 +1351,16 @@ export function AgencyView({ mode }: AgencyViewProps) {
       if (tierId !== null) setTierId(null);
       return;
     }
-    if (!tierId || !tiersForSolution.some((t) => t.solution_tier_id === tierId)) {
+    if (tierId == null) {
+      setTierId(tiersForSolution[0]?.solution_tier_id ?? null);
+      return;
+    }
+    if (!tiersForSolution.some((t) => t.solution_tier_id === tierId)) {
+      const tier = data.tiers.find((t) => t.solution_tier_id === tierId);
+      if (tier && tier.solution_id !== solId) {
+        setSolId(tier.solution_id);
+        return;
+      }
       setTierId(tiersForSolution[0]?.solution_tier_id ?? null);
     }
   }, [data, mode, pkgId, tiersForWorkspacePackage, solId, tiersForSolution, tierId]);
@@ -1346,7 +1385,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
             </>
           ) : (
             <>
-              Use the <Link className="agency-hub__link" to="/solutions">Solutions</Link> tab to search
+              Use the <Link className="agency-hub__link" to="/solutions">Directory</Link> tab to search
               tiers across the entire catalog.
             </>
           )}
@@ -1372,7 +1411,15 @@ export function AgencyView({ mode }: AgencyViewProps) {
       )}
 
       {data && !(mode === "package" && packageRouteInvalid) && (
-        <div className="kb-grid" style={layout.grid}>
+        <div
+          className="kb-grid"
+          style={
+            mode === "catalog" && catalogViewMode === "all_table"
+              ? { ...layout.grid, gridTemplateColumns: "1fr" }
+              : layout.grid
+          }
+        >
+          {(mode !== "catalog" || catalogViewMode === "detail") && (
           <nav
             className={mode === "catalog" ? "kb-nav kb-nav--catalog-flyout" : "kb-nav"}
             aria-label={
@@ -1596,6 +1643,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
               </>
             )}
           </nav>
+          )}
 
           <main
             style={layout.main}
@@ -1604,7 +1652,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/solutions">
-                  ← Solutions
+                  ← Directory
                 </Link>
                 {selectedPackageOverview && (
                   <span className="agency-package-workspace-bar__context">
@@ -2124,46 +2172,20 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 className="agency-kpi-panel agency-kpi-panel--scope"
                 style={kpiSectionWrap}
                 aria-label={
-                  catalogViewMode === "all_table" ? "All solution tiers browser" : "Tier pricing and task summary"
+                  catalogViewMode === "all_table" ? "Directory browser" : "Directory tier detail"
                 }
               >
                 <div className="agency-kpi-panel__head agency-kpi-panel__head--with-toggle">
                   <div className="agency-catalog-view-head">
                     <div>
                       <h2 className="agency-kpi-panel__title">
-                        {catalogViewMode === "all_table" ? "All solution tiers" : "Tier summary"}
+                        {catalogViewMode === "all_table" ? "Directory" : "Directory details"}
                       </h2>
                       <p className="agency-kpi-panel__scope agency-kpi-panel__scope--tight">
                         {catalogViewMode === "all_table"
-                          ? `${catalogAllTiersFilteredCount} tier${catalogAllTiersFilteredCount === 1 ? "" : "s"} shown (${catalogTierTableRows.length} in vault)`
+                          ? `${catalogDirectoryFilteredCount} item${catalogDirectoryFilteredCount === 1 ? "" : "s"} shown (${catalogDirectoryRows.length} in vault)`
                           : kpiScopeLine}
                       </p>
-                    </div>
-                    <div className="agency-catalog-segment" role="group" aria-label="Catalog display mode">
-                      <button
-                        type="button"
-                        className={
-                          catalogViewMode === "all_table"
-                            ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
-                            : "agency-catalog-segment__btn"
-                        }
-                        onClick={() => setCatalogViewMode("all_table")}
-                        aria-pressed={catalogViewMode === "all_table"}
-                      >
-                        All tiers table
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          catalogViewMode === "detail"
-                            ? "agency-catalog-segment__btn agency-catalog-segment__btn--active"
-                            : "agency-catalog-segment__btn"
-                        }
-                        onClick={() => setCatalogViewMode("detail")}
-                        aria-pressed={catalogViewMode === "detail"}
-                      >
-                        Tier detail
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -2203,11 +2225,13 @@ export function AgencyView({ mode }: AgencyViewProps) {
             ) : null}
 
             {mode === "catalog" && catalogViewMode === "all_table" ? (
-              <CatalogPlaybookBrowser
-                allRows={catalogTierTableRows}
+              <CatalogDirectoryBrowser
+                allRows={catalogDirectoryRows}
+                itemType={playbookItemType}
                 phase={playbookPhase}
                 category={playbookCategory}
                 tactic={playbookTactic}
+                onItemTypeChange={setPlaybookItemType}
                 onPhaseChange={setPlaybookPhase}
                 onCategoryChange={setPlaybookCategory}
                 onTacticChange={setPlaybookTactic}
@@ -2215,7 +2239,11 @@ export function AgencyView({ mode }: AgencyViewProps) {
                 onTableSearchChange={setCatalogTierTableQuery}
                 sort={catalogTierSort}
                 onToggleSort={toggleCatalogTierSort}
+                expandedSolutionIds={expandedSolutionIds}
+                onToggleSolution={toggleExpandedSolution}
                 onOpenTier={selectCatalogTier}
+                onOpenPresetPackage={openPresetPackage}
+                onOpenConfigurablePackage={openConfigurablePackage}
               />
             ) : null}
 
@@ -2537,6 +2565,7 @@ export function AgencyView({ mode }: AgencyViewProps) {
 
       {typeof document !== "undefined" &&
         mode === "catalog" &&
+        catalogViewMode === "detail" &&
         catalogFlyoutPlacement &&
         catalogFlyoutContent &&
         createPortal(

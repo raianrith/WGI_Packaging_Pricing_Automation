@@ -27,6 +27,7 @@ import {
 } from "./ProposalCatalogLineRow";
 import { compareTierPhaseLabels } from "../../lib/tierTaxonomy";
 import { compareTierCategoryLabels } from "../../lib/tierCategories";
+import { proposalStepDef, type ProposalBuilderStep } from "./ProposalBuilderSteps";
 
 const UNSET = "Not classified";
 /** Sentinel: skip this drill-down level and show all tiers at the current scope. */
@@ -37,7 +38,10 @@ type CatalogCtxLike = {
   tiers: SolutionTier[];
 };
 
+type CatalogPanelVariant = "offerings" | "preset_packages" | "configurable_packages";
+
 type Props = {
+  panelVariant?: CatalogPanelVariant;
   catalogTierTableRows: CatalogTierTableRow[];
   variableTierTableRows: CatalogTierTableRow[];
   ctx: CatalogCtxLike;
@@ -245,6 +249,7 @@ function SolutionTierBrowsePath({
 }
 
 export function ProposalCatalogPanel({
+  panelVariant = "offerings",
   catalogTierTableRows,
   variableTierTableRows,
   ctx,
@@ -282,7 +287,11 @@ export function ProposalCatalogPanel({
   const searchId = useId();
   const travelHoursFieldId = useId();
   const paidAdsSpendFieldId = useId();
-  const [catalogMode, setCatalogMode] = useState<"playbook" | "packages" | "variable">("playbook");
+  const isPackageOnlyStep =
+    panelVariant === "preset_packages" || panelVariant === "configurable_packages";
+  const [catalogMode, setCatalogMode] = useState<"playbook" | "packages" | "variable">(
+    isPackageOnlyStep ? "packages" : "playbook"
+  );
   const [browsePhase, setBrowsePhase] = useState<string | null>(null);
   const [browseCategory, setBrowseCategory] = useState<string | null>(null);
   const [browseTactic, setBrowseTactic] = useState<string | null>(null);
@@ -459,8 +468,43 @@ export function ProposalCatalogPanel({
     }
   };
 
-  const catalogSliderPos =
-    catalogMode === "packages" ? 1 : catalogMode === "variable" ? 2 : 0;
+  const catalogSliderPos = catalogMode === "variable" ? 1 : 0;
+
+  const stepMeta = useMemo(() => {
+    const stepId: ProposalBuilderStep =
+      panelVariant === "preset_packages"
+        ? "preset_packages"
+        : panelVariant === "configurable_packages"
+          ? "configurable_packages"
+          : "catalog";
+    const def = proposalStepDef(stepId);
+    if (panelVariant === "preset_packages") {
+      return {
+        ...def,
+        lead:
+          "Add admin-defined preset packages to the active scenario and phase. This step is optional—you can skip it and continue.",
+      };
+    }
+    if (panelVariant === "configurable_packages") {
+      return {
+        ...def,
+        lead:
+          "Add custom packages built from configurable families in Package Builder. This step is optional—you can skip it and continue.",
+      };
+    }
+    return {
+      ...def,
+      lead:
+        "Choose where items land, then add Solution Tiers (phase → category → tactic) or Variable Tiers with dynamic pricing. Use Show All to skip a drill-down level.",
+    };
+  }, [panelVariant]);
+
+  const packagePrompt =
+    panelVariant === "configurable_packages" ? "Pick A Configurable Package" : "Pick A Preset Package";
+  const packageHint =
+    panelVariant === "configurable_packages"
+      ? "Custom packages from Package Builder families"
+      : "Admin-defined preset bundles";
 
   const linkModalPreviewUsd =
     linkModalTier && selectedLinkedTierRefId
@@ -527,13 +571,9 @@ export function ProposalCatalogPanel({
   return (
     <div className="proposal-step-panel proposal-catalog">
       <header className="proposal-step-panel__head">
-        <p className="proposal-step-panel__eyebrow">Step 3</p>
-        <h2 className="proposal-step-panel__title">Add Offerings</h2>
-        <p className="proposal-step-panel__lead">
-          Choose where items land, then add <strong>Solution Tiers</strong> (phase → category → tactic),{" "}
-          <strong>Packages</strong>, or <strong>Variable Tiers</strong> with dynamic pricing. Use{" "}
-          <strong>Show All</strong> to skip a drill-down level.
-        </p>
+        <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
+        <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
+        <p className="proposal-step-panel__lead">{stepMeta.lead}</p>
       </header>
 
       <section
@@ -613,6 +653,7 @@ export function ProposalCatalogPanel({
         />
       </div>
 
+      {isPackageOnlyStep ? null : (
       <div className="proposal-catalog-source">
         <nav className="proposal-catalog-source-tabs" aria-label="Catalog source">
           <div
@@ -631,19 +672,6 @@ export function ProposalCatalogPanel({
               onClick={goPlaybook}
             >
               Solution Tiers
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={catalogMode === "packages"}
-              className={`proposal-catalog-source-tabs__tab${catalogMode === "packages" ? " is-active" : ""}`}
-              onClick={() => {
-                setCatalogMode("packages");
-                resetBrowse();
-              }}
-            >
-              Packages
-              <span className="proposal-catalog-source-tabs__count">{ctx.packages.length}</span>
             </button>
             <button
               type="button"
@@ -672,39 +700,13 @@ export function ProposalCatalogPanel({
           ) : null}
         </nav>
       </div>
+      )}
 
-      <div className="proposal-catalog-browse__head">
-        {catalogMode === "playbook" ? (
-          <SolutionTierBrowsePath
-            browsePhase={browsePhase}
-            browseCategory={browseCategory}
-            browseTactic={browseTactic}
-            browseLevel={browseLevel}
-            onReset={resetBrowse}
-            onBackToPhases={() => {
-              setBrowsePhase(null);
-              setBrowseCategory(null);
-              setBrowseTactic(null);
-              setSearch("");
-            }}
-            onBackToCategories={() => {
-              setBrowseCategory(null);
-              setBrowseTactic(null);
-              setSearch("");
-            }}
-            onBackToTactics={() => {
-              setBrowseTactic(null);
-              setSearch("");
-            }}
-          />
-        ) : null}
-      </div>
-
-      {catalogMode === "packages" ? (
+      {isPackageOnlyStep || catalogMode === "packages" ? (
         <div className="proposal-catalog-offerings">
-          <p className="proposal-catalog-step-prompt">Pick A Package</p>
+          <p className="proposal-catalog-step-prompt">{packagePrompt}</p>
           <p className="proposal-catalog-offerings__hint">
-            Bundled solution tiers · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
+            {packageHint} · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
             <strong>{targetPhaseTitle}</strong>
           </p>
           <ProposalCatalogListSearch
@@ -728,7 +730,9 @@ export function ProposalCatalogPanel({
             emptyTitle={ctx.packages.length === 0 ? "No packages yet" : "No matches"}
             emptyText={
               ctx.packages.length === 0
-                ? "Create packages in Admin, then refresh the catalog."
+                ? panelVariant === "configurable_packages"
+                  ? "Build a package in Package Builder, then refresh the catalog."
+                  : "Create preset packages in Admin, then refresh the catalog."
                 : "Try a different search term."
             }
           >
@@ -802,6 +806,30 @@ export function ProposalCatalogPanel({
         </div>
       ) : (
         <>
+          <div className="proposal-catalog-browse__head">
+            <SolutionTierBrowsePath
+              browsePhase={browsePhase}
+              browseCategory={browseCategory}
+              browseTactic={browseTactic}
+              browseLevel={browseLevel}
+              onReset={resetBrowse}
+              onBackToPhases={() => {
+                setBrowsePhase(null);
+                setBrowseCategory(null);
+                setBrowseTactic(null);
+                setSearch("");
+              }}
+              onBackToCategories={() => {
+                setBrowseCategory(null);
+                setBrowseTactic(null);
+                setSearch("");
+              }}
+              onBackToTactics={() => {
+                setBrowseTactic(null);
+                setSearch("");
+              }}
+            />
+          </div>
           <p className="proposal-catalog-step-prompt">{stepPrompt}</p>
 
           {browseLevel === "phase" ? (

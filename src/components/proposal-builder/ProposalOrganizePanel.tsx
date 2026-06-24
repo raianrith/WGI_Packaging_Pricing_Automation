@@ -117,7 +117,7 @@ export function ProposalOrganizePanel({
     <div className="proposal-step-panel proposal-organize">
       <header className="proposal-organize__hero">
         <div className="proposal-organize__hero-text">
-          <p className="proposal-step-panel__eyebrow">Step 4</p>
+          <p className="proposal-step-panel__eyebrow">Step 6</p>
           <h2 className="proposal-step-panel__title">Organize &amp; Reorder Offerings</h2>
           <p className="proposal-step-panel__lead">
             Tune scope per line, drag offerings to reorder within each phase, move items between phases, and set{" "}

@@ -9,11 +9,11 @@ export const APP_TITLE = `${APP_BRAND_NAME} · ${APP_SCOPE_LABEL}`;
 /** Main heading on the Agency (read-only) view hero. */
 export const AGENCY_HERO_TITLE = "Solutions Directory";
 
-/** Home tab: guided tier browser hero. */
-export const AGENCY_HOME_TITLE = "Solution tier guide";
+/** Home tab: guided directory browser hero. */
+export const AGENCY_HOME_TITLE = "Guided Directory Browse";
 
 export const AGENCY_HOME_DESCRIPTION =
-  "Start with phase, then category, then tactic to surface vault tiers that match your playbook path. Blank taxonomy fields appear as Not Defined. Open any tier for full scope, pricing, and tasks.";
+  "Walk phase, category, and tactic to surface Solution Tiers, Preset Packages, and Configurable Packages that match your playbook path. Items without taxonomy tags appear as Not Defined—open any match for scope, pricing, and tasks.";
 
 /** Top navigation: catalog, package library, and package workspaces. */
 export const NAV_SOLUTIONS_OVERVIEW = "Solutions & Package Overview";
@@ -43,7 +43,7 @@ export const AGENCY_HUB_DESCRIPTION =
   "Each card opens a dedicated workspace for that bundle: solutions, tier sell prices, scope KPIs, and task detail—read only, synced from Supabase. Solutions without a package live on the Solutions tab, not here.";
 
 /** Hero copy on the Package Builder page. */
-export const PACKAGE_BUILDER_TITLE = "Package Builder";
+export const PACKAGE_BUILDER_TITLE = "Configurable Package Builder";
 
 export const PACKAGE_BUILDER_DESCRIPTION =
   "Assemble a new bundle in four guided steps—pick a package family, choose a tier slot, add vault solution tiers, and confirm pricing. When you’re done, we open the package workspace so you can refine scope and copy.";

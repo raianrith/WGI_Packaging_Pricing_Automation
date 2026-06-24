@@ -166,7 +166,6 @@ export function CatalogTierTable({
                       onOpenTier(r.solutionId, r.tierId);
                     }
                   }}
-                  title={`${r.tierName} · ${r.solutionName}`}
                 >
                   <td>
                     <div className="agency-catalog-tier-sheet__tier-title">{r.tierName}</div>

@@ -28,6 +28,12 @@ export type Package = {
   package_sell_discount_pct?: number | null;
   package_pricing_overrides?: PackagePricingOverrides | null;
   package_combined_tasks?: unknown | null;
+  /** Playbook phase labels for guided browse (preset packages only). */
+  phase_tags?: string[];
+  /** Playbook category labels for guided browse (preset packages only). */
+  category_tags?: string[];
+  /** Playbook tactic labels for guided browse (preset packages only). */
+  tactic_tags?: string[];
 };
 
 /** Admin-editable package type for Build a Package (e.g. Market Position Guide). */
@@ -35,6 +41,12 @@ export type PackageBuilderPackageType = {
   id: string;
   sort_order: number;
   name: string;
+  /** Playbook phase labels (multi-select). */
+  phase_tags: string[];
+  /** Playbook category labels (multi-select). */
+  category_tags: string[];
+  /** Playbook tactic labels (multi-select). */
+  tactic_tags: string[];
   updated_at?: string | null;
 };
 
@@ -54,6 +66,23 @@ export type PackageBuilderSlotTemplate = {
   allowed_solution_tier_ids: string[];
   /** Shown as a disclaimer when this tier is selected in Build a Package. */
   tier_notes: string | null;
+  /** Default package narratives copied when building from this slot (see `package_builder_slot_narrative_fields.sql`). */
+  package_owner?: string | null;
+  package_overview?: string | null;
+  package_overview_link?: string | null;
+  package_direction?: string | null;
+  package_what_is_it?: string | null;
+  package_why_is_it_valuable?: string | null;
+  package_when_should_it_be_used?: string | null;
+  package_assumption_prerequisites?: string | null;
+  package_in_scope?: string | null;
+  package_out_of_scope?: string | null;
+  package_final_deliverable?: string | null;
+  package_how_do_we_get_this_work_done?: string | null;
+  package_sop?: string | null;
+  package_resources?: string | null;
+  package_resource_templates?: string | null;
+  package_resource_tools?: string | null;
   updated_at?: string | null;
 };
 

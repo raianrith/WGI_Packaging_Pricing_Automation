@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PackageBuilderPackageType, PackageBuilderSlotTemplate } from "../types";
+import {
+  emptySlotNarrativeFields,
+  narrativeFieldsFromRow,
+  normalizeSlotNarrativeFields,
+} from "./packageSlotNarrative";
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -27,11 +32,33 @@ function parseOptionalNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export function normalizePackageTypeTags(tags: readonly string[]): string[] {
+  return normTagArray(tags);
+}
+
+function normTagArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of v) {
+    const label = String(item ?? "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 function normType(r: Record<string, unknown>): PackageBuilderPackageType {
   return {
     id: String(r.id ?? ""),
     sort_order: Number(r.sort_order ?? 0),
     name: String(r.name ?? ""),
+    phase_tags: normTagArray(r.phase_tags),
+    category_tags: normTagArray(r.category_tags),
+    tactic_tags: normTagArray(r.tactic_tags),
     updated_at: r.updated_at != null ? String(r.updated_at) : null,
   };
 }
@@ -53,6 +80,7 @@ function normSlot(
       r.tier_notes != null && String(r.tier_notes).trim() !== ""
         ? String(r.tier_notes).trim()
         : null,
+    ...narrativeFieldsFromRow(r),
     updated_at: r.updated_at != null ? String(r.updated_at) : null,
   };
 }
@@ -64,7 +92,15 @@ export function slotTierNotes(slot: PackageBuilderSlotTemplate): string | null {
 
 export function defaultPackageBuilderTypes(): PackageBuilderPackageType[] {
   return [
-    { id: "local-type-seed-1", sort_order: 1, name: "General", updated_at: null },
+    {
+      id: "local-type-seed-1",
+      sort_order: 1,
+      name: "General",
+      phase_tags: [],
+      category_tags: [],
+      tactic_tags: [],
+      updated_at: null,
+    },
   ];
 }
 
@@ -81,6 +117,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotNarrativeFields(),
       updated_at: null,
     },
     {
@@ -93,6 +130,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotNarrativeFields(),
       updated_at: null,
     },
     {
@@ -105,6 +143,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotNarrativeFields(),
       updated_at: null,
     },
   ];
@@ -121,12 +160,12 @@ export async function fetchPackageBuilderCatalog(
   const [typesRes, slotsRes, allowedRes] = await Promise.all([
     client
       .from("package_builder_package_types")
-      .select("id,sort_order,name,updated_at")
+      .select("id,sort_order,name,phase_tags,category_tags,tactic_tags,updated_at")
       .order("sort_order", { ascending: true }),
     client
       .from("package_builder_slot_templates")
       .select(
-        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,updated_at"
+        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,package_owner,package_overview,package_overview_link,package_direction,package_what_is_it,package_why_is_it_valuable,package_when_should_it_be_used,package_assumption_prerequisites,package_in_scope,package_out_of_scope,package_final_deliverable,package_how_do_we_get_this_work_done,package_sop,package_resources,package_resource_templates,package_resource_tools,updated_at"
       )
       .order("package_type_id", { ascending: true })
       .order("sort_order", { ascending: true }),
@@ -239,6 +278,15 @@ export function copySlotLimitSettings(
     price_ceiling: source.price_ceiling,
     solution_tier_limit: source.solution_tier_limit,
     allowed_solution_tier_ids: [...source.allowed_solution_tier_ids],
+  };
+}
+
+export function slotNarrativePayload(
+  slot: PackageBuilderSlotTemplate
+): ReturnType<typeof normalizeSlotNarrativeFields> & { tier_notes: string | null } {
+  return {
+    ...normalizeSlotNarrativeFields(slot),
+    tier_notes: slot.tier_notes?.trim() || null,
   };
 }
 

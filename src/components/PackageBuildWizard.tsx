@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { PackageBuilderFamilyDetail } from "./PackageBuilderFamilyDetail";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { todayISODate } from "../lib/dates";
+import { packageNarrativeFromSlot } from "../lib/packageSlotNarrative";
 import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import {
@@ -181,7 +183,7 @@ function WizardMeter({
 }
 
 export type PackageBuildWizardProps = {
-  variant?: "page" | "embedded";
+  variant?: "page" | "embedded" | "proposal";
   packageTypes: PackageBuilderPackageType[];
   slots: PackageBuilderSlotTemplate[];
   packages: Package[];
@@ -189,8 +191,14 @@ export type PackageBuildWizardProps = {
   tiers: SolutionTier[];
   tasks: TaskRow[];
   pricing: SolutionTierPricing[];
-  onCreated: (packageId: string) => void;
+  onCreated: (packageId: string, createdPackage?: Package) => void;
   onReload?: () => Promise<void>;
+  /** When set (e.g. from Solutions directory), open the wizard for this package family. */
+  initialPackageTypeId?: string | null;
+  /** When set (e.g. from Proposal Builder), open the wizard for this package family. */
+  launchPackageTypeId?: string | null;
+  onLaunchPackageTypeConsumed?: () => void;
+  wizardTitle?: string;
 };
 
 export function PackageBuildWizard({
@@ -204,8 +212,13 @@ export function PackageBuildWizard({
   pricing,
   onCreated,
   onReload,
+  initialPackageTypeId = null,
+  launchPackageTypeId = null,
+  onLaunchPackageTypeConsumed,
+  wizardTitle = "Build a Package",
 }: PackageBuildWizardProps) {
   const { toastError, toastNote } = useToast();
+  const startedFromDirectoryRef = useRef(false);
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizStep, setWizStep] = useState<WizardStep>(1);
@@ -215,6 +228,30 @@ export function PackageBuildWizard({
   const [tierSearch, setTierSearch] = useState("");
   const [pkgName, setPkgName] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
+  const [expandedFamilyTypeId, setExpandedFamilyTypeId] = useState<string | null>(null);
+
+  const familyDetailType = useMemo(
+    () => (expandedFamilyTypeId ? packageTypes.find((t) => t.id === expandedFamilyTypeId) ?? null : null),
+    [expandedFamilyTypeId, packageTypes]
+  );
+
+  const familyDetailSlots = useMemo(
+    () => (familyDetailType ? slotsForPackageType(slots, familyDetailType.id) : []),
+    [familyDetailType, slots]
+  );
+
+  const closeFamilyDetail = useCallback(() => {
+    setExpandedFamilyTypeId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!expandedFamilyTypeId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeFamilyDetail();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expandedFamilyTypeId, closeFamilyDetail]);
 
   const solutionById = useMemo(() => {
     const m = new Map<string, Solution>();
@@ -302,7 +339,7 @@ export function PackageBuildWizard({
     });
   }, [usage, tierPickQty, pricing, tasks, wizardTierDiscount.hourPct]);
 
-  const beginPackageBuild = (packageType: PackageBuilderPackageType) => {
+  const beginPackageBuild = useCallback((packageType: PackageBuilderPackageType) => {
     setWizardOpen(true);
     setWizStep(2);
     setSelectedPackageType({ ...packageType });
@@ -310,7 +347,26 @@ export function PackageBuildWizard({
     setTierPickQty(emptyTierQuantities());
     setTierSearch("");
     setPkgName(`${packageType.name} package`);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!initialPackageTypeId || startedFromDirectoryRef.current) return;
+    const pt = packageTypes.find((t) => t.id === initialPackageTypeId);
+    if (!pt) return;
+    startedFromDirectoryRef.current = true;
+    beginPackageBuild(pt);
+  }, [initialPackageTypeId, packageTypes, beginPackageBuild]);
+
+  useEffect(() => {
+    if (!launchPackageTypeId) return;
+    const pt = packageTypes.find((t) => t.id === launchPackageTypeId);
+    if (!pt) {
+      onLaunchPackageTypeConsumed?.();
+      return;
+    }
+    beginPackageBuild(pt);
+    onLaunchPackageTypeConsumed?.();
+  }, [launchPackageTypeId, packageTypes, beginPackageBuild, onLaunchPackageTypeConsumed]);
 
   const closeWizard = () => {
     if (createBusy) return;
@@ -368,6 +424,7 @@ export function PackageBuildWizard({
         package_category: selectedPackageType?.name?.trim() || null,
         package_hour_discount_pct: hourPct,
         package_sell_discount_pct: sellPct,
+        ...(selectedSlot ? packageNarrativeFromSlot(selectedSlot) : {}),
       };
       const { error: insErr } = await client.from("packages").insert(row);
       if (insErr) {
@@ -405,14 +462,17 @@ export function PackageBuildWizard({
       toastNote(`Package ${newId} created (${tierLineCount} tier line(s)).`);
       setWizardOpen(false);
       await onReload?.();
-      onCreated(newId);
+      onCreated(newId, row);
     } finally {
       setCreateBusy(false);
     }
   };
 
+  const showFamilyGrid = variant !== "proposal";
+
   return (
     <>
+      {showFamilyGrid ? (
       <section
         className={
           variant === "page"
@@ -425,17 +485,24 @@ export function PackageBuildWizard({
           {variant !== "page" ? (
             <span className="agency-pkg-build-start__eyebrow">Build a Package</span>
           ) : null}
-          <h2 id="pkg-build-start-title" className="agency-pkg-build-start__title">
-            {variant === "page"
-              ? "Choose a package family"
-              : "Step 1: choose the kind of package you are building"}
-          </h2>
+          <div className="agency-pkg-build-start__title-row">
+            <h2 id="pkg-build-start-title" className="agency-pkg-build-start__title">
+              {variant === "page"
+                ? "Choose a package family"
+                : "Step 1: choose the kind of package you are building"}
+            </h2>
+            {variant === "page" && packageTypes.length > 0 ? (
+              <span className="agency-pkg-build-start__count">
+                {packageTypes.length} available
+              </span>
+            ) : null}
+          </div>
           <p className="agency-pkg-build-start__lead">
             {variant === "page"
               ? "Select a template below to start the wizard. Tier limits are configured in "
               : "Pick a package family below. We’ll open the tier setup next, then you can add vault solution tiers. Limits are managed in "}
             <Link className="agency-hub__link" to="/admin">
-              Admin → Build-a-Package configuration
+              Admin → Configurable Package
             </Link>
             .
           </p>
@@ -448,36 +515,133 @@ export function PackageBuildWizard({
         ) : (
           <div className="agency-pkg-build-start__grid">
             {packageTypes.map((pt, index) => {
-              const tierCount = slotsForPackageType(slots, pt.id).length;
+              const typeSlots = slotsForPackageType(slots, pt.id);
+              const tierCount = typeSlots.length;
+              const cardClass =
+                variant === "page"
+                  ? "agency-pkg-build-start__card agency-pkg-build-start__card--page"
+                  : "agency-pkg-build-start__card";
               return (
-                <button
+                <div
                   key={pt.id}
-                  type="button"
-                  className={
+                  className="agency-pkg-build-start__card-wrap"
+                  style={
                     variant === "page"
-                      ? "agency-pkg-build-start__card agency-pkg-build-start__card--page"
-                      : "agency-pkg-build-start__card"
+                      ? { animationDelay: `${index * 0.055}s` }
+                      : undefined
                   }
-                  onClick={() => beginPackageBuild(pt)}
                 >
-                  <span className="agency-pkg-build-start__card-top">
-                    <span className="agency-pkg-build-start__card-num">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="agency-pkg-build-start__card-arrow" aria-hidden>
-                      →
-                    </span>
-                  </span>
-                  <span className="agency-pkg-build-start__card-title">{pt.name}</span>
-                  <span className="agency-pkg-build-start__card-meta">
-                    {tierCount} package tier{tierCount === 1 ? "" : "s"}
-                  </span>
-                </button>
+                  <article
+                    className={cardClass}
+                    data-accent-index={variant === "page" ? String(index % 7) : undefined}
+                  >
+                    <button
+                      type="button"
+                      className="agency-pkg-build-start__card-main"
+                      onClick={() => beginPackageBuild(pt)}
+                    >
+                      <span className="agency-pkg-build-start__card-top">
+                        <span className="agency-pkg-build-start__card-num">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span className="agency-pkg-build-start__card-arrow" aria-hidden>
+                          →
+                        </span>
+                      </span>
+                      <span className="agency-pkg-build-start__card-title">{pt.name}</span>
+                      <span className="agency-pkg-build-start__card-meta">
+                        {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                      </span>
+                    </button>
+                    <div
+                      className={
+                        variant === "page"
+                          ? "agency-pkg-build-start__card-foot"
+                          : "agency-pkg-build-start__card-actions"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="agency-pkg-build-start__card-detail-btn"
+                        aria-haspopup="dialog"
+                        onClick={() => setExpandedFamilyTypeId(pt.id)}
+                      >
+                        Show detail
+                      </button>
+                      {variant === "page" ? (
+                        <button
+                          type="button"
+                          className="agency-pkg-build-start__card-start"
+                          onClick={() => beginPackageBuild(pt)}
+                        >
+                          Start build
+                          <span aria-hidden>→</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                </div>
               );
             })}
           </div>
         )}
       </section>
+      ) : null}
+
+      {familyDetailType ? (
+        <div
+          className="pkg-family-detail-overlay"
+          role="presentation"
+          onClick={closeFamilyDetail}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pkg-family-detail-title"
+            className="pkg-family-detail-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="pkg-family-detail-modal__header">
+              <div className="pkg-family-detail-modal__head-copy">
+                <p className="pkg-family-detail-modal__eyebrow">Package family</p>
+                <h2 id="pkg-family-detail-title" className="pkg-family-detail-modal__title">
+                  {familyDetailType.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="pkg-family-detail-modal__close"
+                onClick={closeFamilyDetail}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </header>
+            <div className="pkg-family-detail-modal__body">
+              <PackageBuilderFamilyDetail slots={familyDetailSlots} />
+            </div>
+            <footer className="pkg-family-detail-modal__footer">
+              <button
+                type="button"
+                className="pkg-family-detail-modal__btn pkg-family-detail-modal__btn--secondary"
+                onClick={closeFamilyDetail}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="pkg-family-detail-modal__btn pkg-family-detail-modal__btn--primary"
+                onClick={() => {
+                  closeFamilyDetail();
+                  beginPackageBuild(familyDetailType);
+                }}
+              >
+                Start build
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
 
       {wizardOpen && (
         <div className="agency-pkg-wizard-overlay" role="presentation" onClick={closeWizard}>
@@ -490,7 +654,7 @@ export function PackageBuildWizard({
           >
             <header className="agency-pkg-wizard__header">
               <h2 id="pkg-wiz-title" className="agency-pkg-wizard__title">
-                Build a Package
+                {wizardTitle}
               </h2>
               <WizardStepper step={wizStep} />
             </header>
@@ -501,7 +665,7 @@ export function PackageBuildWizard({
                   <p className="agency-pkg-wizard__lead">
                     Choose the kind of package you are building. Limits for each tier are configured in{" "}
                     <Link className="agency-hub__link" to="/admin">
-                      Admin → Build-a-Package configuration
+                      Admin → Configurable Package
                     </Link>
                     .
                   </p>

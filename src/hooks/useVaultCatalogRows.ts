@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { buildCatalogTierTableRows } from "../lib/buildCatalogTierTableRows";
 import { compareTasksByOrder } from "../lib/taskOrder";
+import { filterPresetPackages } from "../lib/presetPackages";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -9,12 +10,15 @@ import {
 } from "../lib/supabase";
 import type {
   Package,
+  PackageBuilderPackageType,
+  PackageBuilderSlotTemplate,
   PackageSolutionTier,
   Solution,
   SolutionTier,
   SolutionTierPricing,
   TaskRow,
 } from "../types";
+import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 
 function sortId(a: string, b: string): number {
   const pa = a.split("-").map(Number);
@@ -30,7 +34,13 @@ function sortId(a: string, b: string): number {
 export type VaultCatalogLoadState =
   | { status: "idle" | "loading" }
   | { status: "error"; message: string }
-  | { status: "ok"; rows: CatalogTierTableRow[] };
+  | {
+      status: "ok";
+      rows: CatalogTierTableRow[];
+      packageTypes: PackageBuilderPackageType[];
+      packageBuilderSlots: PackageBuilderSlotTemplate[];
+      presetPackages: Package[];
+    };
 
 export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => void } {
   const [state, setState] = useState<VaultCatalogLoadState>({ status: "idle" });
@@ -61,13 +71,14 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, builderPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
       client.from("tasks").select("*").order("task_id"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
+      fetchPackageBuilderCatalog(client),
     ]);
 
     const err =
@@ -117,7 +128,15 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
       pricing,
     });
 
-    setState({ status: "ok", rows });
+    const presetPackages = filterPresetPackages(packages, builderPack.catalog.types);
+
+    setState({
+      status: "ok",
+      rows,
+      packageTypes: builderPack.catalog.types,
+      packageBuilderSlots: builderPack.catalog.slots,
+      presetPackages,
+    });
   }, []);
 
   useEffect(() => {

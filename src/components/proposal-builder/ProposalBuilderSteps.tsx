@@ -1,18 +1,32 @@
-export type ProposalBuilderStep = "setup" | "scenarios" | "catalog" | "board" | "review";
+export type ProposalBuilderStep =
+  | "setup"
+  | "scenarios"
+  | "preset_packages"
+  | "configurable_packages"
+  | "catalog"
+  | "board"
+  | "review";
 
-type StepDef = {
+export type ProposalStepDef = {
   id: ProposalBuilderStep;
   number: number;
   label: string;
   hint: string;
 };
 
-const STEPS: StepDef[] = [
+const STEPS: ProposalStepDef[] = [
   { id: "setup", number: 1, label: "Setup", hint: "Client & Budget" },
   { id: "scenarios", number: 2, label: "Scenarios & Phases", hint: "Names & Structure" },
-  { id: "catalog", number: 3, label: "Add Offerings", hint: "From Catalog" },
-  { id: "board", number: 4, label: "Organize & Reorder Offerings", hint: "Scope & Compare" },
-  { id: "review", number: 5, label: "Review", hint: "Save & Export" },
+  { id: "preset_packages", number: 3, label: "Add Preset Packages", hint: "Optional · Skip Anytime" },
+  {
+    id: "configurable_packages",
+    number: 4,
+    label: "Add Configurable Packages",
+    hint: "Optional · Skip Anytime",
+  },
+  { id: "catalog", number: 5, label: "Add Offerings", hint: "Solution & Variable Tiers" },
+  { id: "board", number: 6, label: "Organize & Reorder Offerings", hint: "Scope & Compare" },
+  { id: "review", number: 7, label: "Review", hint: "Save & Export" },
 ];
 
 type Props = {
@@ -23,6 +37,10 @@ type Props = {
   lineItemCount: number;
 };
 
+export function proposalStepDef(id: ProposalBuilderStep): ProposalStepDef {
+  return STEPS.find((s) => s.id === id) ?? STEPS[0]!;
+}
+
 export function ProposalBuilderSteps({
   active,
   onChange,
@@ -32,7 +50,7 @@ export function ProposalBuilderSteps({
 }: Props) {
   function stepStatus(id: ProposalBuilderStep): "done" | "active" | "pending" {
     if (id === active) return "active";
-    const order: ProposalBuilderStep[] = ["setup", "scenarios", "catalog", "board", "review"];
+    const order = proposalStepOrder();
     const ai = order.indexOf(active);
     const si = order.indexOf(id);
     if (si < ai) return "done";

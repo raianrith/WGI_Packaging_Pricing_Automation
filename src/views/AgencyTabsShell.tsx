@@ -4,13 +4,14 @@ export function AgencyTabsShell() {
   const { pathname } = useLocation();
   const packagesTabActive =
     pathname === "/packages" || pathname.startsWith("/package/");
-  const solutionsTabActive = pathname === "/solutions";
+  const directoryTabActive = pathname === "/solutions";
+  const directoryDetailsTabActive = pathname === "/directory-details";
 
   return (
     <div className="agency-tabs-shell">
       <div className="agency-tabs-shell__bar">
-        <nav className="agency-tabs-nav" aria-label="Solutions and package overview">
-          <ul className="agency-tabs agency-tabs--three">
+        <nav className="agency-tabs-nav" aria-label="Directory and package overview">
+          <ul className="agency-tabs agency-tabs--four">
             <li>
               <NavLink
                 to="/"
@@ -26,10 +27,20 @@ export function AgencyTabsShell() {
               <NavLink
                 to="/solutions"
                 className={() =>
-                  `agency-tab${solutionsTabActive ? " agency-tab--active" : ""}`
+                  `agency-tab${directoryTabActive ? " agency-tab--active" : ""}`
                 }
               >
-                Solutions
+                Directory
+              </NavLink>
+            </li>
+            <li>
+              <NavLink
+                to="/directory-details"
+                className={() =>
+                  `agency-tab${directoryDetailsTabActive ? " agency-tab--active" : ""}`
+                }
+              >
+                Directory Details
               </NavLink>
             </li>
             <li>

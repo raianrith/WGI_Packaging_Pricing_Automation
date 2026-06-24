@@ -26,7 +26,8 @@ export default function App() {
           <Route path="/package-builder" element={<AgencyPackageBuilderView />} />
           <Route path="/" element={<AgencyTabsShell />}>
             <Route index element={<AgencyHomeView />} />
-            <Route path="solutions" element={<AgencyView mode="catalog" />} />
+            <Route path="solutions" element={<AgencyView mode="catalog" catalogSubview="directory" />} />
+            <Route path="directory-details" element={<AgencyView mode="catalog" catalogSubview="detail" />} />
             <Route path="packages" element={<AgencyPackagesHub />} />
             <Route path="package/standalone" element={<Navigate to="/solutions" replace />} />
             <Route path="package/:packageId" element={<AgencyView mode="package" />} />

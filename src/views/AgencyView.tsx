@@ -143,10 +143,6 @@ function taxableLabel(pricing: SolutionTierPricing | null): string {
   return pricing.taxable ? "Taxable" : "Non-taxable";
 }
 
-function solutionNavTitle(s: Solution): string {
-  return s.solution_name.trim() || "Solution";
-}
-
 function tierNavTitle(t: SolutionTier, solutions: Solution[]): string {
   const sol = solutions.find((s) => s.solution_id === t.solution_id);
   const solPart = sol ? `${sol.solution_name} · ` : "";
@@ -1571,7 +1567,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                     ? "kb-nav-item kb-nav-item--solution-rich kb-nav-item--active"
                                     : "kb-nav-item kb-nav-item--solution-rich"
                                 }
-                                title={`${solutionNavTitle(s)} · Owner: ${s.ownerLabel}`}
                                 onMouseEnter={(e) => openCatalogFlyout(s.solution_id, e.currentTarget)}
                                 onFocus={(e) => openCatalogFlyout(s.solution_id, e.currentTarget)}
                                 onClick={(e) => {
@@ -2596,7 +2591,6 @@ export function AgencyView({ mode }: AgencyViewProps) {
                                   ? "agency-nav-flyout__item agency-nav-flyout__item--active"
                                   : "agency-nav-flyout__item"
                               }
-                              title={tierNavTitle(t, data!.solutions)}
                               onClick={() => {
                                 openCatalogTierDetail(t.solution_id, t.solution_tier_id);
                               }}

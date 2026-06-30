@@ -59,7 +59,7 @@ const STEPS = [
     key: "tiers" as const,
     n: 4,
     title: "Tiers",
-    hint: "Vault tiers, preset packages, and configurable packages on this path",
+    hint: "Individual solutions, preset packages, and configurable packages on this path",
     icon: "★",
     theme: "tiers",
   },
@@ -423,7 +423,7 @@ export function GuidedTierBrowser({
                 on this path
               </h3>
               <p className="agency-home-guide__results-hint">
-                Open a vault tier for scope and pricing, open a preset package workspace, or start
+                Open an individual solution for scope and pricing, open a preset package workspace, or start
                 building from a configurable package family.
               </p>
             </div>
@@ -495,7 +495,7 @@ export function GuidedTierBrowser({
           {matchedTiers.length > 0 ? (
             <div className="agency-home-guide__tier-block">
               {matchedPackageTypes.length > 0 || matchedPresetPackages.length > 0 ? (
-                <h4 className="agency-home-guide__tier-block-title">Vault tiers</h4>
+                <h4 className="agency-home-guide__tier-block-title">Individual solutions</h4>
               ) : null}
               <ul className="agency-home-guide__tier-list">
                 {matchedTiers.map((row, i) => (

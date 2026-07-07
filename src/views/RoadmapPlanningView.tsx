@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, SetStateAction } from "react";
-import { Link } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
   cardHoursForScenarioRollup,
@@ -18,6 +17,7 @@ import {
 } from "../lib/roadmapModel";
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { ProposalBuilderModeTabs, type ProposalBuilderMode } from "../components/proposal-builder/ProposalBuilderModeTabs";
+import { PROPOSAL_DURATION_LABEL } from "../branding";
 import { ProposalSavedProposalsPanel } from "../components/proposal-builder/ProposalSavedProposalsPanel";
 import { ProposalBuilderSteps, type ProposalBuilderStep } from "../components/proposal-builder/ProposalBuilderSteps";
 import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav";
@@ -1915,13 +1915,21 @@ export function RoadmapPlanningView() {
         <header className="roadmap-hero roadmap-hero--builder">
           <div className="roadmap-hero__main roadmap-hero__main--builder">
             <div className="roadmap-hero__copy">
-              <p className="roadmap-hero__eyebrow">Sales &amp; Strategy Workspace</p>
-              <h1 className="roadmap-hero__title">Proposal Builder</h1>
-              <p className="roadmap-hero__lead">
-                Build client proposals step by step — set context, compare scenarios, add preset and configurable
-                packages, add solution tiers, organize phases, then save and export. Solution data lives in{" "}
-                <Link to="/admin">Admin</Link>.
-              </p>
+              <div className="roadmap-hero__title-lockup">
+                <span className="roadmap-hero__title-icon" aria-hidden>
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M8 4h8l4 4v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinejoin="round"
+                    />
+                    <path d="M16 4v4h4" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
+                    <path d="M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <h1 className="roadmap-hero__title roadmap-hero__title--builder">Proposal Builder</h1>
+              </div>
             </div>
             <div className="roadmap-hero__mode-tabs">
               <ProposalBuilderModeTabs
@@ -1968,10 +1976,7 @@ export function RoadmapPlanningView() {
                 <section className="roadmap-panel roadmap-panel--meta proposal-step-panel">
                   <header className="proposal-step-panel__head">
                     <p className="proposal-step-panel__eyebrow">Step 1</p>
-                    <h2 className="proposal-step-panel__title">Proposal Context</h2>
-                    <p className="proposal-step-panel__lead">
-                      Name the roadmap, set the proposal date range, and optional client budget so each scenario can be compared against plan.
-                    </p>
+                    <h2 className="proposal-step-panel__title">Proposal &amp; Client Setup</h2>
                   </header>
                   <div className="roadmap-meta-grid">
                     <div className="roadmap-field">
@@ -2066,7 +2071,7 @@ export function RoadmapPlanningView() {
                       ) : null}
                     </label>
                     <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Pitch horizon</span>
+                      <span className="roadmap-field__cap">{PROPOSAL_DURATION_LABEL}</span>
                       <select
                         className="roadmap-input"
                         value={horizon}

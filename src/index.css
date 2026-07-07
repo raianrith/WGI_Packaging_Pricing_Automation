@@ -11792,7 +11792,7 @@ button {
 .roadmap-hero__main--builder {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem 1.5rem;
 }
@@ -11800,6 +11800,47 @@ button {
 .roadmap-hero__main--builder .roadmap-hero__copy {
   flex: 1 1 16rem;
   min-width: min(100%, 20rem);
+}
+
+.roadmap-hero__title-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.roadmap-hero__title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(236, 248, 244, 0.88)),
+    linear-gradient(135deg, rgba(13, 92, 77, 0.16), rgba(13, 92, 77, 0.05));
+  border: 1px solid rgba(13, 92, 77, 0.18);
+  color: rgba(13, 92, 77, 0.95);
+  box-shadow:
+    0 10px 22px rgba(13, 92, 77, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.roadmap-hero__title-icon svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.roadmap-hero__title--builder {
+  margin: 0;
+  font-size: clamp(1.45rem, 1.1rem + 1.1vw, 1.95rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  background: linear-gradient(118deg, #0b352e 0%, #0d5c4d 52%, #1a7a68 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .roadmap-hero__mode-tabs {
@@ -14644,6 +14685,24 @@ html[data-theme="dark"] .roadmap-card__kind--package,
 html[data-theme="dark"] .roadmap-card__kind--task,
 html[data-theme="dark"] .roadmap-card__kind--task_group {
   color: #87ddca;
+}
+
+html[data-theme="dark"] .roadmap-hero__title-icon {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(135, 221, 202, 0.08)),
+    linear-gradient(135deg, rgba(135, 221, 202, 0.16), rgba(167, 139, 250, 0.08));
+  border-color: rgba(135, 221, 202, 0.22);
+  color: #87ddca;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-theme="dark"] .roadmap-hero__title--builder {
+  background: linear-gradient(118deg, #d8fff6 0%, #87ddca 48%, #b8a8ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 html[data-theme="dark"] .roadmap-hero__lead a,

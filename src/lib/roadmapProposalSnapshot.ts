@@ -5,6 +5,12 @@ import { normalizeIsoDateInput } from "./proposalDates";
 
 export type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
 
+export function formatProposalDurationLabel(horizon: string | null | undefined): string {
+  if (!horizon || horizon === "custom") return "Custom";
+  if (horizon === "3" || horizon === "4" || horizon === "6" || horizon === "12") return `${horizon} months`;
+  return horizon;
+}
+
 export type RoadmapProposalSnapshot = {
   version: 1;
   clientLabel: string;

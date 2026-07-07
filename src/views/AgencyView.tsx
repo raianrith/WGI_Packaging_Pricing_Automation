@@ -26,6 +26,13 @@ import {
 } from "../lib/packageTierOverrides";
 import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import {
+  clearStashedCatalogTierNavigation,
+  readPendingCatalogTierNavigation,
+  readStashedCatalogTierNavigation,
+  stashCatalogTierNavigation,
+  type CatalogTierNavTarget,
+} from "../lib/catalogTierNavigation";
 import { buildCatalogDirectoryRows } from "../lib/buildCatalogDirectoryRows";
 import { anchorTierForPackage } from "../lib/packageCombinedTasks";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
@@ -267,23 +274,14 @@ type AgencyViewProps = {
 };
 
 type AgencyTierDetailNavState = {
-  openTierDetail?: { solutionId: string; tierId: string };
+  openTierDetail?: CatalogTierNavTarget;
 };
-
-function readTierDetailFromNavigation(
-  locationState: unknown
-): { solutionId: string; tierId: string } | null {
-  const nav = locationState as AgencyTierDetailNavState | null;
-  const target = nav?.openTierDetail;
-  if (!target?.solutionId || !target?.tierId) return null;
-  return target;
-}
 
 export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewProps) {
   const { packageId: packageIdParam } = useParams<{ packageId: string }>();
   const location = useLocation();
   const catalogViewMode: CatalogViewMode = catalogSubview === "detail" ? "detail" : "all_table";
-  const navTierSelection = readTierDetailFromNavigation(location.state);
+  const navTierSelection = readPendingCatalogTierNavigation(location.state);
 
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [pkgId, setPkgId] = useState<string | null>(null);
@@ -463,24 +461,34 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   useEffect(() => {
     if (mode !== "catalog") return;
-    const nav = location.state as AgencyTierDetailNavState | null;
-    const target = nav?.openTierDetail;
+    const target = readPendingCatalogTierNavigation(location.state);
     if (!target?.solutionId || !target?.tierId) return;
+    stashCatalogTierNavigation(target);
     pendingTierDetailRef.current = target;
-    navigate(location.pathname, { replace: true, state: null });
+    setPkgId(null);
+    setSolId(target.solutionId);
+    setTierId(target.tierId);
+    setFilterTier("");
+    setFilterSol("");
+    if ((location.state as AgencyTierDetailNavState | null)?.openTierDetail) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
   }, [location.pathname, location.state, mode, navigate]);
 
   useEffect(() => {
     if (mode !== "catalog" || state.status !== "ok") return;
-    const pending = pendingTierDetailRef.current;
+    const pending = pendingTierDetailRef.current ?? readStashedCatalogTierNavigation();
     if (!pending) return;
+    const tier = state.tiers.find((t) => t.solution_tier_id === pending.tierId);
+    if (!tier) return;
     pendingTierDetailRef.current = null;
+    clearStashedCatalogTierNavigation();
     setPkgId(null);
-    setSolId(pending.solutionId);
-    setTierId(pending.tierId);
+    setSolId(tier.solution_id);
+    setTierId(tier.solution_tier_id);
     setFilterTier("");
     setFilterSol("");
-  }, [mode, state.status]);
+  }, [mode, state]);
 
   useEffect(
     () => () => {
@@ -960,6 +968,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
           return;
         }
         if (id) {
+          stashCatalogTierNavigation({ solutionId, tierId: id });
           navigate("/directory-details", {
             state: { openTierDetail: { solutionId, tierId: id } } satisfies AgencyTierDetailNavState,
           });
@@ -1292,6 +1301,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   useEffect(() => {
     if (!data) return;
     if (mode === "catalog" && pkgId == null) {
+      if (pendingTierDetailRef.current || readStashedCatalogTierNavigation()) return;
       const sorted = [...data.solutions].sort((a, b) =>
         sortId(a.solution_id, b.solution_id)
       );
@@ -1326,6 +1336,9 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   useEffect(() => {
     if (!data) return;
+    if (mode === "catalog" && (pendingTierDetailRef.current || readStashedCatalogTierNavigation())) {
+      return;
+    }
     if (mode === "package" && pkgId != null) {
       const list = tiersForWorkspacePackage;
       if (list.length === 0) {

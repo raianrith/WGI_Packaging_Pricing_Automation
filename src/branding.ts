@@ -24,6 +24,9 @@ export const NAV_PACKAGE_BUILDER = "Package Builder";
 /** Top navigation: roadmap workspace (was “Roadmap planning”). */
 export const NAV_PROPOSAL_BUILDER = "Proposal Builder";
 
+/** Proposal Builder: length-of-engagement field (was “Pitch horizon”). */
+export const PROPOSAL_DURATION_LABEL = "Proposal duration";
+
 /** Top navigation: opens the org Claude project in a new tab. */
 export const NAV_AI_CHAT = "AI Chat";
 

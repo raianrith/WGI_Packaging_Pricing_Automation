@@ -10,6 +10,8 @@ import {
   type CatalogCtxLike,
 } from "./roadmapModel";
 import { proposalDateRangeLabel } from "./proposalDates";
+import { PROPOSAL_DURATION_LABEL } from "../branding";
+import { formatProposalDurationLabel } from "./roadmapProposalSnapshot";
 
 const BRAND_RGB: [number, number, number] = [13, 92, 77];
 const MARGIN_X = 14;
@@ -174,7 +176,9 @@ export function downloadProposalPdf(input: ProposalPdfExportInput): void {
   doc.setTextColor(60, 60, 60);
   const meta: string[] = [];
   if (clientLabel.trim()) meta.push(`Client: ${clientLabel.trim()}`);
-  meta.push(`Horizon: ${horizonMonths === "custom" ? "Custom" : `${horizonMonths} months`}`);
+  meta.push(
+    `${PROPOSAL_DURATION_LABEL}: ${formatProposalDurationLabel(String(horizonMonths === "custom" ? "custom" : horizonMonths))}`
+  );
   const scheduleLabel = proposalDateRangeLabel(proposalStartDate, proposalEndDate);
   if (scheduleLabel !== "—") meta.push(`Proposal dates: ${scheduleLabel}`);
   if (budgetNumber != null) meta.push(`Budget: ${formatUsd(budgetNumber)}`);

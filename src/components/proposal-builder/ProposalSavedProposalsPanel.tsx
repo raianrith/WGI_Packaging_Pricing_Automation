@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { PROPOSAL_DURATION_LABEL } from "../../branding";
+import { formatProposalDurationLabel } from "../../lib/roadmapProposalSnapshot";
 import type { RoadmapProposalRow } from "../../types";
 
 type Props = {
@@ -31,12 +33,6 @@ function parseBudgetDisplay(raw: string | null | undefined): string {
     return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
   }
   return t;
-}
-
-function formatHorizonLabel(horizon: string | null | undefined): string {
-  if (!horizon || horizon === "custom") return "Custom";
-  if (horizon === "3" || horizon === "4" || horizon === "6" || horizon === "12") return `${horizon} months`;
-  return horizon;
 }
 
 function formatCreator(row: RoadmapProposalRow): string {
@@ -236,8 +232,8 @@ export function ProposalSavedProposalsPanel({
                               <span className="proposal-saved-chip__value">{budget}</span>
                             </span>
                             <span className="proposal-saved-chip">
-                              <span className="proposal-saved-chip__label">Time Period</span>
-                              <span className="proposal-saved-chip__value">{formatHorizonLabel(row.horizon)}</span>
+                              <span className="proposal-saved-chip__label">{PROPOSAL_DURATION_LABEL}</span>
+                              <span className="proposal-saved-chip__value">{formatProposalDurationLabel(row.horizon)}</span>
                             </span>
                             <span className="proposal-saved-chip">
                               <span className="proposal-saved-chip__label">Creator</span>

@@ -1,5 +1,6 @@
 import { useCallback, useState, type CSSProperties } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { stashCatalogTierNavigation } from "../lib/catalogTierNavigation";
 import { AGENCY_HOME_DESCRIPTION, AGENCY_HOME_TITLE } from "../branding";
 import {
   GuidedTierBrowser,
@@ -23,6 +24,7 @@ export function AgencyHomeView() {
 
   const openTier = useCallback(
     (solutionId: string, tierId: string) => {
+      stashCatalogTierNavigation({ solutionId, tierId });
       navigate("/directory-details", {
         state: { openTierDetail: { solutionId, tierId } },
       });

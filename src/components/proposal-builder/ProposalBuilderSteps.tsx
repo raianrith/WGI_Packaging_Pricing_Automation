@@ -24,8 +24,8 @@ const STEPS: ProposalStepDef[] = [
     label: "Add Configurable Packages",
     hint: "Optional · Skip Anytime",
   },
-  { id: "catalog", number: 5, label: "Add Offerings", hint: "Solution & Variable Tiers" },
-  { id: "board", number: 6, label: "Organize & Reorder Offerings", hint: "Scope & Compare" },
+  { id: "catalog", number: 5, label: "Add Solutions", hint: "Solution & Variable Tiers" },
+  { id: "board", number: 6, label: "Organize & Reorder Proposal", hint: "Scope & Compare" },
   { id: "review", number: 7, label: "Review", hint: "Save & Export" },
 ];
 

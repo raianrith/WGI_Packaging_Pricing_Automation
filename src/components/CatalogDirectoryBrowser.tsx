@@ -382,7 +382,7 @@ export function CatalogDirectoryBrowser({
 
   return (
     <div className="agency-playbook-browser agency-playbook-browser--directory">
-      <div className="agency-tier-filters agency-tier-filters--directory" role="search" aria-label="Filter catalog directory">
+      <div className="agency-tier-filters agency-tier-filters--directory" role="search" aria-label="Filter solutions directory">
         <div className="agency-tier-filters__row agency-tier-filters__row--directory">
           <TypeFilterSelect
             id={typeId}

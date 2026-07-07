@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { NAV_SOLUTIONS_OVERVIEW } from "../branding";
 import { useAuth } from "../context/AuthContext";
 
 /** Only renders `children` when `profiles.is_admin` is true for the signed-in user. */
@@ -34,7 +35,7 @@ function AdminAccessDenied() {
           (SQL or Table Editor).
         </p>
         <Link className="admin-access-denied__link" to="/">
-          ← Back to Solutions & Package Overview
+          ← Back to {NAV_SOLUTIONS_OVERVIEW}
         </Link>
       </div>
     </div>

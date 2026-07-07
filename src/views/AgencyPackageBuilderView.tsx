@@ -43,9 +43,9 @@ const shell: CSSProperties = {
 };
 
 const BUILD_STEPS = [
-  { n: 1, label: "Package type", hint: "Choose a family" },
-  { n: 2, label: "Package tier", hint: "Basic · Standard · Advanced" },
-  { n: 3, label: "Vault tiers", hint: "Add solution tiers" },
+  { n: 1, label: "Template", hint: "Pick a template" },
+  { n: 2, label: "Tier", hint: "Basic · Standard · Advanced" },
+  { n: 3, label: "Solution components", hint: "Add solutions" },
   { n: 4, label: "Pricing", hint: "Confirm discounts" },
 ] as const;
 
@@ -152,7 +152,7 @@ export function AgencyPackageBuilderView() {
               <p className="pkg-builder-page__eyebrow">Guided workflow</p>
               {!loading && !loadErr && familyCount > 0 ? (
                 <span className="pkg-builder-page__stat">
-                  {familyCount} {familyCount === 1 ? "family" : "families"}
+                  {familyCount} {familyCount === 1 ? "template" : "templates"}
                 </span>
               ) : null}
             </div>

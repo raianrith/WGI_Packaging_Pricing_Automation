@@ -26,14 +26,14 @@ export function ProposalCopyScenarioOfferings({ targetScenarioTitle, sources, on
         Copy from another scenario
       </p>
       {withOfferings.length === 0 ? (
-        <p className="proposal-added-card__copy-hint">Add offerings to another scenario first, then copy them here.</p>
+        <p className="proposal-added-card__copy-hint">Add solutions to another scenario first, then copy them here.</p>
       ) : (
         <div className="proposal-added-card__copy-row">
           <select
             className="roadmap-input proposal-added-card__copy-select"
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
-            aria-label="Scenario to copy offerings from"
+            aria-label="Scenario to copy solutions from"
           >
             <option value="">Select scenario…</option>
             {withOfferings.map((s) => (

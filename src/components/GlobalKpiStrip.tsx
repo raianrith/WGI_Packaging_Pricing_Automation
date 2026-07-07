@@ -88,7 +88,7 @@ export function GlobalKpiStrip() {
 
   const items: { key: keyof Counts; label: string; hint: string }[] = [
     { key: "packages", label: "Packages", hint: "Bundles" },
-    { key: "solutions", label: "Solutions", hint: "Offerings" },
+    { key: "solutions", label: "Solutions", hint: "Tiers & packages" },
     { key: "tiers", label: "Tiers", hint: "Variants" },
     { key: "tasks", label: "Tasks", hint: "Steps" },
     { key: "uniqueTasks", label: "Unique Tasks", hint: "Distinct names" },

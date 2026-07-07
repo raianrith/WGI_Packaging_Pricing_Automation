@@ -1,11 +1,10 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { RoadmapCard, RoadmapCardKind, RoadmapPhase, RoadmapScenario } from "./roadmapModel";
+import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "./roadmapModel";
 import {
   budgetVsScenarioStatus,
   cardHoursForScenarioRollup,
   cardPriceUsdForRollup,
-  effectiveHoursStr,
   effectivePriceStr,
   sortedPhasesForScenario,
   type CatalogCtxLike,
@@ -40,25 +39,6 @@ function formatUsd(n: number | null | undefined): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(Number(n));
-}
-
-function kindLabel(k: RoadmapCardKind): string {
-  switch (k) {
-    case "package":
-      return "Package";
-    case "solution":
-      return "Solution";
-    case "tier":
-      return "Tier";
-    case "task":
-      return "Task";
-    case "task_group":
-      return "Task group";
-    case "custom_tier":
-      return "Scratch tier";
-    default:
-      return k;
-  }
 }
 
 function safeFilenamePart(s: string): string {
@@ -107,9 +87,7 @@ function renderLineItemsTable(
     const deliverable = c.headline.trim() || "(untitled)";
     return [
       deliverable,
-      kindLabel(c.kind),
       proposalDateRangeLabel(c.startDate, c.endDate),
-      effectiveHoursStr(c) || "—",
       effectivePriceStr(c, ctx, computeScratchSellPrice) || "—",
     ];
   });
@@ -117,7 +95,7 @@ function renderLineItemsTable(
   autoTable(doc, {
     startY,
     margin: { left: MARGIN_X, right: MARGIN_X },
-    head: [["Deliverable", "Type", "Dates", "Hours", "Price"]],
+    head: [["Deliverable", "Dates", "Price"]],
     body,
     styles: { fontSize: 8.5, cellPadding: 2.5, overflow: "linebreak", valign: "top" },
     headStyles: {
@@ -128,11 +106,9 @@ function renderLineItemsTable(
     },
     alternateRowStyles: { fillColor: [248, 246, 242] },
     columnStyles: {
-      0: { cellWidth: CONTENT_W - 88 },
-      1: { cellWidth: 22 },
-      2: { cellWidth: 28 },
-      3: { cellWidth: 16, halign: "right" },
-      4: { cellWidth: 22, halign: "right" },
+      0: { cellWidth: CONTENT_W - 58 },
+      1: { cellWidth: 36 },
+      2: { cellWidth: 22, halign: "right" },
     },
   });
 

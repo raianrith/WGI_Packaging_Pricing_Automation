@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../../context/ToastContext";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { budgetVsScenarioStatus, cardHoursForScenarioRollup, cardPriceUsdForRollup, sortedPhasesForScenario } from "../../lib/roadmapModel";
+import {
+  PROPOSAL_PRICING_EDITOR_DENIED_MESSAGE,
+  canEditProposalPricing,
+} from "../../lib/proposalPricingAccess";
 import { TaskSortableList } from "../TaskTableSortable";
 import { ProposalOrganizeLineCard } from "./ProposalOrganizeLineCard";
 import { ProposalOrganizePricingModal } from "./ProposalOrganizePricingModal";
@@ -58,9 +64,24 @@ export function ProposalOrganizePanel({
   onClearScenarioItems,
   onUpdateScenarioNarrative,
 }: Props) {
+  const { user } = useAuth();
+  const { toastNote } = useToast();
+  const canEditPricing = canEditProposalPricing(user);
   const [viewScenarioId, setViewScenarioId] = useState(initialScenarioId);
   const [pricingCardKey, setPricingCardKey] = useState<string | null>(null);
-  const pricingCard = pricingCardKey ? cards.find((c) => c.key === pricingCardKey) ?? null : null;
+  const pricingCard =
+    canEditPricing && pricingCardKey ? cards.find((c) => c.key === pricingCardKey) ?? null : null;
+
+  const handleEditPricing = useCallback(
+    (card: RoadmapCard) => {
+      if (!canEditProposalPricing(user)) {
+        toastNote(PROPOSAL_PRICING_EDITOR_DENIED_MESSAGE);
+        return;
+      }
+      setPricingCardKey(card.key);
+    },
+    [toastNote, user]
+  );
 
   useEffect(() => {
     if (scenarios.some((s) => s.id === viewScenarioId)) return;
@@ -118,12 +139,7 @@ export function ProposalOrganizePanel({
       <header className="proposal-organize__hero">
         <div className="proposal-organize__hero-text">
           <p className="proposal-step-panel__eyebrow">Step 6</p>
-          <h2 className="proposal-step-panel__title">Organize &amp; Reorder Offerings</h2>
-          <p className="proposal-step-panel__lead">
-            Tune scope per line, drag offerings to reorder within each phase, move items between phases, and set{" "}
-            <strong>proposal hours &amp; pricing</strong> when the catalog numbers are not what you want on the final
-            proposal.
-          </p>
+          <h2 className="proposal-step-panel__title">Organize &amp; Reorder Proposal</h2>
         </div>
       </header>
 
@@ -214,7 +230,7 @@ export function ProposalOrganizePanel({
       </section>
 
       <details className="proposal-organize__narrative">
-        <summary>Approach / Narrative For Export</summary>
+        <summary>Client-Facing Narrative</summary>
         <textarea
           className="roadmap-input"
           rows={2}
@@ -226,7 +242,7 @@ export function ProposalOrganizePanel({
 
       {scenCards.length === 0 ? (
         <p className="proposal-organize__empty roadmap-muted">
-          No items in this scenario yet. Go to <strong>Add Offerings</strong> to build the catalog lines first.
+          No items in this scenario yet. Go to <strong>Add Solutions</strong> to build solution lines first.
         </p>
       ) : (
         <div className="proposal-organize__phases">
@@ -280,7 +296,7 @@ export function ProposalOrganizePanel({
                           onPatch={onPatchCard}
                           onRemove={onRemoveCard}
                           onDetails={onOpenDetails}
-                          onEditPricing={(card) => setPricingCardKey(card.key)}
+                          onEditPricing={handleEditPricing}
                         />
                       ))}
                     </TaskSortableList>

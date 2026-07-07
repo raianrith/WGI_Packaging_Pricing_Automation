@@ -149,7 +149,7 @@ function crumbLabel(value: string | null): string {
 }
 
 function phaseContextLabel(phase: string | null): string {
-  if (!phase || phase === BROWSE_SHOW_ALL) return "catalog";
+  if (!phase || phase === BROWSE_SHOW_ALL) return "Solutions";
   return `${phase} phase`;
 }
 
@@ -489,21 +489,21 @@ export function ProposalCatalogPanel({
       return {
         ...def,
         lead:
-          "Add custom packages built from configurable families in Package Builder. This step is optional—you can skip it and continue.",
+          "Build custom packages from configurable templates in Package Builder. This step is optional—you can skip it and continue.",
       };
     }
     return {
       ...def,
       lead:
-        "Choose where items land, then add Solution Tiers (phase → category → tactic) or Variable Tiers with dynamic pricing. Use Show All to skip a drill-down level.",
+        "Choose where items land, then add Solution Tiers or Variable Tiers with dynamic pricing. Use Show All to skip a drill-down level.",
     };
   }, [panelVariant]);
 
   const packagePrompt =
-    panelVariant === "configurable_packages" ? "Pick A Configurable Package" : "Pick A Preset Package";
+    panelVariant === "configurable_packages" ? "Pick A Template" : "Pick A Preset Package";
   const packageHint =
     panelVariant === "configurable_packages"
-      ? "Custom packages from Package Builder families"
+      ? "Custom packages from Package Builder templates"
       : "Admin-defined preset bundles";
 
   const linkModalPreviewUsd =
@@ -655,7 +655,7 @@ export function ProposalCatalogPanel({
 
       {isPackageOnlyStep ? null : (
       <div className="proposal-catalog-source">
-        <nav className="proposal-catalog-source-tabs" aria-label="Catalog source">
+        <nav className="proposal-catalog-source-tabs" aria-label="Solution source">
           <div
             className="proposal-catalog-source-tabs__track"
             role="tablist"
@@ -695,7 +695,7 @@ export function ProposalCatalogPanel({
               onClick={onReloadCatalog}
               disabled={catalogReloading}
             >
-              {catalogReloading ? "Refreshing…" : "Refresh catalog"}
+              {catalogReloading ? "Refreshing…" : "Refresh solutions"}
             </button>
           ) : null}
         </nav>
@@ -731,8 +731,8 @@ export function ProposalCatalogPanel({
             emptyText={
               ctx.packages.length === 0
                 ? panelVariant === "configurable_packages"
-                  ? "Build a package in Package Builder, then refresh the catalog."
-                  : "Create preset packages in Admin, then refresh the catalog."
+                  ? "Build a package in Package Builder, then refresh solutions."
+                  : "Create preset packages in Admin, then refresh solutions."
                 : "Try a different search term."
             }
           >
@@ -777,7 +777,7 @@ export function ProposalCatalogPanel({
             count={variableTierRows.length}
             isEmpty={variableTierRows.length === 0}
             emptyTitle="No variable tiers"
-            emptyText="Variable tiers are configured in the catalog vault."
+            emptyText="Variable tiers are configured in the Solutions Directory."
           >
             {variableTierRows.map((r) => {
               const onProposal = addedTierRefIds.has(r.tierId);
@@ -1366,7 +1366,7 @@ export function ProposalCatalogPanel({
 
       <ProposalOfferingDatesModal
         open={datesModalPending != null}
-        title="Set offering dates"
+        title="Set solution dates"
         subtitle="Defaults come from your proposal schedule in Step 1. Adjust per line item if needed."
         itemLabel={datesModalItemLabel}
         proposalStartDate={proposalStartDate}

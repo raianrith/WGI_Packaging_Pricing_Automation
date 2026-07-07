@@ -155,7 +155,7 @@ export function PresetPackageTaxonomyTagsPanel({
 
       {presetPackages.length === 0 ? (
         <p className="admin-pkg-builder__empty" style={muted}>
-          No preset packages found. Packages whose category matches a configurable family are
+          No preset packages found. Packages whose category matches a configurable template are
           treated as custom builds and are not listed here.
         </p>
       ) : (

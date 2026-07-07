@@ -1385,8 +1385,8 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             </>
           ) : (
             <>
-              Use the <Link className="agency-hub__link" to="/solutions">Directory</Link> tab to search
-              tiers across the entire catalog.
+              Use the <Link className="agency-hub__link" to="/solutions">All Solutions</Link> tab to search
+              tiers across the Solutions Directory.
             </>
           )}
         </p>
@@ -1652,7 +1652,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/solutions">
-                  ← Directory
+                  ← All Solutions
                 </Link>
                 {selectedPackageOverview && (
                   <span className="agency-package-workspace-bar__context">
@@ -1735,7 +1735,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       lineHeight: 1.45,
                     }}
                   >
-                    Catalog comparison: Σ tier vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
+                    Package comparison: Σ tier vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
                     summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong> ·
                     summed checklist task duration{" "}
                     <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskDuration)}</strong>.

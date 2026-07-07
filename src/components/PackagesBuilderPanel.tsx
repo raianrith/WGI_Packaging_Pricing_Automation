@@ -882,7 +882,7 @@ export function PackagesBuilderPanel({
 
   const tierPickerIntro =
     subTab === "create"
-      ? "Set quantity for each vault tier to include. You can add the same tier multiple times (e.g. 3× Customer Interviews - Basic). The same vault tier can appear in multiple packages."
+      ? "Set quantity for each solution component to include. You can add the same component multiple times (e.g. 3× Customer Interviews - Basic). The same component can appear in multiple packages."
       : "Manage tier membership and quantities for this package. Set quantity to 0 to remove a tier link on save.";
 
   const tierPickerBlock = (

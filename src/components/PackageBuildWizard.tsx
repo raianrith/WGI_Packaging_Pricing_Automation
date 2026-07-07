@@ -92,7 +92,7 @@ function slotLimitTags(slot: PackageBuilderSlotTemplate): string[] {
     tags.push(`${slot.solution_tier_limit} tier${slot.solution_tier_limit === 1 ? "" : "s"} max`);
   }
   if (slot.allowed_solution_tier_ids.length > 0) {
-    tags.push(`${slot.allowed_solution_tier_ids.length} allowed vault tiers`);
+    tags.push(`${slot.allowed_solution_tier_ids.length} allowed solution components`);
   }
   if (tags.length === 0) tags.push("No limits");
   return tags;
@@ -102,9 +102,9 @@ type WizardStep = 1 | 2 | 3 | 4;
 
 function WizardStepper({ step }: { step: WizardStep }) {
   const steps = [
-    { n: 1 as const, label: "Package type" },
-    { n: 2 as const, label: "Package tier" },
-    { n: 3 as const, label: "Solution tiers" },
+    { n: 1 as const, label: "Template" },
+    { n: 2 as const, label: "Tier" },
+    { n: 3 as const, label: "Solution components" },
     { n: 4 as const, label: "Pricing" },
   ];
   return (
@@ -384,7 +384,7 @@ export function PackageBuildWizard({
       if (result.blockedByMaxTiers && selectedSlot) {
         queueMicrotask(() =>
           toastNote(
-            `This package tier allows at most ${selectedSlot.solution_tier_limit} vault tier line${
+            `This tier allows at most ${selectedSlot.solution_tier_limit} solution component line${
               selectedSlot.solution_tier_limit === 1 ? "" : "s"
             }. Remove one to add another.`
           )
@@ -488,8 +488,8 @@ export function PackageBuildWizard({
           <div className="agency-pkg-build-start__title-row">
             <h2 id="pkg-build-start-title" className="agency-pkg-build-start__title">
               {variant === "page"
-                ? "Choose a package family"
-                : "Step 1: choose the kind of package you are building"}
+                ? "Choose a template"
+                : "Step 1: choose a template"}
             </h2>
             {variant === "page" && packageTypes.length > 0 ? (
               <span className="agency-pkg-build-start__count">
@@ -500,7 +500,7 @@ export function PackageBuildWizard({
           <p className="agency-pkg-build-start__lead">
             {variant === "page"
               ? "Select a template below to start the wizard. Tier limits are configured in "
-              : "Pick a package family below. We’ll open the tier setup next, then you can add vault solution tiers. Limits are managed in "}
+              : "Pick a template below. We’ll open tier setup next, then you can add solution components. Limits are managed in "}
             <Link className="agency-hub__link" to="/admin">
               Admin → Configurable Package
             </Link>
@@ -510,7 +510,7 @@ export function PackageBuildWizard({
 
         {packageTypes.length === 0 ? (
           <p className="agency-pkg-build-start__empty">
-            No package types are configured yet.
+            No templates are configured yet.
           </p>
         ) : (
           <div className="agency-pkg-build-start__grid">
@@ -550,7 +550,7 @@ export function PackageBuildWizard({
                       </span>
                       <span className="agency-pkg-build-start__card-title">{pt.name}</span>
                       <span className="agency-pkg-build-start__card-meta">
-                        {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                        {tierCount} tier{tierCount === 1 ? "" : "s"}
                       </span>
                     </button>
                     <div
@@ -603,7 +603,7 @@ export function PackageBuildWizard({
           >
             <header className="pkg-family-detail-modal__header">
               <div className="pkg-family-detail-modal__head-copy">
-                <p className="pkg-family-detail-modal__eyebrow">Package family</p>
+                <p className="pkg-family-detail-modal__eyebrow">Template</p>
                 <h2 id="pkg-family-detail-title" className="pkg-family-detail-modal__title">
                   {familyDetailType.name}
                 </h2>
@@ -663,7 +663,7 @@ export function PackageBuildWizard({
               {wizStep === 1 && (
                 <>
                   <p className="agency-pkg-wizard__lead">
-                    Choose the kind of package you are building. Limits for each tier are configured in{" "}
+                    Choose a template. Limits for each tier are configured in{" "}
                     <Link className="agency-hub__link" to="/admin">
                       Admin → Configurable Package
                     </Link>
@@ -690,7 +690,7 @@ export function PackageBuildWizard({
                         >
                           <span className="agency-pkg-wizard__choice-title">{pt.name}</span>
                           <span className="agency-pkg-wizard__choice-meta">
-                            {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                            {tierCount} tier{tierCount === 1 ? "" : "s"}
                           </span>
                         </button>
                       );
@@ -705,7 +705,7 @@ export function PackageBuildWizard({
                     <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
                   </div>
                   <p className="agency-pkg-wizard__lead">
-                    Pick a tier level. Each option can enforce hour, price, and vault tier limits.
+                    Pick a tier. Each option can enforce hour, price, and solution component limits.
                   </p>
                   <div className="agency-pkg-wizard__tier-pick-block">
                   <div className="agency-pkg-wizard__choice-grid">
@@ -757,8 +757,8 @@ export function PackageBuildWizard({
                   </div>
                   <div className="agency-pkg-wizard__solution-step-block">
                   <p className="agency-pkg-wizard__lead">
-                    Set how many of each vault tier to include. Use the + button to add duplicates — for example,
-                    3× Customer Interviews - Basic. Running totals multiply catalog hours and sell by quantity.
+                    Set how many of each solution component to include. Use the + button to add duplicates — for example,
+                    3× Customer Interviews - Basic. Running totals multiply solution hours and sell by quantity.
                   </p>
 
                   <PackageTierDisclaimer notes={slotTierNotes(selectedSlot)} />
@@ -794,7 +794,7 @@ export function PackageBuildWizard({
                     ) : null}
                     {slotEnforcesTierCountLimit(selectedSlot) ? (
                       <WizardMeter
-                        label="Tiers selected"
+                        label="Components selected"
                         value={tierLineCount}
                         max={selectedSlot.solution_tier_limit}
                         format={(n) => String(Math.round(n))}
@@ -805,7 +805,7 @@ export function PackageBuildWizard({
 
                   {(overHours || overPrice || overTierCount) && (
                     <p className="agency-pkg-wizard__alert" role="alert">
-                      You are over a configured limit. Remove tiers or go back and choose a different package tier.
+                      You are over a configured limit. Remove components or go back and choose a different tier.
                     </p>
                   )}
                   </div>
@@ -823,7 +823,7 @@ export function PackageBuildWizard({
 
                   <div className="agency-nav-sol-filter agency-pkg-wizard__filter">
                     <label className="agency-nav-sol-filter__label" htmlFor="wiz-tier-search">
-                      Solution tiers
+                      Solution components
                     </label>
                     <div className="agency-nav-sol-filter__row">
                       <input
@@ -937,7 +937,7 @@ export function PackageBuildWizard({
                   <p className="agency-pkg-wizard__lead">
                     {wizardTierDiscount.level
                       ? `This package tier includes a fixed ${wizardTierDiscount.hourPct}% hour discount (no sell price discount). Totals below match what will be saved.`
-                      : "No fixed tier discount applies to this package tier label. Catalog hours and sell are shown without a package discount."}
+                      : "No fixed tier discount applies to this package tier label. Solution hours and sell are shown without a package discount."}
                   </p>
 
                   <div className="agency-pkg-wizard__discount-grid agency-pkg-wizard__discount-grid--single">
@@ -975,7 +975,7 @@ export function PackageBuildWizard({
                           </dd>
                         </div>
                         <div className="agency-pkg-wizard__discount-summary-row">
-                          <dt>Catalog sell</dt>
+                          <dt>Solution sell</dt>
                           <dd>
                             {discountPreview.modeledSellBeforeHourDiscount == null ? (
                               <strong>—</strong>
@@ -1007,7 +1007,7 @@ export function PackageBuildWizard({
                   </div>
 
                   <p className="agency-pkg-wizard__discount-footnote">
-                    Estimates use vault tier totals from your selection. Package Builder refines totals from the full task
+                    Estimates use solution component totals from your selection. Package Builder refines totals from the full task
                     checklist.
                   </p>
                 </>
@@ -1030,7 +1030,7 @@ export function PackageBuildWizard({
                       setPkgName((n) => (n.trim() ? n : `${selectedPackageType.name} package`));
                     }}
                   >
-                    Next: package tier
+                    Next: tier
                   </button>
                 </>
               )}
@@ -1047,7 +1047,7 @@ export function PackageBuildWizard({
                       setSelectedSlot(null);
                     }}
                   >
-                    Change package type
+                    Change template
                   </button>
                   <button
                     type="button"
@@ -1063,7 +1063,7 @@ export function PackageBuildWizard({
                       );
                     }}
                   >
-                    Next: solution tiers
+                    Next: solution components
                   </button>
                 </>
               )}

@@ -914,7 +914,7 @@ export function AgencyPackagesHub() {
                       </div>
                       {meta.rollup.tierCount > 0 ? (
                         <p className="agency-pkg-hub__vault-mini">
-                          Σ vault tiers (catalog)
+                          Σ solution components
                           {meta.rollup.hoursPartial || meta.rollup.pricePartial ? " *" : ""}:{" "}
                           {meta.vaultHoursDisplay} · {meta.vaultPriceDisplay}
                         </p>

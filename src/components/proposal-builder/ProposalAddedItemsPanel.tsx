@@ -109,11 +109,11 @@ export function ProposalAddedItemsPanel({
   const inTargetPhaseOfferings = lines.filter((l) => l.isTargetPhase);
 
   return (
-    <section className="proposal-added-card" aria-label="Added offerings">
+    <section className="proposal-added-card" aria-label="Added solutions">
       <header className="proposal-added-card__head">
         <div>
           <p className="proposal-added-card__eyebrow">Your Additions</p>
-          <h3 className="proposal-added-card__title">Offerings on {scenarioTitle}</h3>
+          <h3 className="proposal-added-card__title">Solutions on {scenarioTitle}</h3>
         </div>
         <div className="proposal-added-card__counts" aria-live="polite">
           <span className="proposal-added-card__count proposal-added-card__count--tiers">
@@ -187,7 +187,7 @@ export function ProposalAddedItemsPanel({
         </>
       ) : (
         <p className="proposal-added-card__empty">
-          No offerings yet. Use <strong>Solution Tiers</strong> or switch to <strong>Packages</strong> below, then click{" "}
+          No solutions yet. Use <strong>Solution Tiers</strong> or switch to <strong>Packages</strong> below, then click{" "}
           <strong>Add</strong>.
         </p>
       )}

@@ -30,7 +30,7 @@ function catalogHoursLabel(card: RoadmapCard, ctx: CatalogCtxLike, formatHoursSh
   const manualN = tryParseRoadmapHours(base);
   if (attach > 0) {
     const total = (manualN ?? 0) + attach;
-    return `${formatHoursShort(total)} h total · ${base || "0 h"} on card + ${formatHoursShort(attach)} h from catalog`;
+    return `${formatHoursShort(total)} h total · ${base || "0 h"} on card + ${formatHoursShort(attach)} h from solutions`;
   }
   return base || "—";
 }
@@ -131,9 +131,9 @@ export function ProposalOrganizePricingModal({
         </header>
 
         <div className="roadmap-modal__body proposal-pricing-modal__body">
-          <section className="proposal-pricing-modal__block proposal-pricing-modal__block--catalog" aria-label="Catalog values">
-            <h3 className="proposal-pricing-modal__block-title">Actual (Catalog)</h3>
-            <p className="proposal-pricing-modal__block-note">Original values from the catalog when this line was added.</p>
+          <section className="proposal-pricing-modal__block proposal-pricing-modal__block--catalog" aria-label="Actual solution values">
+            <h3 className="proposal-pricing-modal__block-title">Actual (Solutions)</h3>
+            <p className="proposal-pricing-modal__block-note">Original values from solutions when this line was added.</p>
             <div className="proposal-pricing-modal__readonly-grid">
               <div className="proposal-pricing-modal__readonly">
                 <span className="proposal-pricing-modal__readonly-label">Actual Hours</span>
@@ -180,7 +180,7 @@ export function ProposalOrganizePricingModal({
               {usedHours ? `${usedHours}${/h/i.test(usedHours) ? "" : " h"}` : "Hours —"} · {usedPrice || "Price —"}
             </strong>
             {!hasCustomProposal ? (
-              <span className="proposal-pricing-modal__preview-hint">Matches catalog until you override above.</span>
+              <span className="proposal-pricing-modal__preview-hint">Matches solutions until you override above.</span>
             ) : (
               <span className="proposal-pricing-modal__preview-hint proposal-pricing-modal__preview-hint--custom">
                 Custom proposal values active

@@ -20,7 +20,7 @@ export function AgencyTabsShell() {
                   `agency-tab${isActive ? " agency-tab--active" : ""}`
                 }
               >
-                Home
+                Guided Directory
               </NavLink>
             </li>
             <li>
@@ -30,7 +30,7 @@ export function AgencyTabsShell() {
                   `agency-tab${directoryTabActive ? " agency-tab--active" : ""}`
                 }
               >
-                Directory
+                All Solutions
               </NavLink>
             </li>
             <li>
@@ -40,7 +40,7 @@ export function AgencyTabsShell() {
                   `agency-tab${directoryDetailsTabActive ? " agency-tab--active" : ""}`
                 }
               >
-                Directory Details
+                Solution Overviews
               </NavLink>
             </li>
             <li>

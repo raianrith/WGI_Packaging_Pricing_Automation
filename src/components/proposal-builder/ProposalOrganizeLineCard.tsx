@@ -130,7 +130,7 @@ export function ProposalOrganizeLineCard({
               <span className="proposal-organize-line__metric-value">{price || "—"}</span>
             </span>
             {hasProposalOverride ? (
-              <span className="proposal-organize-line__override-badge" title="Proposal hours or price differ from catalog">
+              <span className="proposal-organize-line__override-badge" title="Proposal hours or price differ from solutions">
                 Custom
               </span>
             ) : null}
@@ -154,7 +154,7 @@ export function ProposalOrganizeLineCard({
             </select>
           </label>
 
-          <div className="proposal-organize-line__dates" role="group" aria-label="Offering schedule">
+          <div className="proposal-organize-line__dates" role="group" aria-label="Solution schedule">
             <label className="proposal-organize-line__date">
               <span className="proposal-organize-line__phase-label">Start</span>
               <input
@@ -164,7 +164,7 @@ export function ProposalOrganizeLineCard({
                 onChange={(e) =>
                   onPatch(card.key, { startDate: normalizeIsoDateInput(e.target.value) || null })
                 }
-                aria-label="Offering start date"
+                aria-label="Solution start date"
               />
             </label>
             <label className="proposal-organize-line__date">
@@ -176,7 +176,7 @@ export function ProposalOrganizeLineCard({
                 onChange={(e) =>
                   onPatch(card.key, { endDate: normalizeIsoDateInput(e.target.value) || null })
                 }
-                aria-label="Offering end date"
+                aria-label="Solution end date"
               />
             </label>
           </div>

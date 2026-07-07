@@ -140,7 +140,7 @@ export function ProposalConfigurablePackagesPanel({
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">
-          Choose a configurable package family, build it in the wizard, then add it to the active
+          Choose a configurable template, build it in the wizard, then add it to the active
           scenario and phase. This step is optional—you can skip it and continue.
         </p>
       </header>
@@ -225,9 +225,9 @@ export function ProposalConfigurablePackagesPanel({
       <div className="proposal-catalog-offerings">
         <div className="proposal-configurable-packages__head">
           <div>
-            <p className="proposal-catalog-step-prompt">Pick A Configurable Package Family</p>
+            <p className="proposal-catalog-step-prompt">Pick A Template</p>
             <p className="proposal-catalog-offerings__hint">
-              Build a custom package from a family template · adding to{" "}
+              Build a custom package from a template · adding to{" "}
               <strong>{targetScenarioTitle}</strong> · <strong>{targetPhaseTitle}</strong>
             </p>
           </div>
@@ -238,7 +238,7 @@ export function ProposalConfigurablePackagesPanel({
               onClick={() => void onReloadCatalog()}
               disabled={catalogReloading}
             >
-              {catalogReloading ? "Refreshing…" : "Refresh catalog"}
+              {catalogReloading ? "Refreshing…" : "Refresh solutions"}
             </button>
           ) : null}
         </div>
@@ -247,16 +247,16 @@ export function ProposalConfigurablePackagesPanel({
           id={searchId}
           value={search}
           onChange={setSearch}
-          placeholder="Search package families…"
-          label="Search package families"
+          placeholder="Search templates…"
+          label="Search templates"
         />
 
         {packageTypes.length === 0 ? (
           <p className="proposal-configurable-packages__empty">
-            No configurable package families are set up yet. Add them in Admin → Configurable Package.
+            No configurable templates are set up yet. Add them in Admin → Configurable Package.
           </p>
         ) : filteredTypes.length === 0 ? (
-          <p className="proposal-configurable-packages__empty">No families match your search.</p>
+          <p className="proposal-configurable-packages__empty">No templates match your search.</p>
         ) : (
           <div className="proposal-configurable-packages__grid">
             {filteredTypes.map((pt, index) => {
@@ -314,7 +314,7 @@ export function ProposalConfigurablePackagesPanel({
           >
             <header className="pkg-family-detail-modal__header">
               <div className="pkg-family-detail-modal__head-copy">
-                <p className="pkg-family-detail-modal__eyebrow">Package family</p>
+                <p className="pkg-family-detail-modal__eyebrow">Template</p>
                 <h2 id="proposal-pkg-family-detail-title" className="pkg-family-detail-modal__title">
                   {detailType.name}
                 </h2>
@@ -373,7 +373,7 @@ export function ProposalConfigurablePackagesPanel({
 
       <ProposalOfferingDatesModal
         open={datesModalPkg != null}
-        title="Offering dates"
+        title="Solution dates"
         subtitle="Set when this package runs in the proposal timeline."
         itemLabel={datesModalPkg?.package_name}
         proposalStartDate={proposalStartDate}

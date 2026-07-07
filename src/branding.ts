@@ -16,7 +16,7 @@ export const AGENCY_HOME_DESCRIPTION =
   "Walk phase, category, and tactic to surface Solution Tiers, Preset Packages, and Configurable Packages that match your playbook path. Items without taxonomy tags appear as Not Defined—open any match for scope, pricing, and tasks.";
 
 /** Top navigation: catalog, package library, and package workspaces. */
-export const NAV_SOLUTIONS_OVERVIEW = "Solutions & Package Overview";
+export const NAV_SOLUTIONS_OVERVIEW = "Solutions Directory";
 
 /** Top navigation: guided Build a Package flow. */
 export const NAV_PACKAGE_BUILDER = "Package Builder";
@@ -46,7 +46,7 @@ export const AGENCY_HUB_DESCRIPTION =
 export const PACKAGE_BUILDER_TITLE = "Configurable Package Builder";
 
 export const PACKAGE_BUILDER_DESCRIPTION =
-  "Assemble a new bundle in four guided steps—pick a package family, choose a tier slot, add vault solution tiers, and confirm pricing. When you’re done, we open the package workspace so you can refine scope and copy.";
+  "Assemble a package in four guided steps—pick a template, choose a tier, add solution components, and confirm pricing. When you're done, we open the package workspace so you can refine scope and copy.";
 
 /** Subtitle copy on the Admin view hero. */
 export const ADMIN_VIEW_DESCRIPTION =

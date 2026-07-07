@@ -299,10 +299,10 @@ export function slotLimitSummary(slot: PackageBuilderSlotTemplate): string {
     parts.push(`≤ $${Number(slot.price_ceiling).toLocaleString()} sell`);
   }
   if (slotEnforcesTierCountLimit(slot)) {
-    parts.push(`≤ ${slot.solution_tier_limit} solution tier${slot.solution_tier_limit === 1 ? "" : "s"}`);
+    parts.push(`≤ ${slot.solution_tier_limit} solution component${slot.solution_tier_limit === 1 ? "" : "s"}`);
   }
   if (slot.allowed_solution_tier_ids.length > 0) {
-    parts.push(`${slot.allowed_solution_tier_ids.length} allowed vault tier(s)`);
+    parts.push(`${slot.allowed_solution_tier_ids.length} allowed solution component(s)`);
   }
   return parts.length > 0 ? parts.join(" · ") : "No limits configured";
 }

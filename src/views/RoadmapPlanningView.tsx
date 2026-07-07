@@ -3,21 +3,17 @@ import type { ReactNode, SetStateAction } from "react";
 import { Link } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
-  budgetVsScenarioStatus,
   cardHoursForScenarioRollup,
   cardPriceUsdForRollup,
-  effectiveHoursStr,
   effectivePriceStr,
   type CatalogCtxLike,
   type RoadmapCard,
   type RoadmapCardKind,
-  type RoadmapLineScope,
   type RoadmapPhase,
   type RoadmapScenario,
   reorderPhaseCardsByKeys,
   sortedPhasesForScenario,
   scratchEffectiveHoursBreakdown,
-  tryParseRoadmapHours,
   tryParseUsdRough,
 } from "../lib/roadmapModel";
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
@@ -52,6 +48,13 @@ import {
   proposalDateRangeLabel,
   type ProposalOfferingDates,
 } from "../lib/proposalDates";
+import {
+  applyRoadmapNameDateSuffix,
+  isValidRoadmapNameFormat,
+  ROADMAP_NAME_CLIENT_CODE_TOOLTIP,
+  ROADMAP_NAME_FORMAT_EXAMPLE,
+  ROADMAP_NAME_FORMAT_HINT,
+} from "../lib/roadmapNameFormat";
 import {
   cloneProposalStructure,
   parseProposalSnapshot,
@@ -275,217 +278,6 @@ function cardForScratchTier(
   return applyOfferingDates({ ...base, price: computeScratchSellPrice(base, ctx) }, dates);
 }
 
-function exportOneLine(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-function appendCardNotesExport(out: string[], c: RoadmapCard): void {
-  if (!c.description.trim()) return;
-  out.push(`  - **Notes (on card):**`);
-  for (const para of c.description.trim().split(/\n\n+/)) {
-    out.push(`    - ${exportOneLine(para)}`);
-  }
-}
-
-/** Rich markdown lines for Copy summary / export preview (catalog + board context). */
-function roadmapCardExportLines(c: RoadmapCard, ctx: CatalogCtx | null): string[] {
-  const out: string[] = [];
-  const displayTitle = c.headline.trim() || "(untitled)";
-  out.push(`- **${kindLabel(c.kind)}** · ${displayTitle}${exportScopeSuffix(c.scope)} (\`${c.refId}\`)`);
-  const scheduleLabel = proposalDateRangeLabel(c.startDate, c.endDate);
-  if (scheduleLabel !== "—") {
-    out.push(`  - **Schedule:** ${scheduleLabel}`);
-  }
-  const boardHours = effectiveHoursStr(c);
-  const boardPrice = effectivePriceStr(c, ctx, computeScratchSellPrice);
-  if (c.hoursOverride?.trim()) {
-    out.push(`  - **Proposal hours (override):** \`${c.hoursOverride.trim()}\` _(vs catalog field \`${c.hours}\`)_`);
-  }
-  if (c.priceOverride?.trim()) {
-    out.push(`  - **Proposal price (override):** **${c.priceOverride.trim()}**`);
-  }
-
-  if (!ctx) {
-    out.push(`  - **On board:** Hours \`${boardHours}\` · Price **${boardPrice}**`);
-    appendCardNotesExport(out, c);
-    return out;
-  }
-
-  switch (c.kind) {
-    case "custom_tier": {
-      const rate = c.scratchBlendRateUsd ?? DEFAULT_SCRATCH_BLEND;
-      const r = c.scratchRiskMult ?? DEFAULT_SCRATCH_MULT;
-      const s = c.scratchStrategicMult ?? DEFAULT_SCRATCH_MULT;
-      out.push(
-        `  - **Pricing model:** (\`hours on card\` + \`catalog task times & template line hours\`) × **$${rate.toLocaleString()}/h** × **${r}** (risk) × **${s}** (strategic) → **${boardPrice}**`
-      );
-      const br = scratchEffectiveHoursBreakdown(c, ctx);
-      if (br) {
-        out.push(
-          `  - **Hours in the model:** **${formatHoursShort(br.total)} h** total — ${formatHoursShort(br.manual)} h from the card + ${formatHoursShort(br.catalog)} h rolled in from catalog`
-        );
-      } else {
-        out.push(`  - **Hours in the model:** _none yet — add hours on the card and/or attachments that have times in Admin_`);
-      }
-      const tids = c.scratchAttachedTaskIds ?? [];
-      for (const tid of tids) {
-        const k = ctx.tasks.find((t) => t.task_id === tid);
-        const tier = k ? ctx.tiers.find((t) => t.solution_tier_id === k.solution_tier_id) : undefined;
-        const th = k?.task_time != null && Number.isFinite(Number(k.task_time)) ? Number(k.task_time) : null;
-        out.push(
-          `  - **Attached task:** ${k ? `**${k.task_name}**` : `\`${tid}\` _(missing in catalog)_`}${
-            tier ? ` · tier _${tier.solution_tier_name}_` : ""
-          }${th != null ? ` · **${formatHoursShort(th)} h**` : " · _(no \`task_time\` in catalog)_"}`
-        );
-      }
-      const gids = c.scratchAttachedTaskGroupIds ?? [];
-      for (const gid of gids) {
-        const g = ctx.taskGroups.find((x) => x.id === gid);
-        const lines = ctx.groupLinesMap.get(gid) ?? [];
-        const sorted = lines.slice().sort((a, b) => a.sort_order - b.sort_order);
-        let gh = 0;
-        for (const L of sorted) {
-          if (L.hours != null && Number.isFinite(Number(L.hours))) gh += Number(L.hours);
-        }
-        out.push(
-          `  - **Attached template:** ${g ? `**${g.name}**` : `\`${gid}\` _(missing in catalog)_`} — **${formatHoursShort(gh)} h** from ${sorted.length} line(s)`
-        );
-        const maxLines = 14;
-        for (const L of sorted.slice(0, maxLines)) {
-          out.push(`    - ${L.task_name}${L.hours != null ? ` · **${L.hours} h**` : ""}`);
-        }
-        if (sorted.length > maxLines) {
-          out.push(`    - _…and ${sorted.length - maxLines} more line(s)_`);
-        }
-      }
-      out.push(`  - **On board (editable):** hours \`${boardHours}\` · sell **${boardPrice}** _(computed or override)_`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    case "tier": {
-      const t = ctx.tiers.find((x) => x.solution_tier_id === c.refId);
-      if (!t) {
-        out.push(`  - _No tier in catalog for \`${c.refId}\` — board values may be stale._`);
-        out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-        appendCardNotesExport(out, c);
-        break;
-      }
-      const sol = ctx.solutions.find((s) => s.solution_id === t.solution_id);
-      const pr = ctx.pricingMap.get(t.solution_tier_id) ?? null;
-      const pkgNames = ctx.packageTiers
-        .filter((pt) => pt.solution_tier_id === t.solution_tier_id)
-        .map((pt) => ctx.packages.find((pk) => pk.package_id === pt.package_id)?.package_name ?? pt.package_id);
-      out.push(`  - **Catalog:** **${sol?.solution_name ?? t.solution_id}** → tier **${t.solution_tier_name}** (\`${t.solution_tier_id}\`)`);
-      if (pr) {
-        out.push(`  - **Admin pricing row:** sell **${sellPriceLine(pr)}** · checklist task time **${tierHoursLine(c.refId, pr, ctx.tasks)}**`);
-      } else {
-        out.push(`  - **Admin pricing row:** _none linked — add \`solution_tier_pricing\` in Admin_`);
-      }
-      if (pkgNames.length) {
-        out.push(`  - **Packages that include this tier:** ${pkgNames.join(", ")}`);
-      }
-      const pitch = tierPitchText(t);
-      if (pitch) {
-        const flat = exportOneLine(pitch);
-        out.push(`  - **Tier narrative (Admin):** ${flat.length > 720 ? `${flat.slice(0, 720)}…` : flat}`);
-      }
-      out.push(`  - **On board (your edits):** ${boardHours} · **${boardPrice}** _(what you are showing in this scenario)_`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    case "task": {
-      const k = ctx.tasks.find((x) => x.task_id === c.refId);
-      if (!k) {
-        out.push(`  - _Task \`${c.refId}\` not in catalog._`);
-        out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-        appendCardNotesExport(out, c);
-        break;
-      }
-      const tier = ctx.tiers.find((tt) => tt.solution_tier_id === k.solution_tier_id);
-      const pr = tier ? ctx.pricingMap.get(tier.solution_tier_id) ?? null : null;
-      out.push(
-        `  - **Catalog:** **${k.task_name}** · tier _${tier?.solution_tier_name ?? "—"}_ · **${
-          k.task_time != null && Number.isFinite(Number(k.task_time)) ? `${formatHoursShort(Number(k.task_time))} h` : "_(no hours)_"
-        }**${k.task_implementer ? ` · ${k.task_implementer}` : ""}`
-      );
-      if (pr) {
-        out.push(`  - **Tier reference sell (catalog):** ${sellPriceLine(pr)}`);
-      }
-      out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    case "task_group": {
-      const g = ctx.taskGroups.find((x) => x.id === c.refId);
-      const lines = (g ? ctx.groupLinesMap.get(g.id) : undefined) ?? [];
-      const sorted = lines.slice().sort((a, b) => a.sort_order - b.sort_order);
-      if (!g) {
-        out.push(`  - _Template \`${c.refId}\` not in catalog._`);
-      } else {
-        out.push(`  - **Catalog template:** **${g.name}** (\`${g.id}\`)${g.description?.trim() ? ` — _${exportOneLine(g.description)}_` : ""}`);
-        if (sorted.length === 0) {
-          out.push(`  - **Lines:** _none in Admin_`);
-        } else {
-          out.push(`  - **Lines (${sorted.length}):**`);
-          const cap = 18;
-          for (const L of sorted.slice(0, cap)) {
-            out.push(`    - ${L.task_name}${L.hours != null ? ` · **${L.hours} h**` : ""}`);
-          }
-          if (sorted.length > cap) out.push(`    - _…${sorted.length - cap} more_`);
-        }
-      }
-      out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    case "package": {
-      const p = ctx.packages.find((x) => x.package_id === c.refId);
-      if (!p) {
-        out.push(`  - _Package \`${c.refId}\` not in catalog._`);
-        out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-        appendCardNotesExport(out, c);
-        break;
-      }
-      const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
-      const tierNames = tids
-        .map((id) => ctx.tiers.find((tt) => tt.solution_tier_id === id)?.solution_tier_name)
-        .filter(Boolean) as string[];
-      const catalog = packageHoursPriceForCatalog(p, ctx);
-      const vaultRoll = rollupHoursPrice(tids, ctx.pricingMap);
-      out.push(`  - **Catalog:** **${p.package_name}** · ${tierNames.length} linked tier(s): ${tierNames.length ? tierNames.join(", ") : "—"}`);
-      out.push(`  - **Package workspace (net sell):** ${catalog.hours} · ${catalog.price}`);
-      out.push(`  - **Σ vault tiers (reference):** ${vaultRoll.hours} · ${vaultRoll.price}`);
-      out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    case "solution": {
-      const s = ctx.solutions.find((x) => x.solution_id === c.refId);
-      if (!s) {
-        out.push(`  - _Solution \`${c.refId}\` not in catalog._`);
-        out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-        appendCardNotesExport(out, c);
-        break;
-      }
-      const tids = tierIdsForSolution(ctx.tiers, s.solution_id);
-      const tierNames = tids
-        .map((id) => ctx.tiers.find((tt) => tt.solution_tier_id === id)?.solution_tier_name)
-        .filter(Boolean) as string[];
-      const roll = rollupHoursPrice(tids, ctx.pricingMap);
-      out.push(`  - **Catalog:** **${s.solution_name}** · ${tierNames.length} tier(s): ${tierNames.length ? tierNames.join(", ") : "—"}`);
-      out.push(`  - **Rollup from tiers (catalog):** ${roll.hours} · ${roll.price}`);
-      out.push(`  - **On board:** ${boardHours} · **${boardPrice}**`);
-      appendCardNotesExport(out, c);
-      break;
-    }
-    default:
-      out.push(`  - **On board:** Hours \`${boardHours}\` · Price **${boardPrice}**`);
-      appendCardNotesExport(out, c);
-  }
-
-  return out;
-}
-
 function tierIdsForPackage(packageTiers: PackageSolutionTier[], packageId: string): string[] {
   return packageTiers.filter((r) => r.package_id === packageId).map((r) => r.solution_tier_id);
 }
@@ -644,12 +436,6 @@ function createInitialScenariosAndPhases(): { scenarios: RoadmapScenario[]; phas
 
 const INITIAL_SCENARIOS_AND_PHASES = createInitialScenariosAndPhases();
 
-function exportScopeSuffix(scope: RoadmapLineScope): string {
-  if (scope === "optional") return " · _optional add-on_";
-  if (scope === "deferred") return " · _deferred (not in core proposal)_";
-  return "";
-}
-
 function sortId(a: string, b: string): number {
   const pa = a.split("-").map(Number);
   const pb = b.split("-").map(Number);
@@ -797,7 +583,7 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
     case "tier": {
       const t = ctx.tiers.find((x) => x.solution_tier_id === card.refId);
       if (!t) {
-        return <p className="roadmap-muted">This tier is no longer in the catalog (check Admin).</p>;
+        return <p className="roadmap-muted">This tier is no longer in solutions (check Admin).</p>;
       }
       const pr = ctx.pricingMap.get(t.solution_tier_id) ?? null;
       const sol = ctx.solutions.find((s) => s.solution_id === t.solution_id);
@@ -979,6 +765,19 @@ export function RoadmapPlanningView() {
   const [builderMode, setBuilderMode] = useState<ProposalBuilderMode>("saved");
   const [targetPhaseId, setTargetPhaseId] = useState("");
 
+  useEffect(() => {
+    if (!normalizeIsoDateInput(proposalStartDate) || !normalizeIsoDateInput(proposalEndDate)) return;
+    setRoadmapTitle((prev) => {
+      const next = applyRoadmapNameDateSuffix(prev, proposalStartDate, proposalEndDate);
+      return next === prev ? prev : next;
+    });
+  }, [proposalStartDate, proposalEndDate]);
+
+  const roadmapNameValid = useMemo(
+    () => isValidRoadmapNameFormat(roadmapTitle),
+    [roadmapTitle]
+  );
+
   const load = useCallback(async (preserveCurrentProposal = false) => {
     const keyErr = browserKeyConfigurationError();
     if (keyErr) {
@@ -1029,7 +828,7 @@ export function RoadmapPlanningView() {
     if (err) {
       if (preserveCurrentProposal) {
         setCatalogReloading(false);
-        toastError(`Could not reload catalog data: ${err.message}`);
+        toastError(`Could not reload solution data: ${err.message}`);
       } else {
         setState({ status: "error", message: err.message });
       }
@@ -1063,7 +862,7 @@ export function RoadmapPlanningView() {
     });
     if (preserveCurrentProposal) {
       setCatalogReloading(false);
-      toastSuccess("Catalog data reloaded. Your proposal stayed unchanged.");
+      toastSuccess("Solution data reloaded. Your proposal stayed unchanged.");
     }
   }, [toastError, toastSuccess]);
 
@@ -1117,7 +916,11 @@ export function RoadmapPlanningView() {
     const clientName = clientLabel.trim();
     const title = roadmapTitle.trim();
     if (!clientName || !title) {
-      toastError("Add both Client / opportunity and Roadmap name before saving.");
+      toastError("Add both Client name and Roadmap name before saving.");
+      return;
+    }
+    if (!isValidRoadmapNameFormat(title)) {
+      toastError(`Roadmap name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
       return;
     }
     setSavingProposal(true);
@@ -1676,7 +1479,7 @@ export function RoadmapPlanningView() {
     [cards, targetScenarioId, catalogCtx]
   );
 
-  const setupComplete = roadmapTitle.trim().length > 0;
+  const setupComplete = roadmapNameValid;
   const canAddToTarget = !!targetPhaseId;
 
   const catalogAddedLines = useMemo(() => {
@@ -1751,7 +1554,7 @@ export function RoadmapPlanningView() {
       if (cloned.length === 0) {
         toastNote(
           skippedDuplicates > 0
-            ? "Those offerings are already on this scenario."
+            ? "Those solutions are already on this scenario."
             : "That scenario has nothing to copy."
         );
         return;
@@ -1763,13 +1566,13 @@ export function RoadmapPlanningView() {
           : "";
 
       const ok = window.confirm(
-        `Copy ${cloned.length} offering${cloned.length === 1 ? "" : "s"} from "${sourceTitle}" into "${targetTitle}"?${dupNote}`
+        `Copy ${cloned.length} solution${cloned.length === 1 ? "" : "s"} from "${sourceTitle}" into "${targetTitle}"?${dupNote}`
       );
       if (!ok) return;
 
       setCardsSynced((prev) => [...prev, ...cloned]);
       toastSuccess(
-        `Copied ${cloned.length} offering${cloned.length === 1 ? "" : "s"} from "${sourceTitle}".`
+        `Copied ${cloned.length} solution${cloned.length === 1 ? "" : "s"} from "${sourceTitle}".`
       );
     },
     [cards, phases, scenarios, targetScenarioId, targetPhaseId, toastNote, toastSuccess, setCardsSynced]
@@ -1862,142 +1665,6 @@ export function RoadmapPlanningView() {
   );
 
   const budgetNumber = useMemo(() => parseMoneyInput(clientBudget), [clientBudget]);
-
-  const summaryMarkdown = useMemo(() => {
-    const lines: string[] = [];
-    const title = roadmapTitle.trim() || "Roadmap draft";
-    lines.push(`# ${title}`);
-    if (clientLabel.trim()) lines.push(`**Client / opportunity:** ${clientLabel.trim()}`);
-    lines.push(`**Horizon:** ${horizon === "custom" ? "Custom" : `${horizon} months`}`);
-    const proposalSchedule = proposalDateRangeLabel(proposalStartDate, proposalEndDate);
-    if (proposalSchedule !== "—") {
-      lines.push(`**Proposal dates:** ${proposalSchedule}`);
-    }
-    if (budgetNumber != null) {
-      lines.push(`**Client budget (USD):** ${formatUsd(budgetNumber)}`);
-    } else if (clientBudget.trim()) {
-      lines.push(`**Client budget (USD):** ${clientBudget.trim()} _(unparsed)_`);
-    }
-    lines.push("");
-
-    for (const scenario of scenarios) {
-      lines.push(`## ${scenario.title.trim() || "Scenario"}`);
-      if (scenario.narrative.trim()) {
-        lines.push("");
-        lines.push(scenario.narrative.trim());
-      }
-      const scenCards = cards.filter((c) => c.scenarioId === scenario.id);
-      if (scenCards.length === 0) {
-        lines.push("");
-        lines.push("_Nothing added yet._");
-        lines.push("");
-        continue;
-      }
-
-      let includedSub = 0;
-      for (const c of scenCards) {
-        if (c.scope !== "included") continue;
-        const p = cardPriceUsdForRollup(c, catalogCtx, computeScratchSellPrice);
-        if (p != null) includedSub += p;
-      }
-      lines.push("");
-      lines.push(`_**Included scope** subtotal (parsed prices): **${formatUsd(includedSub)}**_`);
-      if (budgetNumber != null) {
-        const st = budgetVsScenarioStatus(includedSub, budgetNumber);
-        const rem = budgetNumber - includedSub;
-        const label =
-          st === "over"
-            ? `${formatUsd(Math.abs(rem))} over budget`
-            : st === "in_range"
-              ? "Within range of budget (~92–100%)"
-              : `${formatUsd(Math.max(0, rem))} under budget`;
-        lines.push(`_${label}._`);
-      }
-
-      const phaseOrder = sortedPhasesForScenario(phases, scenario.id);
-      lines.push("");
-      lines.push("### Roadmap by phase _(included)_");
-      for (const ph of phaseOrder) {
-        const phaseCards = scenCards.filter((c) => c.phaseId === ph.id && c.scope === "included");
-        if (phaseCards.length === 0) continue;
-        let phHours = 0;
-        let phHn = 0;
-        let phPrice = 0;
-        let phPn = 0;
-        for (const c of phaseCards) {
-          const hh = cardHoursForScenarioRollup(c, catalogCtx);
-          if (hh != null) {
-            phHours += hh;
-            phHn += 1;
-          }
-          const pp = cardPriceUsdForRollup(c, catalogCtx, computeScratchSellPrice);
-          if (pp != null) {
-            phPrice += pp;
-            phPn += 1;
-          }
-        }
-        lines.push("");
-        lines.push(`#### ${ph.title.trim() || "Phase"}`);
-        lines.push(
-          `_Phase rollup: ${phPn > 0 ? `**${formatUsd(phPrice)}**` : "price TBD"}${
-            phHn > 0 ? ` · ~${formatHoursShort(phHours)} h` : ""
-          }_`
-        );
-        for (const c of phaseCards) {
-          lines.push("");
-          for (const line of roadmapCardExportLines(c, catalogCtx)) lines.push(line);
-        }
-      }
-
-      const optionalCards = scenCards.filter((c) => c.scope === "optional");
-      if (optionalCards.length > 0) {
-        let optSub = 0;
-        let optHours = 0;
-        let optHn = 0;
-        for (const c of optionalCards) {
-          const pu = tryParseUsdRough(effectivePriceStr(c, catalogCtx, computeScratchSellPrice));
-          if (pu != null) optSub += pu;
-          if (c.kind === "custom_tier") {
-            const b = scratchEffectiveHoursBreakdown(c, catalogCtx);
-            if (b) {
-              optHours += b.total;
-              optHn += 1;
-            }
-          } else {
-            const hr = tryParseRoadmapHours(effectiveHoursStr(c));
-            if (hr != null) {
-              optHours += hr;
-              optHn += 1;
-            }
-          }
-        }
-        lines.push("");
-        lines.push("### Optional add-ons _(not in core subtotal)_");
-        lines.push(
-          `_Tracked subtotal (optional): **${formatUsd(optSub)}**${
-            optHn > 0 ? ` · ~${formatHoursShort(optHours)} h` : ""
-          }_`
-        );
-        for (const c of optionalCards) {
-          lines.push("");
-          for (const line of roadmapCardExportLines(c, catalogCtx)) lines.push(line);
-        }
-      }
-
-      const deferredCards = scenCards.filter((c) => c.scope === "deferred");
-      if (deferredCards.length > 0) {
-        lines.push("");
-        lines.push("### Deferred _(hidden from core proposal totals)_");
-        for (const c of deferredCards) {
-          lines.push("");
-          for (const line of roadmapCardExportLines(c, catalogCtx)) lines.push(line);
-        }
-      }
-
-      lines.push("");
-    }
-    return lines.join("\n");
-  }, [cards, clientBudget, clientLabel, budgetNumber, horizon, proposalEndDate, proposalStartDate, scenarios, phases, roadmapTitle, catalogCtx]);
 
   const downloadPdf = useCallback(() => {
     if (!catalogCtx) return;
@@ -2102,7 +1769,7 @@ export function RoadmapPlanningView() {
       <div className="roadmap-page">
         <div className="roadmap-page__inner">
           <p className="roadmap-muted">
-            Unable to load the catalog. Details are shown in the notification stack (bottom corner).
+            Unable to load solutions. Details are shown in the notification stack (bottom corner).
           </p>
           <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={() => void load()}>
             Try again
@@ -2116,7 +1783,7 @@ export function RoadmapPlanningView() {
     return (
       <div className="roadmap-page">
         <div className="roadmap-page__inner roadmap-page__inner--narrow">
-          <p className="roadmap-muted">Loading catalog from Supabase…</p>
+          <p className="roadmap-muted">Loading solutions from Supabase…</p>
         </div>
       </div>
     );
@@ -2136,8 +1803,6 @@ export function RoadmapPlanningView() {
     scenarios.find((s) => s.id === targetScenarioId)?.title.trim() || "Scenario";
   const targetPhaseTitle =
     sortedPhasesForScenario(phases, targetScenarioId).find((p) => p.id === targetPhaseId)?.title.trim() || "Phase";
-  const totalOptionalCount = cards.filter((c) => c.scope === "optional").length;
-  const totalDeferredCount = cards.filter((c) => c.scope === "deferred").length;
 
   const renderConfigurablePackagesPanel = () => {
     if (!data) return null;
@@ -2254,7 +1919,7 @@ export function RoadmapPlanningView() {
               <h1 className="roadmap-hero__title">Proposal Builder</h1>
               <p className="roadmap-hero__lead">
                 Build client proposals step by step — set context, compare scenarios, add preset and configurable
-                packages, add solution tiers, organize phases, then save and export. Catalog data lives in{" "}
+                packages, add solution tiers, organize phases, then save and export. Solution data lives in{" "}
                 <Link to="/admin">Admin</Link>.
               </p>
             </div>
@@ -2309,23 +1974,57 @@ export function RoadmapPlanningView() {
                     </p>
                   </header>
                   <div className="roadmap-meta-grid">
-                    <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Roadmap name</span>
+                    <div className="roadmap-field">
+                      <div className="roadmap-field__cap-row">
+                        <label className="roadmap-field__cap" htmlFor="proposal-roadmap-name">
+                          Roadmap name
+                        </label>
+                        <span className="roadmap-field__tip-wrap">
+                          <button
+                            type="button"
+                            className="roadmap-field__tip"
+                            aria-describedby="proposal-roadmap-name-client-tip"
+                            aria-label="Client code guidance"
+                          >
+                            i
+                          </button>
+                          <span
+                            id="proposal-roadmap-name-client-tip"
+                            role="tooltip"
+                            className="roadmap-field__tip-popover"
+                          >
+                            {ROADMAP_NAME_CLIENT_CODE_TOOLTIP}
+                          </span>
+                        </span>
+                      </div>
                       <input
+                        id="proposal-roadmap-name"
                         className="roadmap-input"
                         value={roadmapTitle}
                         onChange={(e) => setRoadmapTitle(e.target.value)}
-                        placeholder="e.g. Acme — H2 growth roadmap"
+                        placeholder={ROADMAP_NAME_FORMAT_EXAMPLE}
+                        aria-describedby="proposal-roadmap-name-hint"
                       />
-                    </label>
+                      <p id="proposal-roadmap-name-hint" className="roadmap-muted roadmap-field__note">
+                        {ROADMAP_NAME_FORMAT_HINT}
+                      </p>
+                      {roadmapTitle.trim() && !roadmapNameValid ? (
+                        <span className="roadmap-budget-warn" role="status">
+                          Use the standard format, e.g. {ROADMAP_NAME_FORMAT_EXAMPLE}.
+                        </span>
+                      ) : null}
+                    </div>
                     <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Client / opportunity</span>
+                      <span className="roadmap-field__cap">Client name</span>
                       <input
                         className="roadmap-input"
                         value={clientLabel}
                         onChange={(e) => setClientLabel(e.target.value)}
                         placeholder="Optional label for your notes"
                       />
+                      <p className="roadmap-muted roadmap-field__note">
+                        Reference the company by its exact full name as it appears in Productive.
+                      </p>
                     </label>
                     <label className="roadmap-field">
                       <span className="roadmap-field__cap">Client budget (USD)</span>
@@ -2337,9 +2036,7 @@ export function RoadmapPlanningView() {
                         inputMode="decimal"
                         autoComplete="off"
                       />
-                      {budgetNumber != null ? (
-                        <span className="roadmap-budget-confirm">Using {formatUsd(budgetNumber)} for comparisons.</span>
-                      ) : clientBudget.trim() ? (
+                      {budgetNumber == null && clientBudget.trim() ? (
                         <span className="roadmap-budget-warn" role="status">
                           Could not read that as a number — try digits only, commas, or 150k.
                         </span>
@@ -2445,7 +2142,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="configurable_packages"
                   onStepChange={setBuilderStep}
-                  nextLabel="Continue to add offerings"
+                  nextLabel="Continue to add solutions"
                   {...proposalStepSaveProps}
                 />
               </>
@@ -2519,10 +2216,7 @@ export function RoadmapPlanningView() {
 
         <section className="roadmap-panel roadmap-panel--export">
           <div className="roadmap-export__head">
-            <div>
-              <p className="roadmap-export__eyebrow">Client-Ready Output</p>
-              <h2 className="roadmap-export__title">Export Preview</h2>
-            </div>
+            <h2 className="roadmap-export__title">Export Preview</h2>
             <div className="roadmap-export__head-actions">
               <button
                 type="button"
@@ -2534,17 +2228,6 @@ export function RoadmapPlanningView() {
               </button>
             </div>
           </div>
-          <div className="roadmap-export__stats">
-            <span>{summaryMarkdown.split("\n").filter(Boolean).length} summary lines</span>
-            <span>{cards.length} board items</span>
-            <span>{totalOptionalCount} optional</span>
-            <span>{totalDeferredCount} deferred</span>
-          </div>
-          <p className="roadmap-export__explain">
-            Phased tables mirror the board: <strong>included</strong> items by phase, then <strong>optional</strong> add-ons.{" "}
-            <strong>Deferred</strong> appears last. Download a PDF to share with clients — proposal hours and pricing use your
-            overrides from Organize.
-          </p>
           <div className="roadmap-export-table-wrap" aria-label="Roadmap export tables">
             {scenarios.map((scenario) => {
               const scenCards = cards.filter((c) => c.scenarioId === scenario.id);
@@ -2582,14 +2265,8 @@ export function RoadmapPlanningView() {
                       ) : null}
                     </div>
                   </td>
-                  <td className="roadmap-export-table__col roadmap-export-table__col--type">
-                    {kindLabel(c.kind)}
-                  </td>
                   <td className="roadmap-export-table__col roadmap-export-table__col--dates">
                     {proposalDateRangeLabel(c.startDate, c.endDate)}
-                  </td>
-                  <td className="roadmap-export-table__col roadmap-export-table__col--num">
-                    {effectiveHoursStr(c) || "—"}
                   </td>
                   <td className="roadmap-export-table__col roadmap-export-table__col--num">
                     {effectivePriceStr(c, ctx, computeScratchSellPrice) || "—"}
@@ -2635,9 +2312,7 @@ export function RoadmapPlanningView() {
                               <thead>
                                 <tr>
                                   <th>Deliverable</th>
-                                  <th>Type</th>
                                   <th>Dates</th>
-                                  <th>Hours</th>
                                   <th>Price</th>
                                 </tr>
                               </thead>
@@ -2656,9 +2331,7 @@ export function RoadmapPlanningView() {
                               <thead>
                                 <tr>
                                   <th>Deliverable</th>
-                                  <th>Type</th>
                                   <th>Dates</th>
-                                  <th>Hours</th>
                                   <th>Price</th>
                                 </tr>
                               </thead>
@@ -2677,9 +2350,7 @@ export function RoadmapPlanningView() {
                               <thead>
                                 <tr>
                                   <th>Deliverable</th>
-                                  <th>Type</th>
                                   <th>Dates</th>
-                                  <th>Hours</th>
                                   <th>Price</th>
                                 </tr>
                               </thead>
@@ -2726,7 +2397,7 @@ export function RoadmapPlanningView() {
                 <div className="roadmap-details-scroll">
                   <p className="roadmap-muted roadmap-details-lead">
                     Sell price updates from:{" "}
-                    <code>(manual hours + catalog task &amp; group template hours) × blended $/hr × risk × strategic</code>{" "}
+                    <code>(manual hours + solution task &amp; group template hours) × blended $/hr × risk × strategic</code>{" "}
                     (rounded to whole dollars).
                   </p>
                   <label className="roadmap-field">
@@ -2750,9 +2421,9 @@ export function RoadmapPlanningView() {
                     />
                   </label>
                   <div ref={scratchComposeSectionRef} className="roadmap-scratch-compose">
-                    <h3 className="roadmap-details-h3">Catalog composition</h3>
+                    <h3 className="roadmap-details-h3">Solution composition</h3>
                     <p className="roadmap-muted roadmap-scratch-compose__hint">
-                      Attach catalog tasks (their time) and task group templates (sum of line hours). These add to
+                      Attach solution tasks (their time) and task group templates (sum of line hours). These add to
                       manual hours above for pricing.
                     </p>
                     <div className="roadmap-scratch-compose__block">
@@ -2768,7 +2439,7 @@ export function RoadmapPlanningView() {
                               <li key={tid} className="roadmap-scratch-compose__row">
                                 <span>
                                   <strong>{k?.task_name ?? tid}</strong>
-                                  {h != null ? ` · ${h} h` : " · (no time in catalog)"}
+                                  {h != null ? ` · ${h} h` : " · (no time in solutions)"}
                                 </span>
                                 <button
                                   type="button"
@@ -2792,7 +2463,7 @@ export function RoadmapPlanningView() {
                         </ul>
                       )}
                       <label className="roadmap-field roadmap-scratch-compose__add">
-                        <span className="roadmap-field__cap">Add catalog task</span>
+                        <span className="roadmap-field__cap">Add solution task</span>
                         <select
                           key={`scratch-task-pick-${detailsModalKey}-${scratchTaskPickTick}`}
                           className="roadmap-input"
@@ -2843,7 +2514,7 @@ export function RoadmapPlanningView() {
                               <li key={gid} className="roadmap-scratch-compose__row">
                                 <span>
                                   <strong>{g?.name ?? gid}</strong>
-                                  {ghOk ? ` · ${gh} h (lines Σ)` : " · (no line hours in catalog)"}
+                                  {ghOk ? ` · ${gh} h (lines Σ)` : " · (no line hours in solutions)"}
                                 </span>
                                 <button
                                   type="button"
@@ -2977,7 +2648,7 @@ export function RoadmapPlanningView() {
                       if (!br) {
                         return (
                           <>
-                            Effective hours: <strong>—</strong> (add manual hours and/or catalog attachments) · Sell:{" "}
+                            Effective hours: <strong>—</strong> (add manual hours and/or solution attachments) · Sell:{" "}
                             <strong>{sell}</strong>
                             {scratchDraft.priceOverride?.trim() ? (
                               <span className="roadmap-muted"> (using override)</span>
@@ -2989,7 +2660,7 @@ export function RoadmapPlanningView() {
                         <>
                           Effective hours: <strong>{br.total} h</strong>{" "}
                           <span className="roadmap-muted">
-                            ({br.manual} h manual + {br.catalog} h from catalog)
+                            ({br.manual} h manual + {br.catalog} h from solutions)
                           </span>
                           {" · "}Sell: <strong>{sell}</strong>
                           {scratchDraft.priceOverride?.trim() ? (

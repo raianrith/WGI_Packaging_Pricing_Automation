@@ -424,7 +424,7 @@ export function GuidedTierBrowser({
               </h3>
               <p className="agency-home-guide__results-hint">
                 Open an individual solution for scope and pricing, open a preset package workspace, or start
-                building from a configurable package family.
+                building from a configurable template.
               </p>
             </div>
           </div>
@@ -477,8 +477,7 @@ export function GuidedTierBrowser({
                         <span className="agency-home-guide__package-body">
                           <span className="agency-home-guide__package-name">{pt.name}</span>
                           <span className="agency-home-guide__package-meta">
-                            {tierSlotCount} package tier{tierSlotCount === 1 ? "" : "s"} · Build in
-                            Package Builder
+                            {tierSlotCount} tier{tierSlotCount === 1 ? "" : "s"} · Build in Package Builder
                           </span>
                         </span>
                         <span className="agency-home-guide__package-chevron" aria-hidden>

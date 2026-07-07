@@ -227,7 +227,7 @@ export function PackageBuilderSlotLimitsPanel({
       const id = newLocalPackageBuilderTypeId();
       const next = [
         ...prev,
-        { id, sort_order: maxOrder + 1, name: "New package type", phase_tags: [], category_tags: [], tactic_tags: [], updated_at: null },
+        { id, sort_order: maxOrder + 1, name: "New template", phase_tags: [], category_tags: [], tactic_tags: [], updated_at: null },
       ];
       setSelectedTypeId(id);
       setSlots((sPrev) => [
@@ -254,7 +254,7 @@ export function PackageBuilderSlotLimitsPanel({
     if (types.length <= 1) return;
     if (
       !globalThis.confirm(
-        "Remove this package type and all of its tier slots? Agency users will no longer see it."
+        "Remove this template and all of its tier slots? Agency users will no longer see it."
       )
     ) {
       return;
@@ -369,7 +369,7 @@ export function PackageBuilderSlotLimitsPanel({
         .map((t, i) => ({
           ...t,
           sort_order: i + 1,
-          name: t.name.trim() || `Package type ${i + 1}`,
+          name: t.name.trim() || `Template ${i + 1}`,
           phase_tags: normalizePackageTypeTags(t.phase_tags),
           category_tags: normalizePackageTypeTags(t.category_tags),
           tactic_tags: normalizePackageTypeTags(t.tactic_tags),
@@ -436,7 +436,7 @@ export function PackageBuilderSlotLimitsPanel({
           .select("id")
           .single();
         if (error || !data) {
-          setOpErr(friendlyMutationMessage(error?.message ?? "Could not create package type."));
+          setOpErr(friendlyMutationMessage(error?.message ?? "Could not create template."));
           return;
         }
         typeIdMap.set(t.id, String((data as { id: string }).id));
@@ -558,7 +558,7 @@ export function PackageBuilderSlotLimitsPanel({
         }
       }
 
-      setOpOk("Package types and tier slots saved.");
+      setOpOk("Templates and tier slots saved.");
       notifyPackagingDataChanged();
       await load();
       await onSaved();
@@ -569,19 +569,19 @@ export function PackageBuilderSlotLimitsPanel({
 
 
   const selectedTypeName =
-    types.find((t) => t.id === selectedTypeId)?.name?.trim() || "Package type";
+    types.find((t) => t.id === selectedTypeId)?.name?.trim() || "Template";
 
   return (
     <div className="admin-pkg-builder">
       <header className="admin-pkg-builder__hero">
         <h2 className="admin-pkg-builder__title">Configurable Package</h2>
         <p className="admin-pkg-builder__lead" style={muted}>
-          Package types group your offerings. Each type has tiers with optional hour, price, and vault limits.
-          Leave limits blank for no cap; leave vault allow-list empty to permit any tier.
+          Templates group your configurable packages. Each template has tiers with optional hour, price, and solution component limits.
+          Leave limits blank for no cap; leave the component allow-list empty to permit any solution.
         </p>
         <div className="admin-pkg-builder__stats" aria-label="Configuration summary">
           <span className="admin-pkg-builder__stat">
-            {sortedTypes.length} type{sortedTypes.length === 1 ? "" : "s"}
+            {sortedTypes.length} template{sortedTypes.length === 1 ? "" : "s"}
           </span>
           <span className="admin-pkg-builder__stat">
             {totalTierCount} tier{totalTierCount === 1 ? "" : "s"}
@@ -600,11 +600,11 @@ export function PackageBuilderSlotLimitsPanel({
       ) : null}
 
       <div className="admin-pkg-builder__layout">
-        <aside className="admin-pkg-builder__types" aria-label="Package types">
+        <aside className="admin-pkg-builder__types" aria-label="Templates">
           <div className="admin-pkg-builder__panel-head">
-            <h3 className="admin-pkg-builder__panel-title">Package types</h3>
+            <h3 className="admin-pkg-builder__panel-title">Templates</h3>
             <button type="button" style={btnSm} disabled={busy} onClick={addPackageType}>
-              Add type
+              Add template
             </button>
           </div>
 
@@ -639,7 +639,7 @@ export function PackageBuilderSlotLimitsPanel({
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => setType(t.id, { name: e.target.value })}
                             onFocus={() => setSelectedTypeId(t.id)}
-                            aria-label={`Package type ${t.sort_order} name`}
+                            aria-label={`Template ${t.sort_order} name`}
                           />
                           <span className="admin-pkg-builder__type-meta-row">
                             <span className="admin-pkg-builder__type-meta">
@@ -690,7 +690,7 @@ export function PackageBuilderSlotLimitsPanel({
         <main className="admin-pkg-builder__main" aria-label="Package tiers">
           {!selectedTypeId ? (
             <p className="admin-pkg-builder__empty" style={muted}>
-              Select a package type to configure its tiers.
+              Select a template to configure its tiers.
             </p>
           ) : (
             <>
@@ -738,7 +738,7 @@ export function PackageBuilderSlotLimitsPanel({
                 <div className="admin-pkg-builder__section-head">
                   <h4 className="admin-pkg-builder__section-title">Package tiers</h4>
                   <p className="admin-pkg-builder__section-lead" style={muted}>
-                    Hour, price, and vault limits apply when agency users build from this family.
+                    Hour, price, and solution component limits apply when agency users build from this template.
                   </p>
                 </div>
                 <div className="admin-pkg-builder__tier-list">
@@ -748,8 +748,8 @@ export function PackageBuilderSlotLimitsPanel({
                   const hasNarrative = Object.values(slotToDetailsFormValues(r)).some((v) => v.trim());
                   const vaultLabel =
                     r.allowed_solution_tier_ids.length === 0
-                      ? "Any vault tier"
-                      : `${r.allowed_solution_tier_ids.length} vault tier${
+                      ? "Any solution component"
+                      : `${r.allowed_solution_tier_ids.length} solution component${
                           r.allowed_solution_tier_ids.length === 1 ? "" : "s"
                         }`;
                   return (
@@ -846,7 +846,7 @@ export function PackageBuilderSlotLimitsPanel({
                             />
                           </label>
                           <label className="admin-pkg-builder__field">
-                            <span className="admin-pkg-builder__field-caption">Solution tier limit</span>
+                            <span className="admin-pkg-builder__field-caption">Solution component limit</span>
                             <input
                               style={input}
                               type="number"
@@ -908,7 +908,7 @@ export function PackageBuilderSlotLimitsPanel({
                             <div className="admin-pkg-builder__details-head">
                               <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
                                 Overview, scope, process, and resources copied to packages built from this
-                                tier. Package category is set from the package type name.
+                                tier. Package category is set from the template name.
                               </p>
                               <select
                                 className="admin-pkg-builder__copy-select admin-pkg-builder__copy-select--details"
@@ -944,7 +944,7 @@ export function PackageBuilderSlotLimitsPanel({
                         ) : null}
 
                         <div className="admin-pkg-builder__vault-row">
-                          <span className="admin-pkg-builder__vault-label">Allowed vault tiers</span>
+                          <span className="admin-pkg-builder__vault-label">Allowed solution components</span>
                           <button
                             type="button"
                             className={
@@ -962,13 +962,13 @@ export function PackageBuilderSlotLimitsPanel({
                         {vaultOpen ? (
                           <div className="admin-pkg-builder__vault-panel">
                             <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
-                              Leave all unchecked to allow any vault solution tier.
+                              Leave all unchecked to allow any solution component from the directory.
                             </p>
                             <input
                               className="admin-pkg-builder__vault-search"
                               style={input}
                               type="search"
-                              placeholder="Filter vault tiers…"
+                              placeholder="Filter solution components…"
                               value={tierFilter}
                               onChange={(e) => setTierFilter(e.target.value)}
                             />

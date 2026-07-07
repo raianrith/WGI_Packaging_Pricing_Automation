@@ -67,7 +67,7 @@ export function AgencyHomeView() {
         <p className="agency-hub__lede">
           {AGENCY_HOME_DESCRIPTION} Or browse the full{" "}
           <Link className="agency-hub__link" to="/solutions">
-            Directory
+            All Solutions
           </Link>{" "}
           and{" "}
           <Link className="agency-hub__link" to="/packages">
@@ -79,7 +79,7 @@ export function AgencyHomeView() {
 
       {catalog.status === "loading" || catalog.status === "idle" ? (
         <div className="agency-home-guide__loading" role="status">
-          Loading playbook catalog from Supabase…
+          Loading playbook solutions from Supabase…
         </div>
       ) : null}
 

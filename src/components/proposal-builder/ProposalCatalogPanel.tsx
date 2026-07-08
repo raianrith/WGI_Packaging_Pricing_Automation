@@ -38,7 +38,11 @@ type CatalogCtxLike = {
   tiers: SolutionTier[];
 };
 
-type CatalogPanelVariant = "offerings" | "preset_packages" | "configurable_packages";
+type CatalogPanelVariant =
+  | "offerings"
+  | "preset_packages"
+  | "configurable_packages"
+  | "variable_tiers";
 
 type Props = {
   panelVariant?: CatalogPanelVariant;
@@ -289,9 +293,12 @@ export function ProposalCatalogPanel({
   const paidAdsSpendFieldId = useId();
   const isPackageOnlyStep =
     panelVariant === "preset_packages" || panelVariant === "configurable_packages";
-  const [catalogMode, setCatalogMode] = useState<"playbook" | "packages" | "variable">(
-    isPackageOnlyStep ? "packages" : "playbook"
-  );
+  const isVariableOnlyStep = panelVariant === "variable_tiers";
+  const catalogMode: "playbook" | "packages" | "variable" = isPackageOnlyStep
+    ? "packages"
+    : isVariableOnlyStep
+      ? "variable"
+      : "playbook";
   const [browsePhase, setBrowsePhase] = useState<string | null>(null);
   const [browseCategory, setBrowseCategory] = useState<string | null>(null);
   const [browseTactic, setBrowseTactic] = useState<string | null>(null);
@@ -387,11 +394,6 @@ export function ProposalCatalogPanel({
     setSearch("");
   };
 
-  const goPlaybook = () => {
-    setCatalogMode("playbook");
-    resetBrowse();
-  };
-
   const variableTierRows = useMemo(() => {
     if (!searchLower) return variableTierTableRows;
     return variableTierTableRows.filter((r) => {
@@ -468,21 +470,21 @@ export function ProposalCatalogPanel({
     }
   };
 
-  const catalogSliderPos = catalogMode === "variable" ? 1 : 0;
-
   const stepMeta = useMemo(() => {
     const stepId: ProposalBuilderStep =
       panelVariant === "preset_packages"
         ? "preset_packages"
         : panelVariant === "configurable_packages"
           ? "configurable_packages"
-          : "catalog";
+          : panelVariant === "variable_tiers"
+            ? "variable_tiers"
+            : "catalog";
     const def = proposalStepDef(stepId);
     if (panelVariant === "preset_packages") {
       return {
         ...def,
         lead:
-          "Add admin-defined preset packages to the active scenario and phase. This step is optional—you can skip it and continue.",
+          "Add admin-defined custom packages to the active scenario and phase. This step is optional—you can skip it and continue.",
       };
     }
     if (panelVariant === "configurable_packages") {
@@ -492,19 +494,26 @@ export function ProposalCatalogPanel({
           "Build custom packages from configurable templates in Package Builder. This step is optional—you can skip it and continue.",
       };
     }
+    if (panelVariant === "variable_tiers") {
+      return {
+        ...def,
+        lead:
+          "Variable solutions are add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from the solutions already in this scenario. This step is optional—you can skip it and continue.",
+      };
+    }
     return {
       ...def,
       lead:
-        "Choose where items land, then add Solution Tiers or Variable Tiers with dynamic pricing. Use Show All to skip a drill-down level.",
+        "Choose where items land, then add Solution Tiers from the playbook. Use Show All to skip a drill-down level.",
     };
   }, [panelVariant]);
 
   const packagePrompt =
-    panelVariant === "configurable_packages" ? "Pick A Template" : "Pick A Preset Package";
+    panelVariant === "configurable_packages" ? "Pick A Template" : "Pick A Custom Package";
   const packageHint =
     panelVariant === "configurable_packages"
-      ? "Custom packages from Package Builder templates"
-      : "Admin-defined preset bundles";
+      ? "Configurable packages from Package Builder templates"
+      : "Admin-defined custom bundles";
 
   const linkModalPreviewUsd =
     linkModalTier && selectedLinkedTierRefId
@@ -653,42 +662,9 @@ export function ProposalCatalogPanel({
         />
       </div>
 
-      {isPackageOnlyStep ? null : (
-      <div className="proposal-catalog-source">
-        <nav className="proposal-catalog-source-tabs" aria-label="Solution source">
-          <div
-            className="proposal-catalog-source-tabs__track"
-            role="tablist"
-          >
-            <div
-              className={`proposal-catalog-source-tabs__slider proposal-catalog-source-tabs__slider--pos-${catalogSliderPos}`}
-              aria-hidden
-            />
-            <button
-              type="button"
-              role="tab"
-              aria-selected={catalogMode === "playbook"}
-              className={`proposal-catalog-source-tabs__tab${catalogMode === "playbook" ? " is-active" : ""}`}
-              onClick={goPlaybook}
-            >
-              Solution Tiers
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={catalogMode === "variable"}
-              className={`proposal-catalog-source-tabs__tab${catalogMode === "variable" ? " is-active" : ""}`}
-              onClick={() => {
-                setCatalogMode("variable");
-                resetBrowse();
-                setSearch("");
-              }}
-            >
-              Variable Tiers
-              <span className="proposal-catalog-source-tabs__count">{variableTierTableRows.length}</span>
-            </button>
-          </div>
-          {onReloadCatalog ? (
+      {onReloadCatalog ? (
+        <div className="proposal-catalog-source">
+          <nav className="proposal-catalog-source-tabs proposal-catalog-source-tabs--reload" aria-label="Solution source">
             <button
               type="button"
               className="proposal-catalog-mode-link"
@@ -697,12 +673,11 @@ export function ProposalCatalogPanel({
             >
               {catalogReloading ? "Refreshing…" : "Refresh solutions"}
             </button>
-          ) : null}
-        </nav>
-      </div>
-      )}
+          </nav>
+        </div>
+      ) : null}
 
-      {isPackageOnlyStep || catalogMode === "packages" ? (
+      {isPackageOnlyStep ? (
         <div className="proposal-catalog-offerings">
           <p className="proposal-catalog-step-prompt">{packagePrompt}</p>
           <p className="proposal-catalog-offerings__hint">
@@ -732,7 +707,7 @@ export function ProposalCatalogPanel({
               ctx.packages.length === 0
                 ? panelVariant === "configurable_packages"
                   ? "Build a package in Package Builder, then refresh solutions."
-                  : "Create preset packages in Admin, then refresh solutions."
+                  : "Create custom packages in Admin, then refresh solutions."
                 : "Try a different search term."
             }
           >
@@ -761,23 +736,24 @@ export function ProposalCatalogPanel({
         </div>
       ) : catalogMode === "variable" ? (
         <div className="proposal-catalog-offerings">
-          <p className="proposal-catalog-step-prompt">Pick A Variable Tier</p>
+          <p className="proposal-catalog-step-prompt">Pick A Variable Solution</p>
           <p className="proposal-catalog-offerings__hint">
-            Dynamic pricing tied to scenario tiers · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
+            Add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically
+            from scenario solutions · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
             <strong>{targetPhaseTitle}</strong>
           </p>
           <ProposalCatalogListSearch
             id={searchId}
             value={search}
             onChange={setSearch}
-            placeholder="Search variable tiers…"
-            label="Search variable tiers"
+            placeholder="Search variable solutions…"
+            label="Search variable solutions"
           />
           <ProposalCatalogLinesPanel
             count={variableTierRows.length}
             isEmpty={variableTierRows.length === 0}
-            emptyTitle="No variable tiers"
-            emptyText="Variable tiers are configured in the Solutions Directory."
+            emptyTitle="No variable solutions"
+            emptyText="Variable solutions are configured in the Solutions Directory."
           >
             {variableTierRows.map((r) => {
               const onProposal = addedTierRefIds.has(r.tierId);

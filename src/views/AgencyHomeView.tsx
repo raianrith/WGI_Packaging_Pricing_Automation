@@ -1,6 +1,7 @@
 import { useCallback, useState, type CSSProperties } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { stashCatalogTierNavigation } from "../lib/catalogTierNavigation";
+import { resolveMigratedPackageTarget } from "../lib/packageMigrations";
 import { AGENCY_HOME_DESCRIPTION, AGENCY_HOME_TITLE } from "../branding";
 import {
   GuidedTierBrowser,
@@ -43,9 +44,21 @@ export function AgencyHomeView() {
 
   const openPresetPackage = useCallback(
     (packageId: string) => {
+      if (catalog.status === "ok") {
+        const target = resolveMigratedPackageTarget(
+          packageId,
+          catalog.packageMigrations,
+          catalog.tiers
+        );
+        if (target) {
+          stashCatalogTierNavigation(target);
+          navigate("/directory-details", { state: { openTierDetail: target } });
+          return;
+        }
+      }
       navigate(`/package/${encodeURIComponent(packageId)}`);
     },
-    [navigate]
+    [catalog, navigate]
   );
 
   return (

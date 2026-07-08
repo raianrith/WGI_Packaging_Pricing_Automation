@@ -19,7 +19,7 @@ const TYPE_FILTER_ORDER: CatalogDirectoryItemType[] = ["solution", "preset_packa
 
 const TYPE_FILTER_LABELS: Record<CatalogDirectoryItemType, string> = {
   solution: "Solution",
-  preset_package: "Preset Package",
+  preset_package: "Custom Package",
   configurable_package: "Configurable Package",
 };
 
@@ -466,11 +466,11 @@ export function CatalogDirectoryBrowser({
               <span className="agency-tier-filters__count-of"> of {allRows.length}</span>
             </span>
             <span className="agency-directory-stat agency-directory-stat--solution">{solutionCount} solutions</span>
-            <span className="agency-directory-stat agency-directory-stat--preset">{presetCount} preset packages</span>
+            <span className="agency-directory-stat agency-directory-stat--preset">{presetCount} custom packages</span>
             <span className="agency-directory-stat agency-directory-stat--configurable">{configurableCount} configurable packages</span>
           </div>
           <span className="agency-tier-filters__hint agency-tier-filters__hint--directory">
-            Expand a solution for tiers · Preset opens overview · Configurable opens package builder
+            Expand a solution for tiers · Custom opens overview · Configurable opens package builder
           </span>
           {hasFilters ? (
             <button type="button" className="agency-tier-filters__clear agency-tier-filters__clear--directory" onClick={clearFilters}>

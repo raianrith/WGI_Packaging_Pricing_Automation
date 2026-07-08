@@ -232,7 +232,7 @@ export function guidedOptionStatSlots(opt: GuidedBrowseOption): GuidedOptionStat
     configurable: `${counts.configurable} Configurable Package${
       counts.configurable === 1 ? "" : "s"
     }`,
-    preset: `${counts.preset} Preset Package${counts.preset === 1 ? "" : "s"}`,
+    preset: `${counts.preset} Custom Package${counts.preset === 1 ? "" : "s"}`,
   };
 
   return GUIDED_STAT_SLOT_ORDER.map(({ key, tone }) => ({

@@ -33,6 +33,10 @@ import {
   stashCatalogTierNavigation,
   type CatalogTierNavTarget,
 } from "../lib/catalogTierNavigation";
+import {
+  resolveMigratedPackageTarget,
+  type PackageMigrationRow,
+} from "../lib/packageMigrations";
 import { buildCatalogDirectoryRows } from "../lib/buildCatalogDirectoryRows";
 import { anchorTierForPackage } from "../lib/packageCombinedTasks";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
@@ -96,6 +100,7 @@ type LoadState =
       tasks: TaskRow[];
       pricing: SolutionTierPricing[];
       implementerHourGroups: ImplementerHourGroupRow[];
+      packageMigrations: PackageMigrationRow[];
     };
 
 function sortId(a: string, b: string): number {
@@ -248,7 +253,13 @@ function firstPackageNarrativeCategory(
 
 function firstTierCategory(
   t: SolutionTier
-): "desc" | "scope" | "process" | "res" | null {
+): "overview" | "desc" | "scope" | "process" | "res" | null {
+  if (
+    t.solution_tier_overview?.trim() ||
+    t.solution_tier_direction?.trim() ||
+    t.solution_tier_overview_link?.trim()
+  )
+    return "overview";
   if (t.solution_tier_what_is_it || t.solution_tier_why_is_it_valuable || t.solution_tier_when_should_it_be_used)
     return "desc";
   if (
@@ -258,8 +269,7 @@ function firstTierCategory(
     t.solution_tier_final_deliverable
   )
     return "scope";
-  if (t.solution_tier_how_do_we_get_this_work_done || t.solution_tier_direction || t.solution_tier_sop)
-    return "process";
+  if (t.solution_tier_how_do_we_get_this_work_done || t.solution_tier_sop) return "process";
   if (tierHasAnyResourceSectionContent(t)) return "res";
   return null;
 }
@@ -372,7 +382,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, slotPack] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, migRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -380,6 +390,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
+      client.from("package_migrations").select("*").order("former_package_id"),
       fetchPackageBuilderCatalog(client),
     ]);
 
@@ -421,6 +432,8 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       return compareTasksByOrder(a, b);
     });
 
+    const packageMigrations = migRes.error ? [] : ((migRes.data ?? []) as PackageMigrationRow[]);
+
     setState({
       status: "ok",
       packages,
@@ -430,6 +443,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       tasks,
       pricing,
       implementerHourGroups: implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]),
+      packageMigrations,
     });
     setPackageBuilderTypes(slotPack.catalog.types.map((t) => ({ ...t })));
     setPackageBuilderSlots(slotPack.catalog.slots.map((r) => ({ ...r })));
@@ -531,6 +545,13 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     return !data.packages.some((p) => p.package_id === next);
   }, [data, mode, packageIdParam]);
 
+  const migratedPackageTarget = useMemo(() => {
+    if (!data || mode !== "package" || !packageIdParam) return null;
+    const raw = decodeURIComponent(packageIdParam);
+    if (raw === "standalone") return null;
+    return resolveMigratedPackageTarget(raw, data.packageMigrations, data.tiers);
+  }, [data, mode, packageIdParam]);
+
   const pkgLen = state.status === "ok" ? state.packages.length : -1;
 
   useEffect(() => {
@@ -553,8 +574,20 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     }
     if (routeInvalidNotified.current) return;
     routeInvalidNotified.current = true;
-    toastNote("This package link is not valid. Use the Packages tab to open a workspace.");
-  }, [packageRouteInvalid, toastNote]);
+
+    if (migratedPackageTarget) {
+      stashCatalogTierNavigation(migratedPackageTarget);
+      navigate("/directory-details", {
+        replace: true,
+        state: { openTierDetail: migratedPackageTarget },
+      });
+      toastNote("This package was moved to Solutions. Opening the matching solution tier.");
+      return;
+    }
+
+    navigate("/packages", { replace: true });
+    toastNote("This package link is no longer valid. Use the Packages tab to open a workspace.");
+  }, [migratedPackageTarget, navigate, packageRouteInvalid, toastNote]);
 
   useEffect(() => {
     if (!data || mode !== "package" || !packageIdParam) return;
@@ -945,9 +978,21 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   const openPresetPackage = useCallback(
     (packageId: string) => {
+      if (state.status === "ok") {
+        const target = resolveMigratedPackageTarget(
+          packageId,
+          state.packageMigrations,
+          state.tiers
+        );
+        if (target) {
+          stashCatalogTierNavigation(target);
+          navigate("/directory-details", { state: { openTierDetail: target } });
+          return;
+        }
+      }
       navigate(`/package/${encodeURIComponent(packageId)}`);
     },
-    [navigate]
+    [navigate, state]
   );
 
   const openConfigurablePackage = useCallback(
@@ -2295,16 +2340,16 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                         <strong>{selectedTierDisplay.solution_tier_owner}</strong>
                       </p>
                     )}
-                    {selectedTierDisplay.solution_tier_overview_link && (
-                      <p style={metaLine}>
-                        Link label: {selectedTierDisplay.solution_tier_overview_link}
-                      </p>
-                    )}
                   </header>
 
                   {(() => {
                     const t = selectedTierDisplay;
                     const first = firstTierCategory(t);
+                    const hasOverview = Boolean(
+                      t.solution_tier_overview?.trim() ||
+                        t.solution_tier_direction?.trim() ||
+                        t.solution_tier_overview_link?.trim()
+                    );
                     const hasDesc = Boolean(
                       t.solution_tier_what_is_it ||
                         t.solution_tier_why_is_it_valuable ||
@@ -2317,9 +2362,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                         t.solution_tier_final_deliverable
                     );
                     const hasProcess = Boolean(
-                      t.solution_tier_how_do_we_get_this_work_done ||
-                        t.solution_tier_direction ||
-                        t.solution_tier_sop
+                      t.solution_tier_how_do_we_get_this_work_done?.trim() || t.solution_tier_sop?.trim()
                     );
                     const hasRes = tierHasAnyResourceSectionContent(t);
                     const resTemplatesRaw = tierTemplatesForProposalDisplay(t).trim();
@@ -2331,6 +2374,45 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                     );
                     return (
                       <>
+                        {hasOverview ? (
+                          <section
+                            className={
+                              first === "overview"
+                                ? "agency-tier-category agency-tier-category--first"
+                                : "agency-tier-category"
+                            }
+                          >
+                            <h3 className="agency-tier-category__title">Overview</h3>
+                            {t.solution_tier_overview?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Solution overview"
+                                text={t.solution_tier_overview.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_direction?.trim() ? (
+                              <AgencyTierSubsection
+                                title="Direction"
+                                text={t.solution_tier_direction.trim()}
+                                blockTitle={blockTitle}
+                              />
+                            ) : null}
+                            {t.solution_tier_overview_link?.trim() ? (
+                              <p style={{ ...metaLine, marginTop: "0.65rem" }}>
+                                Overview link:{" "}
+                                <a
+                                  className="agency-hub__link"
+                                  href={t.solution_tier_overview_link.trim()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {t.solution_tier_overview_link.trim()}
+                                </a>
+                              </p>
+                            ) : null}
+                          </section>
+                        ) : null}
+
                         {hasDesc ? (
                           <section
                             className={
@@ -2422,13 +2504,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                             ) : null}
                             {t.solution_tier_sop ? (
                               <AgencyTierSubsection title="SOP" text={t.solution_tier_sop} blockTitle={blockTitle} />
-                            ) : null}
-                            {t.solution_tier_direction ? (
-                              <AgencyTierSubsection
-                                title="Direction"
-                                text={t.solution_tier_direction}
-                                blockTitle={blockTitle}
-                              />
                             ) : null}
                           </section>
                         ) : null}

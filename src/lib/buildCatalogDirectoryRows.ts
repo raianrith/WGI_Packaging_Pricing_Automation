@@ -201,7 +201,7 @@ export function buildCatalogDirectoryRows(
       return {
         id: `package:${pkg.package_id}`,
         type: "preset_package" as const,
-        typeLabel: "Preset Package",
+        typeLabel: "Custom Package",
         name: pkg.package_name?.trim() || pkg.package_id,
         meta,
         phaseRaw: "",

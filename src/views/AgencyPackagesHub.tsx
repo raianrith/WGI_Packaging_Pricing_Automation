@@ -63,7 +63,6 @@ type PackageCardRollup = {
   pricePartial: boolean;
 };
 
-type PackageSourceFilter = "prebuilt" | "custom";
 type PackageLayoutMode = "cards" | "list";
 type PackageListSortCol = "package" | "tiers" | "creator" | "hours" | "sell";
 type PackageListSort = { col: PackageListSortCol; dir: "asc" | "desc" };
@@ -88,8 +87,6 @@ type PackageHubItemMeta = {
   ws: ReturnType<typeof computePackageWorkspaceFormMetrics> | undefined;
   wsOk: boolean;
   tierLabel: string;
-  vaultHoursDisplay: string;
-  vaultPriceDisplay: string;
   workspaceHoursDisplay: string;
   workspaceSellDisplay: string;
   isCustomPackage: boolean;
@@ -117,16 +114,12 @@ function buildPackageHubItemMeta(
   const wsOk = ws?.ok === true;
   const tierLabel =
     rollup.tierCount === 0 ? "No tiers" : rollup.tierCount === 1 ? "1 tier" : `${rollup.tierCount} tiers`;
-  const vaultHoursDisplay =
-    rollup.tierCount === 0 ? "—" : `${fmtHoursTotal(rollup.hoursSum)} h${rollup.hoursPartial ? " *" : ""}`;
-  const vaultPriceDisplay =
-    rollup.tierCount === 0 ? "—" : fmtUsd(rollup.priceSum) + (rollup.pricePartial ? " *" : "");
   const workspaceHoursDisplay =
     rollup.tierCount === 0 ? "—" : wsOk ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} h` : "—";
   const workspaceSellDisplay =
     rollup.tierCount === 0 ? "—" : wsOk ? fmtUsd(Math.round(ws.netSellAfterSellDiscount)) : "—";
   const isCustomPackage = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
-  const sourceLabel = isCustomPackage ? "Custom package" : "Preset";
+  const sourceLabel = "Custom package";
   const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
   const partialNote =
     rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
@@ -161,8 +154,6 @@ function buildPackageHubItemMeta(
     ws,
     wsOk,
     tierLabel,
-    vaultHoursDisplay,
-    vaultPriceDisplay,
     workspaceHoursDisplay,
     workspaceSellDisplay,
     isCustomPackage,
@@ -322,7 +313,6 @@ export function AgencyPackagesHub() {
   const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
   const [packageTypes, setPackageTypes] = useState<PackageBuilderPackageType[]>([]);
   const [pkgFilter, setPkgFilter] = useState("");
-  const [packageSourceFilter, setPackageSourceFilter] = useState<PackageSourceFilter>("prebuilt");
   const [packageLayoutMode, setPackageLayoutMode] = useState<PackageLayoutMode>(() => loadPackageLayoutMode());
   const [packageListSort, setPackageListSort] = useState<PackageListSort>({ col: "package", dir: "asc" });
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
@@ -501,17 +491,6 @@ export function AgencyPackagesHub() {
     return new Set(packageTypes.map((pt) => pt.name.trim().toLowerCase()).filter(Boolean));
   }, [packageTypes]);
 
-  const packageSourceCounts = useMemo(() => {
-    let custom = 0;
-    let prebuilt = 0;
-    for (const pkg of packages) {
-      const isCustom = packageTypeNameSet.has((pkg.package_category ?? "").trim().toLowerCase());
-      if (isCustom) custom += 1;
-      else prebuilt += 1;
-    }
-    return { custom, prebuilt };
-  }, [packages, packageTypeNameSet]);
-
   const packageCreatorById = useMemo(() => {
     const m = new Map<string, string>();
     for (const row of packageCreateAuditRows) {
@@ -560,14 +539,11 @@ export function AgencyPackagesHub() {
   const filteredPackages = useMemo(() => {
     const q = pkgFilter.trim().toLowerCase();
     return packages.filter((p) => {
-      const isCustom = packageTypeNameSet.has((p.package_category ?? "").trim().toLowerCase());
-      if (packageSourceFilter === "custom" && !isCustom) return false;
-      if (packageSourceFilter === "prebuilt" && isCustom) return false;
       if (packageCreatorFilter !== "all" && packageCreatorById.get(p.package_id) !== packageCreatorFilter) return false;
       if (!q) return true;
       return p.package_id.toLowerCase().includes(q) || (p.package_name ?? "").toLowerCase().includes(q);
     });
-  }, [packages, pkgFilter, packageSourceFilter, packageTypeNameSet, packageCreatorFilter, packageCreatorById]);
+  }, [packages, pkgFilter, packageCreatorFilter, packageCreatorById]);
 
   const sortedListPackages = useMemo(() => {
     const rows = [...filteredPackages];
@@ -624,7 +600,7 @@ export function AgencyPackagesHub() {
                   Open a package
                 </h2>
                 <p className="agency-pkg-open-panel__lead">
-                  Jump back into a custom build, or open a preset package.
+                  Open, edit, and jump back into your custom packages.
                 </p>
               </div>
               <div className="agency-pkg-open-panel__controls">
@@ -670,36 +646,10 @@ export function AgencyPackagesHub() {
               </div>
             </div>
 
-            <div className="agency-pkg-open-panel__filters-row">
-              <div className="agency-pkg-open-panel__filters" role="tablist" aria-label="Package library">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={packageSourceFilter === "prebuilt"}
-                  className={
-                    packageSourceFilter === "prebuilt"
-                      ? "agency-pkg-open-panel__filter is-active"
-                      : "agency-pkg-open-panel__filter"
-                  }
-                  onClick={() => setPackageSourceFilter("prebuilt")}
-                >
-                  <span>Preset Packages</span>
-                  <strong>{packageSourceCounts.prebuilt}</strong>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={packageSourceFilter === "custom"}
-                  className={
-                    packageSourceFilter === "custom"
-                      ? "agency-pkg-open-panel__filter is-active"
-                      : "agency-pkg-open-panel__filter"
-                  }
-                  onClick={() => setPackageSourceFilter("custom")}
-                >
-                  <span>Custom Packages</span>
-                  <strong>{packageSourceCounts.custom}</strong>
-                </button>
+            <div className="agency-pkg-open-panel__filters-row agency-pkg-open-panel__filters-row--layout-only">
+              <div className="agency-pkg-open-panel__count-label" role="status" aria-live="polite">
+                <strong>{filteredPackages.length}</strong>{" "}
+                custom package{filteredPackages.length === 1 ? "" : "s"}
               </div>
               <div className="agency-pkg-open-panel__layout">
                 <span className="agency-pkg-open-panel__layout-label" id="hub-pkg-layout-label">
@@ -789,20 +739,8 @@ export function AgencyPackagesHub() {
                         <tr key={p.package_id} className="agency-pkg-hub__list-row">
                           <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--name">
                             <div className="agency-pkg-hub__list-name-wrap">
-                              {meta.isCustomPackage ? (
-                                <span className="agency-pkg-hub__list-name">{p.package_name}</span>
-                              ) : (
-                                <Link className="agency-pkg-hub__list-name-link" to={workspacePath}>
-                                  {p.package_name}
-                                </Link>
-                              )}
-                              <span
-                                className={
-                                  meta.isCustomPackage
-                                    ? "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom"
-                                    : "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--prebuilt"
-                                }
-                              >
+                              <span className="agency-pkg-hub__list-name">{p.package_name}</span>
+                              <span className="agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom">
                                 {meta.sourceLabel}
                               </span>
                             </div>
@@ -830,24 +768,18 @@ export function AgencyPackagesHub() {
                             </span>
                           </td>
                           <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--actions">
-                            {meta.isCustomPackage ? (
-                              <div className="agency-pkg-hub__list-actions">
-                                <button
-                                  type="button"
-                                  className="agency-pkg-hub__card-edit agency-pkg-hub__list-edit"
-                                  onClick={() => setEditPackageId(p.package_id)}
-                                >
-                                  Edit
-                                </button>
-                                <Link className="agency-pkg-hub__card-open agency-pkg-hub__list-open" to={workspacePath}>
-                                  Open
-                                </Link>
-                              </div>
-                            ) : (
+                            <div className="agency-pkg-hub__list-actions">
+                              <button
+                                type="button"
+                                className="agency-pkg-hub__card-edit agency-pkg-hub__list-edit"
+                                onClick={() => setEditPackageId(p.package_id)}
+                              >
+                                Edit
+                              </button>
                               <Link className="agency-pkg-hub__card-open agency-pkg-hub__list-open" to={workspacePath}>
-                                Open workspace
+                                Open
                               </Link>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -870,13 +802,7 @@ export function AgencyPackagesHub() {
                       <div className="agency-pkg-hub__card-head">
                         <h3 className="agency-pkg-hub__card-title">{p.package_name}</h3>
                         <span className="agency-pkg-hub__pills">
-                          <span
-                            className={
-                              meta.isCustomPackage
-                                ? "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom"
-                                : "agency-pkg-hub__source-pill agency-pkg-hub__source-pill--prebuilt"
-                            }
-                          >
+                          <span className="agency-pkg-hub__source-pill agency-pkg-hub__source-pill--custom">
                             {meta.sourceLabel}
                           </span>
                           <span
@@ -912,63 +838,37 @@ export function AgencyPackagesHub() {
                           </div>
                         </div>
                       </div>
-                      {meta.rollup.tierCount > 0 ? (
-                        <p className="agency-pkg-hub__vault-mini">
-                          Σ solution components
-                          {meta.rollup.hoursPartial || meta.rollup.pricePartial ? " *" : ""}:{" "}
-                          {meta.vaultHoursDisplay} · {meta.vaultPriceDisplay}
-                        </p>
-                      ) : null}
                       {meta.rollup.tierCount > 0 && !meta.wsOk ? (
                         <p className="agency-pkg-hub__card-partial">Workspace totals could not be calculated.</p>
                       ) : null}
                       {meta.partialNote ? (
                         <p className="agency-pkg-hub__card-partial">{meta.partialNote}</p>
                       ) : null}
-                      {meta.isCustomPackage ? (
-                        <div className="agency-pkg-hub__card-foot agency-pkg-hub__card-foot--actions">
-                          <button
-                            type="button"
-                            className="agency-pkg-hub__card-edit"
-                            onClick={() => setEditPackageId(p.package_id)}
-                          >
-                            Edit package
-                          </button>
-                          <Link
-                            className="agency-pkg-hub__card-open"
-                            to={`/package/${encodeURIComponent(p.package_id)}`}
-                          >
-                            Open workspace
-                            <span className="agency-pkg-hub__card-arrow" aria-hidden="true">
-                              →
-                            </span>
-                          </Link>
-                        </div>
-                      ) : (
-                        <div className="agency-pkg-hub__card-foot">
-                          <span className="agency-pkg-hub__card-cta">Open workspace</span>
+                      <div className="agency-pkg-hub__card-foot agency-pkg-hub__card-foot--actions">
+                        <button
+                          type="button"
+                          className="agency-pkg-hub__card-edit"
+                          onClick={() => setEditPackageId(p.package_id)}
+                        >
+                          Edit package
+                        </button>
+                        <Link
+                          className="agency-pkg-hub__card-open"
+                          to={`/package/${encodeURIComponent(p.package_id)}`}
+                        >
+                          Open workspace
                           <span className="agency-pkg-hub__card-arrow" aria-hidden="true">
                             →
                           </span>
-                        </div>
-                      )}
+                        </Link>
+                      </div>
                     </div>
                   );
                   return (
                     <li key={p.package_id}>
-                      {meta.isCustomPackage ? (
-                        <article className="agency-pkg-hub__card agency-pkg-hub__card--static" aria-label={meta.a11yLabel}>
-                          {cardBody}
-                        </article>
-                      ) : (
-                        <Link
-                          className="agency-pkg-hub__card"
-                          to={`/package/${encodeURIComponent(p.package_id)}`}
-                          aria-label={meta.a11yLabel}
-                        >
-                          {cardBody}
-                        </Link>
-                      )}
+                      <article className="agency-pkg-hub__card agency-pkg-hub__card--static" aria-label={meta.a11yLabel}>
+                        {cardBody}
+                      </article>
                     </li>
                   );
                 })}

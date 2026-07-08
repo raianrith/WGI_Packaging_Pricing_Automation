@@ -3,6 +3,7 @@ import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { buildCatalogTierTableRows } from "../lib/buildCatalogTierTableRows";
 import { compareTasksByOrder } from "../lib/taskOrder";
 import { filterPresetPackages } from "../lib/presetPackages";
+import type { PackageMigrationRow } from "../lib/packageMigrations";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -40,6 +41,8 @@ export type VaultCatalogLoadState =
       packageTypes: PackageBuilderPackageType[];
       packageBuilderSlots: PackageBuilderSlotTemplate[];
       presetPackages: Package[];
+      packageMigrations: PackageMigrationRow[];
+      tiers: SolutionTier[];
     };
 
 export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => void } {
@@ -71,13 +74,14 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, builderPack] = await Promise.all([
+    const [pRes, sRes, tRes, kRes, prRes, ptRes, migRes, builderPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
       client.from("tasks").select("*").order("task_id"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
+      client.from("package_migrations").select("*").order("former_package_id"),
       fetchPackageBuilderCatalog(client),
     ]);
 
@@ -130,12 +134,16 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
 
     const presetPackages = filterPresetPackages(packages, builderPack.catalog.types);
 
+    const packageMigrations = migRes.error ? [] : ((migRes.data ?? []) as PackageMigrationRow[]);
+
     setState({
       status: "ok",
       rows,
       packageTypes: builderPack.catalog.types,
       packageBuilderSlots: builderPack.catalog.slots,
       presetPackages,
+      packageMigrations,
+      tiers,
     });
   }, []);
 

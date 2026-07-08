@@ -13,7 +13,7 @@ export const AGENCY_HERO_TITLE = "Solutions Directory";
 export const AGENCY_HOME_TITLE = "Guided Directory Browse";
 
 export const AGENCY_HOME_DESCRIPTION =
-  "Walk phase, category, and tactic to surface Solution Tiers, Preset Packages, and Configurable Packages that match your playbook path. Items without taxonomy tags appear as Not Defined—open any match for scope, pricing, and tasks.";
+  "Walk phase, category, and tactic to surface Solution Tiers, Custom Packages, and Configurable Packages that match your playbook path. Items without taxonomy tags appear as Not Defined—open any match for scope, pricing, and tasks.";
 
 /** Top navigation: catalog, package library, and package workspaces. */
 export const NAV_SOLUTIONS_OVERVIEW = "Solutions Directory";

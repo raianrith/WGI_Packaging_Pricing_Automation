@@ -66,7 +66,6 @@ import { ProposalSaveReminderBanner } from "../components/proposal-builder/Propo
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
-import { filterPresetPackages } from "../lib/presetPackages";
 import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
 import {
   applyVariableTierPricingToCards,
@@ -1754,16 +1753,6 @@ export function RoadmapPlanningView() {
     });
   }, [cards, scenarios, catalogCtx]);
 
-  const catalogPackages = useMemo(() => {
-    if (!catalogCtx) return [];
-    return [...catalogCtx.packages].sort((a, b) => sortId(a.package_id, b.package_id));
-  }, [catalogCtx]);
-
-  const presetCatalogPackages = useMemo(() => {
-    if (!data?.packageTypes) return [];
-    return filterPresetPackages(catalogPackages, data.packageTypes);
-  }, [catalogPackages, data?.packageTypes]);
-
   if (state.status === "error") {
     return (
       <div className="roadmap-page">
@@ -1851,7 +1840,7 @@ export function RoadmapPlanningView() {
   };
 
   const renderCatalogPanel = (
-    panelVariant: "offerings" | "preset_packages" | "configurable_packages",
+    panelVariant: "offerings" | "preset_packages" | "configurable_packages" | "variable_tiers",
     filteredPackages: Package[]
   ) => (
     <ProposalCatalogPanel
@@ -2123,18 +2112,6 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="scenarios"
                   onStepChange={setBuilderStep}
-                  nextLabel="Continue to preset packages"
-                  {...proposalStepSaveProps}
-                />
-              </>
-            ) : null}
-
-            {builderStep === "preset_packages" ? (
-              <>
-                {renderCatalogPanel("preset_packages", presetCatalogPackages)}
-                <ProposalStepNav
-                  step="preset_packages"
-                  onStepChange={setBuilderStep}
                   nextLabel="Continue to configurable packages"
                   {...proposalStepSaveProps}
                 />
@@ -2155,9 +2132,21 @@ export function RoadmapPlanningView() {
 
             {builderStep === "catalog" ? (
               <>
-                {renderCatalogPanel("offerings", catalogPackages)}
+                {renderCatalogPanel("offerings", [])}
                 <ProposalStepNav
                   step="catalog"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Continue to variable solutions"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "variable_tiers" ? (
+              <>
+                {renderCatalogPanel("variable_tiers", [])}
+                <ProposalStepNav
+                  step="variable_tiers"
                   onStepChange={setBuilderStep}
                   nextLabel="Organize proposal"
                   {...proposalStepSaveProps}

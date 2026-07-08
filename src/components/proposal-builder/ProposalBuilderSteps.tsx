@@ -4,6 +4,7 @@ export type ProposalBuilderStep =
   | "preset_packages"
   | "configurable_packages"
   | "catalog"
+  | "variable_tiers"
   | "board"
   | "review";
 
@@ -12,19 +13,26 @@ export type ProposalStepDef = {
   number: number;
   label: string;
   hint: string;
+  examples?: string;
 };
 
 const STEPS: ProposalStepDef[] = [
   { id: "setup", number: 1, label: "Setup", hint: "Client & Budget" },
   { id: "scenarios", number: 2, label: "Scenarios & Phases", hint: "Names & Structure" },
-  { id: "preset_packages", number: 3, label: "Add Preset Packages", hint: "Optional · Skip Anytime" },
   {
     id: "configurable_packages",
-    number: 4,
+    number: 3,
     label: "Add Configurable Packages",
     hint: "Optional · Skip Anytime",
   },
-  { id: "catalog", number: 5, label: "Add Solutions", hint: "Solution & Variable Tiers" },
+  { id: "catalog", number: 4, label: "Add Solutions", hint: "Solution Tiers" },
+  {
+    id: "variable_tiers",
+    number: 5,
+    label: "Add Variable Solutions",
+    examples: "Paid Campaign Management, Rush Charge, Travel Time",
+    hint: "Dynamic pricing",
+  },
   { id: "board", number: 6, label: "Organize & Reorder Proposal", hint: "Scope & Compare" },
   { id: "review", number: 7, label: "Review", hint: "Save & Export" },
 ];
@@ -79,6 +87,9 @@ export function ProposalBuilderSteps({
                 </span>
                 <span className="proposal-builder-rail__text">
                   <span className="proposal-builder-rail__label">{step.label}</span>
+                  {step.examples ? (
+                    <span className="proposal-builder-rail__examples">{step.examples}</span>
+                  ) : null}
                   <span className="proposal-builder-rail__hint">{step.hint}</span>
                 </span>
               </button>

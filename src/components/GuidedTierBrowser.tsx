@@ -59,7 +59,7 @@ const STEPS = [
     key: "tiers" as const,
     n: 4,
     title: "Tiers",
-    hint: "Individual solutions, preset packages, and configurable packages on this path",
+    hint: "Individual solutions, custom packages, and configurable packages on this path",
     icon: "★",
     theme: "tiers",
   },
@@ -411,7 +411,7 @@ export function GuidedTierBrowser({
               <h3 className="agency-home-guide__results-title">
                 {matchedTiers.length} Solution Tier{matchedTiers.length === 1 ? "" : "s"}
                 {matchedPresetPackages.length > 0
-                  ? ` · ${matchedPresetPackages.length} Preset Package${
+                  ? ` · ${matchedPresetPackages.length} Custom Package${
                       matchedPresetPackages.length === 1 ? "" : "s"
                     }`
                   : ""}
@@ -423,7 +423,7 @@ export function GuidedTierBrowser({
                 on this path
               </h3>
               <p className="agency-home-guide__results-hint">
-                Open an individual solution for scope and pricing, open a preset package workspace, or start
+                Open an individual solution for scope and pricing, open a custom package workspace, or start
                 building from a configurable template.
               </p>
             </div>
@@ -431,7 +431,7 @@ export function GuidedTierBrowser({
 
           {matchedPresetPackages.length > 0 ? (
             <div className="agency-home-guide__package-block agency-home-guide__package-block--preset">
-              <h4 className="agency-home-guide__package-block-title">Preset packages</h4>
+              <h4 className="agency-home-guide__package-block-title">Custom packages</h4>
               <ul className="agency-home-guide__package-list">
                 {matchedPresetPackages.map((pkg, i) => (
                   <li key={pkg.package_id} style={{ "--guide-stagger": i } as CSSProperties}>

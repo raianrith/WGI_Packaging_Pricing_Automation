@@ -66,6 +66,7 @@ import { ProposalSaveReminderBanner } from "../components/proposal-builder/Propo
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import { filterConfigurablePackages } from "../lib/presetPackages";
 import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
 import {
   applyVariableTierPricingToCards,
@@ -1753,6 +1754,13 @@ export function RoadmapPlanningView() {
     });
   }, [cards, scenarios, catalogCtx]);
 
+  const preBuiltCustomPackages = useMemo(() => {
+    if (!data?.packageTypes || !catalogCtx) return [];
+    return filterConfigurablePackages(catalogCtx.packages, data.packageTypes).sort((a, b) =>
+      sortId(a.package_id, b.package_id)
+    );
+  }, [catalogCtx, data?.packageTypes]);
+
   if (state.status === "error") {
     return (
       <div className="roadmap-page">
@@ -2112,7 +2120,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="scenarios"
                   onStepChange={setBuilderStep}
-                  nextLabel="Continue to configurable packages"
+                  nextLabel="Continue to build & add custom packages"
                   {...proposalStepSaveProps}
                 />
               </>
@@ -2123,6 +2131,18 @@ export function RoadmapPlanningView() {
                 {renderConfigurablePackagesPanel()}
                 <ProposalStepNav
                   step="configurable_packages"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Continue to pre-built custom packages"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "preset_packages" ? (
+              <>
+                {renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
+                <ProposalStepNav
+                  step="preset_packages"
                   onStepChange={setBuilderStep}
                   nextLabel="Continue to add solutions"
                   {...proposalStepSaveProps}
@@ -2193,7 +2213,7 @@ export function RoadmapPlanningView() {
               <>
                 <section className="roadmap-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">Step 7</p>
+                    <p className="proposal-step-panel__eyebrow">Step 8</p>
                     <h2 className="proposal-step-panel__title">Review &amp; Export</h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}

@@ -138,7 +138,7 @@ export function ProposalOrganizePanel({
     <div className="proposal-step-panel proposal-organize">
       <header className="proposal-organize__hero">
         <div className="proposal-organize__hero-text">
-          <p className="proposal-step-panel__eyebrow">Step 6</p>
+          <p className="proposal-step-panel__eyebrow">Step 7</p>
           <h2 className="proposal-step-panel__title">Organize &amp; Reorder Proposal</h2>
         </div>
       </header>

@@ -13,6 +13,7 @@ import ReactMarkdown from "react-markdown";
 import {
   AGENCY_HERO_TITLE,
   AGENCY_VIEW_DESCRIPTION,
+  NAV_PACKAGE_BUILDER,
 } from "../branding";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
 import {
@@ -1433,7 +1434,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             <>
               Use{" "}
               <Link className="agency-hub__link" to="/package-builder">
-                Package Builder
+                {NAV_PACKAGE_BUILDER}
               </Link>{" "}
               to build a new bundle or the{" "}
               <Link className="agency-hub__link" to="/packages">

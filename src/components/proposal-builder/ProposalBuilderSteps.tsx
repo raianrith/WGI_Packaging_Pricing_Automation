@@ -22,19 +22,25 @@ const STEPS: ProposalStepDef[] = [
   {
     id: "configurable_packages",
     number: 3,
-    label: "Add Configurable Packages",
+    label: "Build & Add Custom Packages",
     hint: "Optional · Skip Anytime",
   },
-  { id: "catalog", number: 4, label: "Add Solutions", hint: "Solution Tiers" },
+  {
+    id: "preset_packages",
+    number: 4,
+    label: "Add Pre-Built Custom Packages",
+    hint: "Optional · Skip Anytime",
+  },
+  { id: "catalog", number: 5, label: "Add Solutions", hint: "Solution Tiers" },
   {
     id: "variable_tiers",
-    number: 5,
+    number: 6,
     label: "Add Variable Solutions",
     examples: "Paid Campaign Management, Rush Charge, Travel Time",
     hint: "Dynamic pricing",
   },
-  { id: "board", number: 6, label: "Organize & Reorder Proposal", hint: "Scope & Compare" },
-  { id: "review", number: 7, label: "Review", hint: "Save & Export" },
+  { id: "board", number: 7, label: "Organize & Reorder Proposal", hint: "Scope & Compare" },
+  { id: "review", number: 8, label: "Review", hint: "Save & Export" },
 ];
 
 type Props = {

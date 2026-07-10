@@ -19,7 +19,7 @@ export const AGENCY_HOME_DESCRIPTION =
 export const NAV_SOLUTIONS_OVERVIEW = "Solutions Directory";
 
 /** Top navigation: guided Build a Package flow. */
-export const NAV_PACKAGE_BUILDER = "Package Builder";
+export const NAV_PACKAGE_BUILDER = "Custom Package Builder";
 
 /** Top navigation: roadmap workspace (was “Roadmap planning”). */
 export const NAV_PROPOSAL_BUILDER = "Proposal Builder";
@@ -46,7 +46,7 @@ export const AGENCY_HUB_DESCRIPTION =
   "Each card opens a dedicated workspace for that bundle: solutions, tier sell prices, scope KPIs, and task detail—read only, synced from Supabase. Solutions without a package live on the Solutions tab, not here.";
 
 /** Hero copy on the Package Builder page. */
-export const PACKAGE_BUILDER_TITLE = "Configurable Package Builder";
+export const PACKAGE_BUILDER_TITLE = "Custom Package Builder";
 
 export const PACKAGE_BUILDER_DESCRIPTION =
   "Assemble a package in four guided steps—pick a template, choose a tier, add solution components, and confirm pricing. When you're done, we open the package workspace so you can refine scope and copy.";

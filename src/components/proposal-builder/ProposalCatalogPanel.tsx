@@ -484,7 +484,7 @@ export function ProposalCatalogPanel({
       return {
         ...def,
         lead:
-          "Add admin-defined custom packages to the active scenario and phase. This step is optional—you can skip it and continue.",
+          "Add custom packages you already built from configurable templates in Step 3. Pick one to add it to the active scenario and phase. This step is optional—you can skip it and continue.",
       };
     }
     if (panelVariant === "configurable_packages") {
@@ -509,11 +509,17 @@ export function ProposalCatalogPanel({
   }, [panelVariant]);
 
   const packagePrompt =
-    panelVariant === "configurable_packages" ? "Pick A Template" : "Pick A Custom Package";
+    panelVariant === "configurable_packages"
+      ? "Pick A Template"
+      : panelVariant === "preset_packages"
+        ? "Pick A Pre-Built Custom Package"
+        : "Pick A Custom Package";
   const packageHint =
     panelVariant === "configurable_packages"
       ? "Configurable packages from Package Builder templates"
-      : "Admin-defined custom bundles";
+      : panelVariant === "preset_packages"
+        ? "Pre-built packages from the configurable package builder"
+        : "Admin-defined custom bundles";
 
   const linkModalPreviewUsd =
     linkModalTier && selectedLinkedTierRefId
@@ -707,7 +713,9 @@ export function ProposalCatalogPanel({
               ctx.packages.length === 0
                 ? panelVariant === "configurable_packages"
                   ? "Build a package in Package Builder, then refresh solutions."
-                  : "Create custom packages in Admin, then refresh solutions."
+                  : panelVariant === "preset_packages"
+                    ? "Build a package in Step 3, then refresh solutions."
+                    : "Create custom packages in Admin, then refresh solutions."
                 : "Try a different search term."
             }
           >

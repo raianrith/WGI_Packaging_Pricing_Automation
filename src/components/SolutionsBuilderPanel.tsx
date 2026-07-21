@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -25,6 +26,7 @@ import type {
   TierResourceExampleRow,
 } from "../types";
 import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
+import { SolutionTierInlineRiskPricing } from "./SolutionTierInlineRiskPricing";
 import {
   draftFieldsFromTierVaultTasks,
   insertCopiedVaultTasksFromTier,
@@ -1013,6 +1015,24 @@ export function SolutionsBuilderPanel({
   const [tierRenameDraft, setTierRenameDraft] = useState("");
   /** Keep update page concise until user chooses to edit a solution. */
   const [showUpdateDetails, setShowUpdateDetails] = useState(false);
+  /** Tier ids with inline risk/strategic pricing panel open under the solutions list. */
+  const [inlinePricingTierIds, setInlinePricingTierIds] = useState<Set<string>>(() => new Set());
+
+  const openInlinePricing = useCallback((tierId: string) => {
+    setInlinePricingTierIds((prev) => {
+      const next = new Set(prev);
+      next.add(tierId);
+      return next;
+    });
+  }, []);
+
+  const closeInlinePricing = useCallback((tierId: string) => {
+    setInlinePricingTierIds((prev) => {
+      const next = new Set(prev);
+      next.delete(tierId);
+      return next;
+    });
+  }, []);
 
   const [updTierFocus, setUpdTierFocus] = useState("");
   /** Task group template to apply in bulk to `updTierFocus` (update tab). */
@@ -1063,6 +1083,12 @@ export function SolutionsBuilderPanel({
       .filter((t) => t.solution_id === updSolutionId)
       .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
   }, [tiers, updSolutionId]);
+
+  const pricingByTierId = useMemo(() => {
+    const m = new Map<string, SolutionTierPricing>();
+    for (const row of tierPricing) m.set(row.solution_tier_id, row);
+    return m;
+  }, [tierPricing]);
 
   const tasksOfFocusTier = useMemo(() => {
     if (!updTierFocus) return [];
@@ -3562,10 +3588,12 @@ export function SolutionsBuilderPanel({
                     <tbody>
                       {[...solutions]
                         .sort((a, b) => sortId(a.solution_id, b.solution_id))
-                        .map((sol) => (
+                        .map((sol) => {
+                          const isExpanded = updSolutionId === sol.solution_id;
+                          return (
+                            <Fragment key={sol.solution_id}>
                           <tr
-                            key={sol.solution_id}
-                            className={updSolutionId === sol.solution_id ? "admin-sb-solution-row--active" : undefined}
+                            className={isExpanded ? "admin-sb-solution-row--active" : undefined}
                           >
                             <td style={td}>
                               {solutionRenameId === sol.solution_id ? (
@@ -3617,14 +3645,25 @@ export function SolutionsBuilderPanel({
                                     <button
                                       type="button"
                                       style={btnSm}
+                                      aria-expanded={isExpanded}
                                       onClick={() => {
                                         cancelSolutionRename();
                                         cancelTierRename();
-                                        setUpdSolutionId(sol.solution_id);
                                         setShowUpdateDetails(false);
+                                        setUpdSolutionId((prev) => {
+                                          if (prev === sol.solution_id) {
+                                            setInlinePricingTierIds(new Set());
+                                            return "";
+                                          }
+                                          const tierIds = tiers
+                                            .filter((t) => t.solution_id === sol.solution_id)
+                                            .map((t) => t.solution_tier_id);
+                                          setInlinePricingTierIds(new Set(tierIds));
+                                          return sol.solution_id;
+                                        });
                                       }}
                                     >
-                                      View all tiers
+                                      {isExpanded ? "Hide tiers" : "View all tiers"}
                                     </button>
                                     <button
                                       type="button"
@@ -3650,114 +3689,184 @@ export function SolutionsBuilderPanel({
                               </div>
                             </td>
                           </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-                {updSolutionId ? (
-                  <div style={{ ...formSectionBox, marginTop: 12 }}>
-                    <p style={formSectionHeading}>
-                      Solution tiers for {solutions.find((s) => s.solution_id === updSolutionId)?.solution_name ?? updSolutionId}
-                    </p>
-                    <div className="admin-table-scroll">
-                      <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
-                        <thead>
-                          <tr>
-                            <th style={th}>Tier</th>
-                            <th style={th}>Id</th>
-                            <th style={th}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tiersOfUpdateSol.map((t) => (
-                            <tr key={t.solution_tier_id}>
-                              <td style={td}>
-                                {tierRenameId === t.solution_tier_id ? (
-                                  <input
-                                    type="text"
-                                    className="admin-field"
-                                    style={{ ...input, width: "100%", maxWidth: "28rem", marginTop: 0 }}
-                                    value={tierRenameDraft}
-                                    onChange={(e) => setTierRenameDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Escape") {
-                                        e.preventDefault();
-                                        cancelTierRename();
-                                      }
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        void saveTierRename();
-                                      }
-                                    }}
-                                    aria-label={`Rename tier ${t.solution_tier_id}`}
-                                    autoComplete="off"
-                                    autoFocus
-                                  />
-                                ) : (
-                                  t.solution_tier_name
-                                )}
-                              </td>
-                              <td style={td}>
-                                <code>{t.solution_tier_id}</code>
-                              </td>
-                              <td style={td}>
-                                <div className="admin-actions-row" style={{ marginTop: 0 }}>
-                                  {tierRenameId === t.solution_tier_id ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        style={btnPrimary}
-                                        className="admin-btn-primary"
-                                        onClick={() => void saveTierRename()}
-                                      >
-                                        Save name
-                                      </button>
-                                      <button type="button" style={btnSm} onClick={cancelTierRename}>
-                                        Cancel
-                                      </button>
-                                    </>
+                          {isExpanded ? (
+                            <tr className="admin-sb-solution-tiers-row">
+                              <td colSpan={3} style={{ ...td, padding: "0.65rem 0.75rem 0.85rem" }}>
+                                <div className="admin-sb-solution-tiers-panel">
+                                  <p className="admin-sb-solution-tiers-panel__title">
+                                    Solution tiers
+                                    <span className="admin-sb-solution-tiers-panel__count">
+                                      {tiersOfUpdateSol.length}
+                                    </span>
+                                  </p>
+                                  {tiersOfUpdateSol.length === 0 ? (
+                                    <p style={{ ...muted, marginTop: 6, marginBottom: 0 }}>
+                                      No tiers yet for this solution.
+                                    </p>
                                   ) : (
-                                    <>
-                                      <button
-                                        type="button"
-                                        style={btnSm}
-                                        onClick={() => {
-                                          startEditTier(t);
-                                          setShowUpdateDetails(true);
-                                          window.setTimeout(() => jumpTo("sb-update-section-tiers"), 0);
-                                        }}
-                                      >
-                                        Update
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={btnSm}
-                                        onClick={() => {
-                                          cancelSolutionRename();
-                                          setOpErr(null);
-                                          setTierRenameId(t.solution_tier_id);
-                                          setTierRenameDraft(t.solution_tier_name);
-                                        }}
-                                      >
-                                        Rename
-                                      </button>
-                                      <button type="button" style={btnDangerSm} onClick={() => void deleteUpdateTier(t)}>
-                                        Delete
-                                      </button>
-                                    </>
+                                    <div className="admin-table-scroll">
+                                      <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
+                                        <thead>
+                                          <tr>
+                                            <th style={th}>Tier</th>
+                                            <th style={th}>Id</th>
+                                            <th style={th}>Actions</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {tiersOfUpdateSol.map((t) => (
+                                            <Fragment key={t.solution_tier_id}>
+                                              <tr>
+                                              <td style={td}>
+                                                {tierRenameId === t.solution_tier_id ? (
+                                                  <input
+                                                    type="text"
+                                                    className="admin-field"
+                                                    style={{
+                                                      ...input,
+                                                      width: "100%",
+                                                      maxWidth: "28rem",
+                                                      marginTop: 0,
+                                                    }}
+                                                    value={tierRenameDraft}
+                                                    onChange={(e) => setTierRenameDraft(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Escape") {
+                                                        e.preventDefault();
+                                                        cancelTierRename();
+                                                      }
+                                                      if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        void saveTierRename();
+                                                      }
+                                                    }}
+                                                    aria-label={`Rename tier ${t.solution_tier_id}`}
+                                                    autoComplete="off"
+                                                    autoFocus
+                                                  />
+                                                ) : (
+                                                  t.solution_tier_name
+                                                )}
+                                              </td>
+                                              <td style={td}>
+                                                <code>{t.solution_tier_id}</code>
+                                              </td>
+                                              <td style={td}>
+                                                <div className="admin-actions-row" style={{ marginTop: 0 }}>
+                                                  {tierRenameId === t.solution_tier_id ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        style={btnPrimary}
+                                                        className="admin-btn-primary"
+                                                        onClick={() => void saveTierRename()}
+                                                      >
+                                                        Save name
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        style={btnSm}
+                                                        onClick={cancelTierRename}
+                                                      >
+                                                        Cancel
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        style={btnSm}
+                                                        onClick={() => {
+                                                          startEditTier(t);
+                                                          setShowUpdateDetails(true);
+                                                          window.setTimeout(
+                                                            () => jumpTo("sb-update-section-tiers"),
+                                                            0
+                                                          );
+                                                        }}
+                                                      >
+                                                        Update
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        style={btnSm}
+                                                        aria-expanded={inlinePricingTierIds.has(t.solution_tier_id)}
+                                                        onClick={() => {
+                                                          if (inlinePricingTierIds.has(t.solution_tier_id)) {
+                                                            closeInlinePricing(t.solution_tier_id);
+                                                          } else {
+                                                            openInlinePricing(t.solution_tier_id);
+                                                          }
+                                                        }}
+                                                      >
+                                                        {inlinePricingTierIds.has(t.solution_tier_id)
+                                                          ? "Hide pricing"
+                                                          : "Pricing"}
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        style={btnSm}
+                                                        onClick={() => {
+                                                          cancelSolutionRename();
+                                                          setOpErr(null);
+                                                          setTierRenameId(t.solution_tier_id);
+                                                          setTierRenameDraft(t.solution_tier_name);
+                                                        }}
+                                                      >
+                                                        Rename
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        style={btnDangerSm}
+                                                        onClick={() => void deleteUpdateTier(t)}
+                                                      >
+                                                        Delete
+                                                      </button>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                              {inlinePricingTierIds.has(t.solution_tier_id) ? (
+                                              <tr className="admin-sb-tier-pricing-row">
+                                                <td colSpan={3} style={{ ...td, padding: "0 0.5rem 0.75rem" }}>
+                                                  <SolutionTierInlineRiskPricing
+                                                    tierId={t.solution_tier_id}
+                                                    tierName={t.solution_tier_name}
+                                                    pricingRow={pricingByTierId.get(t.solution_tier_id) ?? null}
+                                                    mathConfig={tierPricingMathConfig}
+                                                    client={getSupabase()}
+                                                    logAudit={logAudit}
+                                                    onSaved={onSaved}
+                                                    onClose={() => closeInlinePricing(t.solution_tier_id)}
+                                                    onError={(msg) => {
+                                                      setOpOk(null);
+                                                      setOpErr(msg || null);
+                                                    }}
+                                                    onOk={(msg) => {
+                                                      setOpErr(null);
+                                                      setOpOk(msg);
+                                                    }}
+                                                  />
+                                                </td>
+                                              </tr>
+                                              ) : null}
+                                            </Fragment>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   )}
                                 </div>
                               </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {tiersOfUpdateSol.length === 0 ? (
-                      <p style={{ ...muted, marginTop: 8 }}>No tiers yet for this solution.</p>
-                    ) : null}
-                  </div>
-                ) : null}
+                          ) : null}
+                            </Fragment>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 

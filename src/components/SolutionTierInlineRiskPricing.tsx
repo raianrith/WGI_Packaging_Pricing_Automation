@@ -36,6 +36,7 @@ type LogAudit = (
 type Props = {
   tierId: string;
   tierName: string;
+  solutionName?: string;
   pricingRow: SolutionTierPricing | null;
   mathConfig: TierPricingMathConfig;
   client: SupabaseClient | null;
@@ -66,6 +67,7 @@ function formatUsd(n: number | null | undefined): string {
 export function SolutionTierInlineRiskPricing({
   tierId,
   tierName,
+  solutionName,
   pricingRow,
   mathConfig,
   client,
@@ -171,7 +173,15 @@ export function SolutionTierInlineRiskPricing({
     return (
       <div className="admin-sb-inline-pricing admin-sb-inline-pricing--empty">
         <div className="admin-sb-inline-pricing__head">
-          <p className="admin-sb-inline-pricing__title">Risk &amp; strategic pricing</p>
+          <div>
+            <p className="admin-sb-inline-pricing__kicker">Pricing</p>
+            <p className="admin-sb-inline-pricing__title">Risk &amp; strategic pricing</p>
+            <p className="admin-sb-inline-pricing__path">
+              {solutionName ? <span>{solutionName}</span> : null}
+              {solutionName ? <span className="admin-sb-inline-pricing__path-sep">›</span> : null}
+              <span>{tierName}</span>
+            </p>
+          </div>
           <button type="button" className="admin-sb-inline-pricing__close" onClick={onClose} aria-label="Close pricing">
             ×
           </button>
@@ -188,8 +198,13 @@ export function SolutionTierInlineRiskPricing({
     <div className="admin-sb-inline-pricing">
       <div className="admin-sb-inline-pricing__head">
         <div>
+          <p className="admin-sb-inline-pricing__kicker">Pricing</p>
           <p className="admin-sb-inline-pricing__title">Risk &amp; strategic pricing</p>
-          <p className="admin-sb-inline-pricing__subtitle">{tierName}</p>
+          <p className="admin-sb-inline-pricing__path">
+            {solutionName ? <span>{solutionName}</span> : null}
+            {solutionName ? <span className="admin-sb-inline-pricing__path-sep">›</span> : null}
+            <span>{tierName}</span>
+          </p>
         </div>
         <button type="button" className="admin-sb-inline-pricing__close" onClick={onClose} aria-label="Close pricing">
           ×

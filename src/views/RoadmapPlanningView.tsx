@@ -24,6 +24,7 @@ import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav"
 import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOrganizePanel";
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
+import { ProposalClientServiceReviewPanel } from "../components/proposal-builder/ProposalClientServiceReviewPanel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
@@ -68,6 +69,12 @@ import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import { filterConfigurablePackages } from "../lib/presetPackages";
 import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
+import {
+  ProposalPackagesChoice,
+  ProposalPackagesPathBar,
+  ProposalPackagesSwitchPrompt,
+  type PackageAddPath,
+} from "../components/proposal-builder/ProposalPackagesChoice";
 import {
   applyVariableTierPricingToCards,
   computeVariableTierSellUsd,
@@ -763,7 +770,16 @@ export function RoadmapPlanningView() {
   const [scratchGroupPickTick, setScratchGroupPickTick] = useState(0);
   const [builderStep, setBuilderStep] = useState<ProposalBuilderStep>("setup");
   const [builderMode, setBuilderMode] = useState<ProposalBuilderMode>("saved");
+  const [packageAddPath, setPackageAddPath] = useState<PackageAddPath | null>(null);
+  const [packageSwitchPromptPath, setPackageSwitchPromptPath] = useState<PackageAddPath | null>(null);
   const [targetPhaseId, setTargetPhaseId] = useState("");
+
+  useEffect(() => {
+    if (builderStep !== "packages") {
+      setPackageAddPath(null);
+      setPackageSwitchPromptPath(null);
+    }
+  }, [builderStep]);
 
   useEffect(() => {
     if (!normalizeIsoDateInput(proposalStartDate) || !normalizeIsoDateInput(proposalEndDate)) return;
@@ -1825,6 +1841,9 @@ export function RoadmapPlanningView() {
       onAddPackage={(p, dates) => {
         if (!canAddToTarget) return;
         addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
+        if (builderStep === "packages" && packageAddPath) {
+          setPackageSwitchPromptPath(packageAddPath);
+        }
       }}
       canAdd={canAddToTarget}
       catalogReloading={catalogReloading}
@@ -1871,6 +1890,9 @@ export function RoadmapPlanningView() {
       onAddPackage={(p, dates) => {
         if (!canAddToTarget) return;
         addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
+        if (builderStep === "packages" && packageAddPath) {
+          setPackageSwitchPromptPath(packageAddPath);
+        }
       }}
       onAddTier={(t, dates) => {
         if (!canAddToTarget) return;
@@ -1964,7 +1986,6 @@ export function RoadmapPlanningView() {
             active={builderStep}
             onChange={setBuilderStep}
             setupComplete={setupComplete}
-            scenarioCount={scenarios.length}
             lineItemCount={cards.length}
           />
           <div className="proposal-builder__main">
@@ -1973,7 +1994,7 @@ export function RoadmapPlanningView() {
                 <section className="roadmap-panel roadmap-panel--meta proposal-step-panel">
                   <header className="proposal-step-panel__head">
                     <p className="proposal-step-panel__eyebrow">Step 1</p>
-                    <h2 className="proposal-step-panel__title">Proposal &amp; Client Setup</h2>
+                    <h2 className="proposal-step-panel__title">Setup</h2>
                   </header>
                   <div className="roadmap-meta-grid">
                     <div className="roadmap-field">
@@ -2083,18 +2104,6 @@ export function RoadmapPlanningView() {
                     </label>
                   </div>
                 </section>
-                <ProposalStepNav
-                  step="setup"
-                  onStepChange={setBuilderStep}
-                  nextDisabled={!setupComplete}
-                  nextLabel={setupComplete ? "Continue to scenarios & phases" : "Add a roadmap name to continue"}
-                  {...proposalStepSaveProps}
-                />
-              </>
-            ) : null}
-
-            {builderStep === "scenarios" ? (
-              <>
                 <ProposalCopyFromPanel
                   proposals={savedProposals}
                   loading={savedProposalsLoading}
@@ -2118,31 +2127,52 @@ export function RoadmapPlanningView() {
                   onDeletePhase={deletePhaseById}
                 />
                 <ProposalStepNav
-                  step="scenarios"
+                  step="setup"
                   onStepChange={setBuilderStep}
-                  nextLabel="Continue to build & add custom packages"
+                  nextDisabled={!setupComplete}
+                  nextLabel={
+                    setupComplete ? "Continue to add packages" : "Add a roadmap name to continue"
+                  }
                   {...proposalStepSaveProps}
                 />
               </>
             ) : null}
 
-            {builderStep === "configurable_packages" ? (
+            {builderStep === "packages" ? (
               <>
-                {renderConfigurablePackagesPanel()}
+                {packageAddPath == null ? (
+                  <ProposalPackagesChoice onChoose={setPackageAddPath} />
+                ) : (
+                  <>
+                    <ProposalPackagesPathBar
+                      path={packageAddPath}
+                      onSelectPath={(next) => {
+                        setPackageAddPath(next);
+                        setPackageSwitchPromptPath(null);
+                      }}
+                      onBackToOptions={() => {
+                        setPackageAddPath(null);
+                        setPackageSwitchPromptPath(null);
+                      }}
+                    />
+                    {packageSwitchPromptPath === packageAddPath ? (
+                      <ProposalPackagesSwitchPrompt
+                        fromPath={packageAddPath}
+                        onSwitch={() => {
+                          const next = packageAddPath === "build" ? "prebuilt" : "build";
+                          setPackageAddPath(next);
+                          setPackageSwitchPromptPath(null);
+                        }}
+                        onDismiss={() => setPackageSwitchPromptPath(null)}
+                      />
+                    ) : null}
+                    {packageAddPath === "build"
+                      ? renderConfigurablePackagesPanel()
+                      : renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
+                  </>
+                )}
                 <ProposalStepNav
-                  step="configurable_packages"
-                  onStepChange={setBuilderStep}
-                  nextLabel="Continue to pre-built custom packages"
-                  {...proposalStepSaveProps}
-                />
-              </>
-            ) : null}
-
-            {builderStep === "preset_packages" ? (
-              <>
-                {renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
-                <ProposalStepNav
-                  step="preset_packages"
+                  step="packages"
                   onStepChange={setBuilderStep}
                   nextLabel="Continue to add solutions"
                   {...proposalStepSaveProps}
@@ -2156,19 +2186,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="catalog"
                   onStepChange={setBuilderStep}
-                  nextLabel="Continue to variable solutions"
-                  {...proposalStepSaveProps}
-                />
-              </>
-            ) : null}
-
-            {builderStep === "variable_tiers" ? (
-              <>
-                {renderCatalogPanel("variable_tiers", [])}
-                <ProposalStepNav
-                  step="variable_tiers"
-                  onStepChange={setBuilderStep}
-                  nextLabel="Organize proposal"
+                  nextLabel="Organize Proposal"
                   {...proposalStepSaveProps}
                 />
               </>
@@ -2191,7 +2209,7 @@ export function RoadmapPlanningView() {
                   onRemoveCard={removeCard}
                   onReorderPhaseCards={reorderPhaseCards}
                   onOpenDetails={openDetailsModal}
-                  onEditStructure={() => setBuilderStep("scenarios")}
+                  onEditStructure={() => setBuilderStep("setup")}
                   onClearScenarioItems={clearScenarioItems}
                   onUpdateScenarioNarrative={(id, narrative) =>
                     setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, narrative } : s)))
@@ -2204,7 +2222,7 @@ export function RoadmapPlanningView() {
               <ProposalStepNav
                 step="board"
                 onStepChange={setBuilderStep}
-                nextLabel="Review & Export"
+                nextLabel="Strategist Review"
                 {...proposalStepSaveProps}
               />
             ) : null}
@@ -2213,8 +2231,8 @@ export function RoadmapPlanningView() {
               <>
                 <section className="roadmap-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">Step 8</p>
-                    <h2 className="proposal-step-panel__title">Review &amp; Export</h2>
+                    <p className="proposal-step-panel__eyebrow">Step 5</p>
+                    <h2 className="proposal-step-panel__title">Strategist Review</h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}
                       {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""}
@@ -2380,7 +2398,32 @@ export function RoadmapPlanningView() {
             })}
           </div>
         </section>
-                <ProposalStepNav step="review" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
+                <ProposalStepNav
+                  step="review"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Client Service Review"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "client_service" ? (
+              <>
+                {catalogCtx ? (
+                  <ProposalClientServiceReviewPanel
+                    scenarios={scenarios}
+                    phases={phases}
+                    cards={cards}
+                    tasks={catalogCtx.tasks}
+                    packageTiers={catalogCtx.packageTiers}
+                    onPatchCard={(key, next) => {
+                      setCardsSynced((prev) => prev.map((c) => (c.key === key ? next : c)));
+                    }}
+                  />
+                ) : (
+                  <p className="roadmap-muted">Loading catalog tasks…</p>
+                )}
+                <ProposalStepNav step="client_service" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
               </>
             ) : null}
           </div>

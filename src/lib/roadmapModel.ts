@@ -48,10 +48,32 @@ export type RoadmapCard = {
   variablePaidAdsSpendUsd?: number | null;
   /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
   variableLinkedTierRefId?: string | null;
+  /**
+   * Proposal-only task edits for Client Service Review.
+   * Does not mutate vault `tasks` or package link rows — sparse overlay on catalog tasks.
+   */
+  taskLayout?: RoadmapCardTaskLayout | null;
   /** Scheduled start (ISO `YYYY-MM-DD`). */
   startDate?: string | null;
   /** Scheduled end (ISO `YYYY-MM-DD`). */
   endDate?: string | null;
+};
+
+/** Sparse proposal-local task edits (vault / package catalog unchanged). */
+export type RoadmapCardTaskLayout = {
+  /** Catalog or package-extra task ids hidden on this proposal line. */
+  hiddenIds?: string[];
+  /** Per-task hours overrides (`task_id` → hours). */
+  hourOverrides?: Record<string, number | null>;
+  /** Tasks that exist only on this proposal line. */
+  extras?: RoadmapCardExtraTask[];
+};
+
+export type RoadmapCardExtraTask = {
+  id: string;
+  name: string;
+  hours: number | null;
+  implementer?: string | null;
 };
 
 export type CatalogCtxLike = {

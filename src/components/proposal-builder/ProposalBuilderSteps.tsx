@@ -1,12 +1,10 @@
 export type ProposalBuilderStep =
   | "setup"
-  | "scenarios"
-  | "preset_packages"
-  | "configurable_packages"
+  | "packages"
   | "catalog"
-  | "variable_tiers"
   | "board"
-  | "review";
+  | "review"
+  | "client_service";
 
 export type ProposalStepDef = {
   id: ProposalBuilderStep;
@@ -17,37 +15,28 @@ export type ProposalStepDef = {
 };
 
 const STEPS: ProposalStepDef[] = [
-  { id: "setup", number: 1, label: "Setup", hint: "Client & Budget" },
-  { id: "scenarios", number: 2, label: "Scenarios & Phases", hint: "Names & Structure" },
+  { id: "setup", number: 1, label: "Setup", hint: "Client, Budget & Scenarios" },
   {
-    id: "configurable_packages",
-    number: 3,
-    label: "Build & Add Custom Packages",
-    hint: "Optional · Skip Anytime",
+    id: "packages",
+    number: 2,
+    label: "Add Packages",
+    hint: "Optional · Build or Pre-Built",
   },
+  { id: "catalog", number: 3, label: "Add Solutions", hint: "Tiers & Extras" },
+  { id: "board", number: 4, label: "Organize Proposal", hint: "Scope & Compare" },
+  { id: "review", number: 5, label: "Strategist Review", hint: "Save & Export" },
   {
-    id: "preset_packages",
-    number: 4,
-    label: "Add Pre-Built Custom Packages",
-    hint: "Optional · Skip Anytime",
-  },
-  { id: "catalog", number: 5, label: "Add Solutions", hint: "Solution Tiers" },
-  {
-    id: "variable_tiers",
+    id: "client_service",
     number: 6,
-    label: "Add Variable Solutions",
-    examples: "Paid Campaign Management, Rush Charge, Travel Time",
-    hint: "Dynamic pricing",
+    label: "Client Service Review",
+    hint: "Tasks & Hours",
   },
-  { id: "board", number: 7, label: "Organize & Reorder Proposal", hint: "Scope & Compare" },
-  { id: "review", number: 8, label: "Review", hint: "Save & Export" },
 ];
 
 type Props = {
   active: ProposalBuilderStep;
   onChange: (step: ProposalBuilderStep) => void;
   setupComplete: boolean;
-  scenarioCount: number;
   lineItemCount: number;
 };
 
@@ -59,7 +48,6 @@ export function ProposalBuilderSteps({
   active,
   onChange,
   setupComplete,
-  scenarioCount,
   lineItemCount,
 }: Props) {
   function stepStatus(id: ProposalBuilderStep): "done" | "active" | "pending" {
@@ -69,7 +57,6 @@ export function ProposalBuilderSteps({
     const si = order.indexOf(id);
     if (si < ai) return "done";
     if (id === "setup" && setupComplete && active !== "setup") return "done";
-    if (id === "scenarios" && scenarioCount > 0 && si < ai) return "done";
     if (id === "catalog" && lineItemCount > 0 && si < ai) return "done";
     return "pending";
   }

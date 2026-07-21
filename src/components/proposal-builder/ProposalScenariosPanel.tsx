@@ -29,7 +29,6 @@ export function ProposalScenariosPanel({
   return (
     <div className="proposal-step-panel">
       <header className="proposal-step-panel__head">
-        <p className="proposal-step-panel__eyebrow">Step 2</p>
         <h2 className="proposal-step-panel__title">Scenarios &amp; Phases</h2>
         <p className="proposal-step-panel__lead">
           Add as many what-if scenarios as you need, name each one, and define the phases inside it (for example Phase 1

@@ -13,6 +13,12 @@ type Props = {
   onOpenPresetPackage: (packageId: string) => void;
   onOpenConfigurablePackage: (packageBuilderTypeId: string) => void;
   emptyMessage?: string;
+  /** When "add", tier rows add to a proposal instead of opening directory detail. */
+  tierInteraction?: "open" | "add";
+  onAddTier?: (solutionId: string, tierId: string) => void;
+  addedTierRefIds?: ReadonlySet<string>;
+  justAddedTierId?: string | null;
+  canAdd?: boolean;
 };
 
 const TYPE_SORT_RANK: Record<CatalogDirectoryItemType, number> = {
@@ -58,8 +64,14 @@ export function CatalogDirectoryTable({
   onOpenPresetPackage,
   onOpenConfigurablePackage,
   emptyMessage,
+  tierInteraction = "open",
+  onAddTier,
+  addedTierRefIds,
+  justAddedTierId,
+  canAdd = true,
 }: Props) {
-  const colCount = 9;
+  const addMode = tierInteraction === "add";
+  const colCount = addMode ? 10 : 9;
 
   const ThSort = ({
     col,
@@ -144,6 +156,14 @@ export function CatalogDirectoryTable({
     </>
   );
 
+  const handleParentActivate = (row: CatalogDirectoryRow) => {
+    if (row.type === "solution" && row.solutionId) onToggleSolution(row.solutionId);
+    else if (row.type === "preset_package" && row.packageId) onOpenPresetPackage(row.packageId);
+    else if (row.type === "configurable_package" && row.packageBuilderTypeId) {
+      onOpenConfigurablePackage(row.packageBuilderTypeId);
+    }
+  };
+
   return (
     <div className="agency-catalog-tier-sheet__scroll agency-catalog-directory__scroll">
       <table className="agency-catalog-tier-sheet__table agency-catalog-directory__table">
@@ -168,6 +188,11 @@ export function CatalogDirectoryTable({
               </button>
             </th>
             <ThSort col="tags" label="Tags" />
+            {addMode ? (
+              <th scope="col" className="agency-catalog-directory__col--add">
+                Add
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -194,21 +219,11 @@ export function CatalogDirectoryTable({
                   role="button"
                   tabIndex={0}
                   aria-expanded={isSolution ? expanded : undefined}
-                  onClick={() => {
-                    if (isSolution && row.solutionId) onToggleSolution(row.solutionId);
-                    else if (row.type === "preset_package" && row.packageId) onOpenPresetPackage(row.packageId);
-                    else if (row.type === "configurable_package" && row.packageBuilderTypeId) {
-                      onOpenConfigurablePackage(row.packageBuilderTypeId);
-                    }
-                  }}
+                  onClick={() => handleParentActivate(row)}
                   onKeyDown={(e) => {
                     if (e.key !== "Enter" && e.key !== " ") return;
                     e.preventDefault();
-                    if (isSolution && row.solutionId) onToggleSolution(row.solutionId);
-                    else if (row.type === "preset_package" && row.packageId) onOpenPresetPackage(row.packageId);
-                    else if (row.type === "configurable_package" && row.packageBuilderTypeId) {
-                      onOpenConfigurablePackage(row.packageBuilderTypeId);
-                    }
+                    handleParentActivate(row);
                   }}
                 >
                   <td>
@@ -219,7 +234,13 @@ export function CatalogDirectoryTable({
                           aria-hidden
                         >
                           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                            <path d="M3.5 2 7 5l-3.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <path
+                              d="M3.5 2 7 5l-3.5 3"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
                           </svg>
                         </span>
                       ) : (
@@ -244,53 +265,81 @@ export function CatalogDirectoryTable({
                     taxableLabel: row.taxableLabel,
                     tagsRaw: row.tagsRaw,
                   })}
+                  {addMode ? <td className="agency-catalog-directory__cell--add" /> : null}
                 </tr>
               );
 
               if (!isSolution || !expanded) return [parentRow];
 
-              const childRows = row.tierRows.map((tier) => (
-                <tr
-                  key={`${row.id}:${tier.tierId}`}
-                  className="agency-catalog-directory__child"
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenTier(tier.solutionId, tier.tierId);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    e.preventDefault();
-                    onOpenTier(tier.solutionId, tier.tierId);
-                  }}
-                >
-                  <td>
-                    <div className="agency-catalog-directory__name-cell agency-catalog-directory__name-cell--child">
-                      <span className="agency-catalog-directory__child-bar" aria-hidden />
-                      <div>
-                        <div className="agency-catalog-tier-sheet__tier-title">{tier.tierName}</div>
-                        <div className="agency-catalog-tier-sheet__submeta">
-                          <span className="agency-catalog-tier-sheet__sol-name">Solution tier</span>
+              const childRows = row.tierRows.map((tier) => {
+                const onProposal = addedTierRefIds?.has(tier.tierId) ?? false;
+                const justAdded = justAddedTierId === tier.tierId;
+                const selectTier = () => {
+                  if (addMode) {
+                    if (!canAdd || !onAddTier) return;
+                    onAddTier(tier.solutionId, tier.tierId);
+                    return;
+                  }
+                  onOpenTier(tier.solutionId, tier.tierId);
+                };
+                return (
+                  <tr
+                    key={`${row.id}:${tier.tierId}`}
+                    className={`agency-catalog-directory__child${onProposal ? " agency-catalog-directory__child--on-proposal" : ""}${justAdded ? " agency-catalog-directory__child--just-added" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectTier();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      selectTier();
+                    }}
+                  >
+                    <td>
+                      <div className="agency-catalog-directory__name-cell agency-catalog-directory__name-cell--child">
+                        <span className="agency-catalog-directory__child-bar" aria-hidden />
+                        <div>
+                          <div className="agency-catalog-tier-sheet__tier-title">{tier.tierName}</div>
+                          <div className="agency-catalog-tier-sheet__submeta">
+                            <span className="agency-catalog-tier-sheet__sol-name">Solution tier</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="agency-catalog-directory__type-pill agency-catalog-directory__type-pill--tier">
-                      Tier
-                    </span>
-                  </td>
-                  {renderTaxonomy(tier.phaseRaw, tier.categoryRaw, tier.tacticRaw)}
-                  {renderMetrics({
-                    priceDisplay: tier.priceDisplay,
-                    hoursDisplay: tier.hoursDisplay,
-                    taxable: tier.taxable,
-                    taxableLabel: tier.taxableLabel,
-                    tagsRaw: tier.tagsRaw,
-                  })}
-                </tr>
-              ));
+                    </td>
+                    <td>
+                      <span className="agency-catalog-directory__type-pill agency-catalog-directory__type-pill--tier">
+                        Tier
+                      </span>
+                    </td>
+                    {renderTaxonomy(tier.phaseRaw, tier.categoryRaw, tier.tacticRaw)}
+                    {renderMetrics({
+                      priceDisplay: tier.priceDisplay,
+                      hoursDisplay: tier.hoursDisplay,
+                      taxable: tier.taxable,
+                      taxableLabel: tier.taxableLabel,
+                      tagsRaw: tier.tagsRaw,
+                    })}
+                    {addMode ? (
+                      <td className="agency-catalog-directory__cell--add">
+                        <button
+                          type="button"
+                          className={`agency-catalog-directory__add-btn${justAdded ? " is-done" : ""}${onProposal && !justAdded ? " is-again" : ""}`}
+                          disabled={!canAdd}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectTier();
+                          }}
+                        >
+                          {justAdded ? "Added" : onProposal ? "Add again" : "Add"}
+                        </button>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              });
 
               return [parentRow, ...childRows];
             })

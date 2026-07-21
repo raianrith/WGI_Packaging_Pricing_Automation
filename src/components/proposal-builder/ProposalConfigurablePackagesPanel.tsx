@@ -85,8 +85,8 @@ export function ProposalConfigurablePackagesPanel({
   copyFromScenarios,
   onCopyFromScenario,
 }: Props) {
+  const stepMeta = proposalStepDef("packages");
   const searchId = useId();
-  const stepMeta = proposalStepDef("configurable_packages");
   const [search, setSearch] = useState("");
   const [launchPackageTypeId, setLaunchPackageTypeId] = useState<string | null>(null);
   const [detailTypeId, setDetailTypeId] = useState<string | null>(null);
@@ -137,11 +137,11 @@ export function ProposalConfigurablePackagesPanel({
   return (
     <div className="proposal-step-panel proposal-catalog proposal-configurable-packages">
       <header className="proposal-step-panel__head">
-        <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
-        <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
+        <p className="proposal-step-panel__eyebrow">Step {stepMeta.number} · Build new</p>
+        <h2 className="proposal-step-panel__title">Build a New Package</h2>
         <p className="proposal-step-panel__lead">
-          Choose a configurable template, build it in the wizard, then add it to the active
-          scenario and phase. This step is optional—you can skip it and continue.
+          Choose a configurable template, build it in the wizard, then add it to the active scenario and
+          phase.
         </p>
       </header>
 

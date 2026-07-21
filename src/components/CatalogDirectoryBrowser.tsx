@@ -238,6 +238,15 @@ type Props = {
   onOpenTier: (solutionId: string, tierId: string) => void;
   onOpenPresetPackage: (packageId: string) => void;
   onOpenConfigurablePackage: (packageBuilderTypeId: string) => void;
+  hideTypeFilter?: boolean;
+  hidePackageStats?: boolean;
+  searchPlaceholder?: string;
+  footerHint?: string;
+  tierInteraction?: "open" | "add";
+  onAddTier?: (solutionId: string, tierId: string) => void;
+  addedTierRefIds?: ReadonlySet<string>;
+  justAddedTierId?: string | null;
+  canAdd?: boolean;
 };
 
 export function CatalogDirectoryBrowser({
@@ -259,6 +268,15 @@ export function CatalogDirectoryBrowser({
   onOpenTier,
   onOpenPresetPackage,
   onOpenConfigurablePackage,
+  hideTypeFilter = false,
+  hidePackageStats = false,
+  searchPlaceholder = "Solution, package, tier, tags…",
+  footerHint = "Expand a solution for tiers · Custom opens overview · Configurable opens package builder",
+  tierInteraction = "open",
+  onAddTier,
+  addedTierRefIds,
+  justAddedTierId,
+  canAdd,
 }: Props) {
   const phaseId = useId();
   const typeId = useId();
@@ -266,10 +284,12 @@ export function CatalogDirectoryBrowser({
   const tacticId = useId();
   const searchId = useId();
 
+  const effectiveItemType = hideTypeFilter ? "solution" : itemType;
+
   const rowsForTypeScope = useMemo(() => {
-    if (itemType === null) return allRows;
-    return allRows.filter((r) => r.type === itemType);
-  }, [allRows, itemType]);
+    if (effectiveItemType === null) return allRows;
+    return allRows.filter((r) => r.type === effectiveItemType);
+  }, [allRows, effectiveItemType]);
 
   const allTierRows = useMemo(() => rowsForTypeScope.flatMap((r) => r.tierRows), [rowsForTypeScope]);
 
@@ -284,8 +304,8 @@ export function CatalogDirectoryBrowser({
   }, [rowsAfterPhase, category]);
 
   const filteredRows = useMemo(
-    () => filterCatalogDirectoryRows(allRows, itemType, phase, category, tactic, tableSearch),
-    [allRows, itemType, phase, category, tactic, tableSearch]
+    () => filterCatalogDirectoryRows(allRows, effectiveItemType, phase, category, tactic, tableSearch),
+    [allRows, effectiveItemType, phase, category, tactic, tableSearch]
   );
 
   const typeOptions = useMemo(() => buildTypeFilterOptions(allRows), [allRows]);
@@ -368,13 +388,14 @@ export function CatalogDirectoryBrowser({
     });
   }, [filteredRows, sort]);
 
-  const hasFilters = itemType !== null || phase !== null || category !== null || tactic !== null;
+  const hasFilters =
+    (!hideTypeFilter && itemType !== null) || phase !== null || category !== null || tactic !== null;
   const solutionCount = allRows.filter((r) => r.type === "solution").length;
   const presetCount = allRows.filter((r) => r.type === "preset_package").length;
   const configurableCount = allRows.filter((r) => r.type === "configurable_package").length;
 
   const clearFilters = () => {
-    onItemTypeChange(null);
+    if (!hideTypeFilter) onItemTypeChange(null);
     onPhaseChange(null);
     onCategoryChange(null);
     onTacticChange(null);
@@ -384,18 +405,22 @@ export function CatalogDirectoryBrowser({
     <div className="agency-playbook-browser agency-playbook-browser--directory">
       <div className="agency-tier-filters agency-tier-filters--directory" role="search" aria-label="Filter solutions directory">
         <div className="agency-tier-filters__row agency-tier-filters__row--directory">
-          <TypeFilterSelect
-            id={typeId}
-            label="Type"
-            value={itemType}
-            options={typeOptions}
-            onChange={onItemTypeChange}
-          />
-          <span className="agency-tier-filters__chev agency-tier-filters__chev--directory" aria-hidden>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-              <path d="M5 3.5 9 7l-4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
+          {hideTypeFilter ? null : (
+            <>
+              <TypeFilterSelect
+                id={typeId}
+                label="Type"
+                value={itemType}
+                options={typeOptions}
+                onChange={onItemTypeChange}
+              />
+              <span className="agency-tier-filters__chev agency-tier-filters__chev--directory" aria-hidden>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+                  <path d="M5 3.5 9 7l-4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </>
+          )}
           <PlaybookFilterSelect
             id={phaseId}
             label="Phase"
@@ -453,7 +478,7 @@ export function CatalogDirectoryBrowser({
                 className="agency-tier-filter-field__input"
                 value={tableSearch}
                 onChange={(e) => onTableSearchChange(e.target.value)}
-                placeholder="Solution, package, tier, tags…"
+                placeholder={searchPlaceholder}
                 autoComplete="off"
               />
             </div>
@@ -466,12 +491,16 @@ export function CatalogDirectoryBrowser({
               <span className="agency-tier-filters__count-of"> of {allRows.length}</span>
             </span>
             <span className="agency-directory-stat agency-directory-stat--solution">{solutionCount} solutions</span>
-            <span className="agency-directory-stat agency-directory-stat--preset">{presetCount} custom packages</span>
-            <span className="agency-directory-stat agency-directory-stat--configurable">{configurableCount} configurable packages</span>
+            {hidePackageStats ? null : (
+              <>
+                <span className="agency-directory-stat agency-directory-stat--preset">{presetCount} custom packages</span>
+                <span className="agency-directory-stat agency-directory-stat--configurable">
+                  {configurableCount} configurable packages
+                </span>
+              </>
+            )}
           </div>
-          <span className="agency-tier-filters__hint agency-tier-filters__hint--directory">
-            Expand a solution for tiers · Custom opens overview · Configurable opens package builder
-          </span>
+          <span className="agency-tier-filters__hint agency-tier-filters__hint--directory">{footerHint}</span>
           {hasFilters ? (
             <button type="button" className="agency-tier-filters__clear agency-tier-filters__clear--directory" onClick={clearFilters}>
               Clear filters
@@ -490,9 +519,14 @@ export function CatalogDirectoryBrowser({
           onOpenTier={onOpenTier}
           onOpenPresetPackage={onOpenPresetPackage}
           onOpenConfigurablePackage={onOpenConfigurablePackage}
+          tierInteraction={tierInteraction}
+          onAddTier={onAddTier}
+          addedTierRefIds={addedTierRefIds}
+          justAddedTierId={justAddedTierId}
+          canAdd={canAdd}
           emptyMessage={
             allRows.length === 0
-              ? "No solutions or packages loaded."
+              ? "No solutions loaded."
               : hasFilters || tableSearch.trim()
                 ? "No items match your filters."
                 : "No items to show."

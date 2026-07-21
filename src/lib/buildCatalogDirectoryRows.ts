@@ -113,6 +113,40 @@ export function isConfigurablePackage(
   return packageTypeNameSet.has((pkg.package_category ?? "").trim().toLowerCase());
 }
 
+export function buildSolutionDirectoryRowsFromTier(
+  tierRows: readonly CatalogTierTableRow[]
+): CatalogDirectoryRow[] {
+  const tiersBySolutionId = new Map<string, CatalogTierTableRow[]>();
+  for (const row of tierRows) {
+    const prev = tiersBySolutionId.get(row.solutionId) ?? [];
+    prev.push(row);
+    tiersBySolutionId.set(row.solutionId, prev);
+  }
+
+  return [...tiersBySolutionId.entries()]
+    .sort(([a], [b]) => sortId(a, b))
+    .map(([solutionId, rows]) => {
+      const sorted = [...rows].sort((a, b) => sortId(a.tierId, b.tierId));
+      const rollup = sumTierRollup(sorted);
+      const tierCount = sorted.length;
+      const name = sorted[0]?.solutionName?.trim() || solutionId;
+      return {
+        id: `solution:${solutionId}`,
+        type: "solution" as const,
+        typeLabel: "Solution",
+        name,
+        meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
+        phaseRaw: "",
+        categoryRaw: "",
+        tacticRaw: "",
+        tagsRaw: "",
+        solutionId,
+        tierRows: sorted,
+        ...rollup,
+      };
+    });
+}
+
 export function buildCatalogDirectoryRows(
   data: VaultCatalogData,
   packageTypes: readonly PackageBuilderPackageType[],

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import type { Package, SolutionTier } from "../../types";
 import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
@@ -13,6 +13,7 @@ import {
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
+import { buildSolutionDirectoryRowsFromTier } from "../../lib/buildCatalogDirectoryRows";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
@@ -25,12 +26,15 @@ import {
   ProposalCatalogLinesPanel,
   ProposalCatalogListSearch,
 } from "./ProposalCatalogLineRow";
-import { compareTierPhaseLabels } from "../../lib/tierTaxonomy";
-import { compareTierCategoryLabels } from "../../lib/tierCategories";
+import {
+  CatalogDirectoryBrowser,
+  type CatalogDirectoryTypeFilter,
+} from "../CatalogDirectoryBrowser";
+import type { CatalogDirectorySortCol } from "../CatalogDirectoryTable";
+import type { PlaybookFilterValue } from "../CatalogPlaybookBrowser";
 import { proposalStepDef, type ProposalBuilderStep } from "./ProposalBuilderSteps";
 
-const UNSET = "Not classified";
-/** Sentinel: skip this drill-down level and show all tiers at the current scope. */
+/** Sentinel kept for any external imports; browse drill-down removed from Add Solutions. */
 export const BROWSE_SHOW_ALL = "__show_all__";
 
 type CatalogCtxLike = {
@@ -81,177 +85,6 @@ type Props = {
   onCopyFromScenario?: (sourceScenarioId: string) => void;
 };
 
-function normLabel(raw: string): string {
-  const t = raw.trim();
-  return t || UNSET;
-}
-
-function compareLabels(a: string, b: string): number {
-  if (a === UNSET && b !== UNSET) return 1;
-  if (b === UNSET && a !== UNSET) return -1;
-  return a.localeCompare(b, undefined, { sensitivity: "base" });
-}
-
-function comparePhaseGroupLabels(a: string, b: string): number {
-  if (a === UNSET && b !== UNSET) return 1;
-  if (b === UNSET && a !== UNSET) return -1;
-  return compareTierPhaseLabels(a, b);
-}
-
-function compareCategoryGroupLabels(a: string, b: string): number {
-  if (a === UNSET && b !== UNSET) return 1;
-  if (b === UNSET && a !== UNSET) return -1;
-  return compareTierCategoryLabels(a, b);
-}
-
-function countGroups(
-  rows: CatalogTierTableRow[],
-  field: (r: CatalogTierTableRow) => string,
-  compareFn: (a: string, b: string) => number = compareLabels
-): { label: string; count: number }[] {
-  const m = new Map<string, number>();
-  for (const r of rows) {
-    const k = normLabel(field(r));
-    m.set(k, (m.get(k) ?? 0) + 1);
-  }
-  return [...m.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => compareFn(a.label, b.label));
-}
-
-function BrowseCard({
-  label,
-  count,
-  sub,
-  onClick,
-  variant = "default",
-}: {
-  label: string;
-  count: number;
-  sub?: string;
-  onClick: () => void;
-  variant?: "default" | "show-all";
-}) {
-  return (
-    <button
-      type="button"
-      className={`proposal-browse-card${variant === "show-all" ? " proposal-browse-card--show-all" : ""}`}
-      onClick={onClick}
-    >
-      <span className="proposal-browse-card__label">{label}</span>
-      {sub ? <span className="proposal-browse-card__sub">{sub}</span> : null}
-      <span className="proposal-browse-card__count">
-        {count} tier{count === 1 ? "" : "s"}
-      </span>
-    </button>
-  );
-}
-
-function crumbLabel(value: string | null): string {
-  if (value === BROWSE_SHOW_ALL) return "Show All";
-  return value ?? "";
-}
-
-function phaseContextLabel(phase: string | null): string {
-  if (!phase || phase === BROWSE_SHOW_ALL) return "Solutions";
-  return `${phase} phase`;
-}
-
-function SolutionTierBrowsePath({
-  browsePhase,
-  browseCategory,
-  browseTactic,
-  browseLevel,
-  onReset,
-  onBackToPhases,
-  onBackToCategories,
-  onBackToTactics,
-}: {
-  browsePhase: string | null;
-  browseCategory: string | null;
-  browseTactic: string | null;
-  browseLevel: "phase" | "category" | "tactic" | "tiers";
-  onReset: () => void;
-  onBackToPhases: () => void;
-  onBackToCategories: () => void;
-  onBackToTactics: () => void;
-}) {
-  if (browsePhase === null) {
-    return (
-      <nav className="proposal-catalog-crumb" aria-label="Solution tier browse path">
-        <span className="proposal-catalog-crumb__current">Phase</span>
-      </nav>
-    );
-  }
-
-  const phaseName = crumbLabel(browsePhase);
-  const categoryName = browseCategory !== null ? crumbLabel(browseCategory) : null;
-  const tacticName = browseTactic !== null ? crumbLabel(browseTactic) : null;
-
-  return (
-    <nav className="proposal-catalog-crumb" aria-label="Solution tier browse path">
-      <button type="button" className="proposal-catalog-crumb__link" onClick={onReset}>
-        Phase
-      </button>
-      <span className="proposal-catalog-crumb__sep" aria-hidden>
-        :
-      </span>
-      <button
-        type="button"
-        className="proposal-catalog-crumb__link"
-        onClick={() => {
-          if (browseLevel === "category") onBackToPhases();
-          else onBackToCategories();
-        }}
-      >
-        {phaseName}
-      </button>
-
-      {browseLevel === "category" ? (
-        <span className="proposal-catalog-crumb__current"> / Category</span>
-      ) : null}
-
-      {categoryName !== null && browseLevel !== "category" ? (
-        <>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToCategories}>
-            {" "}
-            / Category
-          </button>
-          <span className="proposal-catalog-crumb__sep" aria-hidden>
-            :
-          </span>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToCategories}>
-            {categoryName}
-          </button>
-        </>
-      ) : null}
-
-      {browseLevel === "tiers" && browseCategory === null ? (
-        <span className="proposal-catalog-crumb__current"> / All tiers</span>
-      ) : null}
-
-      {browseLevel === "tactic" ? (
-        <span className="proposal-catalog-crumb__current"> / Tactic</span>
-      ) : null}
-
-      {tacticName !== null && browseLevel === "tiers" ? (
-        <>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTactics}>
-            {" "}
-            / Tactic
-          </button>
-          <span className="proposal-catalog-crumb__sep" aria-hidden>
-            :
-          </span>
-          <button type="button" className="proposal-catalog-crumb__link" onClick={onBackToTactics}>
-            {tacticName}
-          </button>
-        </>
-      ) : null}
-    </nav>
-  );
-}
-
 export function ProposalCatalogPanel({
   panelVariant = "offerings",
   catalogTierTableRows,
@@ -299,9 +132,6 @@ export function ProposalCatalogPanel({
     : isVariableOnlyStep
       ? "variable"
       : "playbook";
-  const [browsePhase, setBrowsePhase] = useState<string | null>(null);
-  const [browseCategory, setBrowseCategory] = useState<string | null>(null);
-  const [browseTactic, setBrowseTactic] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [travelModalTierId, setTravelModalTierId] = useState<string | null>(null);
@@ -310,6 +140,17 @@ export function ProposalCatalogPanel({
   const [paidAdsSpendStr, setPaidAdsSpendStr] = useState("");
   const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
   const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
+
+  const [dirItemType, setDirItemType] = useState<CatalogDirectoryTypeFilter>("solution");
+  const [dirPhase, setDirPhase] = useState<PlaybookFilterValue>(null);
+  const [dirCategory, setDirCategory] = useState<PlaybookFilterValue>(null);
+  const [dirTactic, setDirTactic] = useState<PlaybookFilterValue>(null);
+  const [dirSearch, setDirSearch] = useState("");
+  const [dirSort, setDirSort] = useState<{ col: CatalogDirectorySortCol; dir: "asc" | "desc" }>({
+    col: "name",
+    dir: "asc",
+  });
+  const [expandedSolutionIds, setExpandedSolutionIds] = useState<Set<string>>(() => new Set());
 
   type PendingOfferingAdd =
     | { kind: "tier"; tier: SolutionTier }
@@ -330,70 +171,27 @@ export function ProposalCatalogPanel({
     return m;
   }, [ctx.tiers]);
 
-  const rowsForPhase = useMemo(() => {
-    if (browsePhase === null || browsePhase === BROWSE_SHOW_ALL) return catalogTierTableRows;
-    return catalogTierTableRows.filter((r) => normLabel(r.phaseRaw) === browsePhase);
-  }, [catalogTierTableRows, browsePhase]);
-
-  const rowsForCategory = useMemo(() => {
-    if (browseCategory === null || browseCategory === BROWSE_SHOW_ALL) return rowsForPhase;
-    return rowsForPhase.filter((r) => normLabel(r.categoryRaw) === browseCategory);
-  }, [rowsForPhase, browseCategory]);
-
-  const rowsForTactic = useMemo(() => {
-    if (browseTactic === null || browseTactic === BROWSE_SHOW_ALL) return rowsForCategory;
-    return rowsForCategory.filter((r) => normLabel(r.tacticRaw) === browseTactic);
-  }, [rowsForCategory, browseTactic]);
-
-  const browseLevel = useMemo(() => {
-    if (browsePhase === BROWSE_SHOW_ALL || browseCategory === BROWSE_SHOW_ALL || browseTactic === BROWSE_SHOW_ALL) {
-      return "tiers" as const;
-    }
-    if (browseTactic !== null) return "tiers" as const;
-    if (browseCategory !== null) return "tactic" as const;
-    if (browsePhase !== null) return "category" as const;
-    return "phase" as const;
-  }, [browsePhase, browseCategory, browseTactic]);
-
-  const stepPrompt = useMemo(() => {
-    if (browseLevel === "phase") return "Pick A Phase";
-    if (browseLevel === "category") return "Pick A Category";
-    if (browseLevel === "tactic") return "Pick A Tactic";
-    if (browsePhase === BROWSE_SHOW_ALL) return "All Tiers";
-    if (browseCategory === BROWSE_SHOW_ALL) return `All Tiers In ${phaseContextLabel(browsePhase)}`;
-    if (browseTactic === BROWSE_SHOW_ALL) {
-      return `All Tiers In ${crumbLabel(browseCategory)}, ${phaseContextLabel(browsePhase)}`;
-    }
-    return `Add tiers — ${crumbLabel(browseTactic)}`;
-  }, [browseLevel, browsePhase, browseCategory, browseTactic]);
-
-  const searchLower = search.trim().toLowerCase();
-  const tierRows = useMemo(() => {
-    let rows = rowsForTactic;
-    if (!searchLower) return rows;
-    return rows.filter((r) => {
-      const blob = `${r.tierName} ${r.solutionName} ${r.tierId} ${r.phaseRaw} ${r.categoryRaw} ${r.tacticRaw}`.toLowerCase();
-      return blob.includes(searchLower);
-    });
-  }, [rowsForTactic, searchLower]);
-
-  const phaseGroups = useMemo(
-    () => countGroups(catalogTierTableRows, (r) => r.phaseRaw, comparePhaseGroupLabels),
+  const solutionDirectoryRows = useMemo(
+    () => buildSolutionDirectoryRowsFromTier(catalogTierTableRows),
     [catalogTierTableRows]
   );
-  const categoryGroups = useMemo(
-    () => countGroups(rowsForPhase, (r) => r.categoryRaw, compareCategoryGroupLabels),
-    [rowsForPhase]
-  );
-  const tacticGroups = useMemo(() => countGroups(rowsForCategory, (r) => r.tacticRaw), [rowsForCategory]);
 
-  const resetBrowse = () => {
-    setBrowsePhase(null);
-    setBrowseCategory(null);
-    setBrowseTactic(null);
-    setSearch("");
-  };
+  const toggleExpandedSolution = useCallback((solutionId: string) => {
+    setExpandedSolutionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(solutionId)) next.delete(solutionId);
+      else next.add(solutionId);
+      return next;
+    });
+  }, []);
 
+  const toggleDirSort = useCallback((col: CatalogDirectorySortCol) => {
+    setDirSort((prev) =>
+      prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "asc" }
+    );
+  }, []);
+
+  const searchLower = search.trim().toLowerCase();
   const variableTierRows = useMemo(() => {
     if (!searchLower) return variableTierTableRows;
     return variableTierTableRows.filter((r) => {
@@ -472,39 +270,40 @@ export function ProposalCatalogPanel({
 
   const stepMeta = useMemo(() => {
     const stepId: ProposalBuilderStep =
-      panelVariant === "preset_packages"
-        ? "preset_packages"
-        : panelVariant === "configurable_packages"
-          ? "configurable_packages"
-          : panelVariant === "variable_tiers"
-            ? "variable_tiers"
-            : "catalog";
+      panelVariant === "preset_packages" || panelVariant === "configurable_packages"
+        ? "packages"
+        : "catalog";
     const def = proposalStepDef(stepId);
     if (panelVariant === "preset_packages") {
       return {
         ...def,
-        lead:
-          "Add custom packages you already built from configurable templates in Step 3. Pick one to add it to the active scenario and phase. This step is optional—you can skip it and continue.",
+        numberLabel: `Step ${def.number} · Pre-built`,
+        label: "Add a Pre-Built Package",
+        lead: "Pick a package you already built and add it to the active scenario and phase.",
       };
     }
     if (panelVariant === "configurable_packages") {
       return {
         ...def,
-        lead:
-          "Build custom packages from configurable templates in Package Builder. This step is optional—you can skip it and continue.",
+        numberLabel: `Step ${def.number} · Build new`,
+        label: "Build a New Package",
+        lead: "Build custom packages from configurable templates in Package Builder.",
       };
     }
     if (panelVariant === "variable_tiers") {
       return {
         ...def,
+        numberLabel: `Step ${def.number}`,
+        label: "Extras",
         lead:
-          "Variable solutions are add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from the solutions already in this scenario. This step is optional—you can skip it and continue.",
+          "Extras like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from the solutions already in this scenario.",
       };
     }
     return {
       ...def,
+      numberLabel: `Step ${def.number}`,
       lead:
-        "Choose where items land, then add Solution Tiers from the playbook. Use Show All to skip a drill-down level.",
+        "Browse solutions in the table, expand one to see tiers, then add a tier. Extras (dynamic add-ons) are below the table.",
     };
   }, [panelVariant]);
 
@@ -586,7 +385,7 @@ export function ProposalCatalogPanel({
   return (
     <div className="proposal-step-panel proposal-catalog">
       <header className="proposal-step-panel__head">
-        <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
+        <p className="proposal-step-panel__eyebrow">{stepMeta.numberLabel ?? `Step ${stepMeta.number}`}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">{stepMeta.lead}</p>
       </header>
@@ -714,7 +513,7 @@ export function ProposalCatalogPanel({
                 ? panelVariant === "configurable_packages"
                   ? "Build a package in Package Builder, then refresh solutions."
                   : panelVariant === "preset_packages"
-                    ? "Build a package in Step 3, then refresh solutions."
+                    ? "Build a package under Add Packages, then refresh solutions."
                     : "Create custom packages in Admin, then refresh solutions."
                 : "Try a different search term."
             }
@@ -744,24 +543,24 @@ export function ProposalCatalogPanel({
         </div>
       ) : catalogMode === "variable" ? (
         <div className="proposal-catalog-offerings">
-          <p className="proposal-catalog-step-prompt">Pick A Variable Solution</p>
+          <p className="proposal-catalog-step-prompt">Pick An Extra</p>
           <p className="proposal-catalog-offerings__hint">
-            Add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically
-            from scenario solutions · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
+            Extras like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from
+            scenario solutions · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
             <strong>{targetPhaseTitle}</strong>
           </p>
           <ProposalCatalogListSearch
             id={searchId}
             value={search}
             onChange={setSearch}
-            placeholder="Search variable solutions…"
-            label="Search variable solutions"
+            placeholder="Search extras…"
+            label="Search extras"
           />
           <ProposalCatalogLinesPanel
             count={variableTierRows.length}
             isEmpty={variableTierRows.length === 0}
-            emptyTitle="No variable solutions"
-            emptyText="Variable solutions are configured in the Solutions Directory."
+            emptyTitle="No extras"
+            emptyText="Extras are configured in the Solutions Directory."
           >
             {variableTierRows.map((r) => {
               const onProposal = addedTierRefIds.has(r.tierId);
@@ -790,169 +589,104 @@ export function ProposalCatalogPanel({
         </div>
       ) : (
         <>
-          <div className="proposal-catalog-browse__head">
-            <SolutionTierBrowsePath
-              browsePhase={browsePhase}
-              browseCategory={browseCategory}
-              browseTactic={browseTactic}
-              browseLevel={browseLevel}
-              onReset={resetBrowse}
-              onBackToPhases={() => {
-                setBrowsePhase(null);
-                setBrowseCategory(null);
-                setBrowseTactic(null);
-                setSearch("");
-              }}
-              onBackToCategories={() => {
-                setBrowseCategory(null);
-                setBrowseTactic(null);
-                setSearch("");
-              }}
-              onBackToTactics={() => {
-                setBrowseTactic(null);
-                setSearch("");
-              }}
+          <div className="proposal-catalog-directory">
+            <p className="proposal-catalog-step-prompt">All Solutions</p>
+            <p className="proposal-catalog-offerings__hint">
+              Expand a solution to see tiers, then add one to <strong>{targetScenarioTitle}</strong> ·{" "}
+              <strong>{targetPhaseTitle}</strong>
+            </p>
+            <CatalogDirectoryBrowser
+              allRows={solutionDirectoryRows}
+              itemType={dirItemType}
+              phase={dirPhase}
+              category={dirCategory}
+              tactic={dirTactic}
+              onItemTypeChange={setDirItemType}
+              onPhaseChange={setDirPhase}
+              onCategoryChange={setDirCategory}
+              onTacticChange={setDirTactic}
+              tableSearch={dirSearch}
+              onTableSearchChange={setDirSearch}
+              sort={dirSort}
+              onToggleSort={toggleDirSort}
+              expandedSolutionIds={expandedSolutionIds}
+              onToggleSolution={toggleExpandedSolution}
+              onOpenTier={() => {}}
+              onOpenPresetPackage={() => {}}
+              onOpenConfigurablePackage={() => {}}
+              hideTypeFilter
+              hidePackageStats
+              searchPlaceholder="Solution, tier, tags…"
+              footerHint="Expand a solution for tiers · Click Add on a tier to place it on the proposal"
+              tierInteraction="add"
+              onAddTier={(_solutionId, tierId) => handleAddTier(tierId)}
+              addedTierRefIds={addedTierRefIds}
+              justAddedTierId={
+                justAddedId?.startsWith("tier:") ? justAddedId.slice("tier:".length) : null
+              }
+              canAdd={canAdd}
             />
-          </div>
-          <p className="proposal-catalog-step-prompt">{stepPrompt}</p>
-
-          {browseLevel === "phase" ? (
-            <div className="proposal-catalog-browse-grid" role="list" aria-label="Phases">
-              <BrowseCard
-                label="Show All"
-                count={catalogTierTableRows.length}
-                sub="All Tiers"
-                variant="show-all"
+            <footer className="proposal-catalog-tiers__footer">
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--ghost roadmap-btn--sm"
+                disabled={!canAdd}
                 onClick={() => {
-                  setBrowsePhase(BROWSE_SHOW_ALL);
-                  setBrowseCategory(null);
-                  setBrowseTactic(null);
-                  setSearch("");
+                  if (!canAdd) return;
+                  setDatesModalPending({ kind: "scratch" });
                 }}
-              />
-              {phaseGroups.map(({ label, count }) => (
-                <BrowseCard
-                  key={label}
-                  label={label}
-                  count={count}
-                  sub="Then pick a category"
-                  onClick={() => {
-                    setBrowsePhase(label);
-                    setBrowseCategory(null);
-                    setBrowseTactic(null);
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {browseLevel === "category" ? (
-            <div className="proposal-catalog-browse-grid" role="list" aria-label="Categories">
-              <BrowseCard
-                label="Show All"
-                count={rowsForPhase.length}
-                sub={`All Tiers In ${phaseContextLabel(browsePhase)}`}
-                variant="show-all"
-                onClick={() => {
-                  setBrowseCategory(BROWSE_SHOW_ALL);
-                  setBrowseTactic(null);
-                  setSearch("");
-                }}
-              />
-              {categoryGroups.map(({ label, count }) => (
-                <BrowseCard
-                  key={label}
-                  label={label}
-                  count={count}
-                  sub="Then pick a tactic"
-                  onClick={() => {
-                    setBrowseCategory(label);
-                    setBrowseTactic(null);
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {browseLevel === "tactic" ? (
-            <div className="proposal-catalog-browse-grid" role="list" aria-label="Tactics">
-              <BrowseCard
-                label="Show All"
-                count={rowsForCategory.length}
-                sub={`All Tiers In ${crumbLabel(browseCategory)}, ${phaseContextLabel(browsePhase)}`}
-                variant="show-all"
-                onClick={() => {
-                  setBrowseTactic(BROWSE_SHOW_ALL);
-                  setSearch("");
-                }}
-              />
-              {tacticGroups.map(({ label, count }) => (
-                <BrowseCard
-                  key={label}
-                  label={label}
-                  count={count}
-                  sub="View tiers to add"
-                  onClick={() => {
-                    setBrowseTactic(label);
-                    setSearch("");
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {browseLevel === "tiers" ? (
-            <div className="proposal-catalog-offerings">
-              <ProposalCatalogListSearch
-                id={searchId}
-                value={search}
-                onChange={setSearch}
-                placeholder="Search tiers or solutions…"
-                label="Search solution tiers"
-              />
-              <ProposalCatalogLinesPanel
-                count={tierRows.length}
-                isEmpty={tierRows.length === 0}
-                emptyTitle="No tiers match"
-                emptyText="Try search or go back and pick another tactic."
               >
-                {tierRows.map((r) => {
-                  const onProposal = addedTierRefIds.has(r.tierId);
-                  const justAdded = justAddedId === `tier:${r.tierId}`;
-                  const taxonomy =
-                    [r.phaseRaw, r.categoryRaw, r.tacticRaw].filter((x) => x.trim()).join(" · ") ||
-                    r.solutionName;
-                  return (
-                    <ProposalCatalogLineRow
-                      key={r.tierId}
-                      kind="tier"
-                      title={r.tierName}
-                      detail={taxonomy}
-                      hours={r.hoursDisplay}
-                      price={r.priceDisplay}
-                      onProposal={onProposal}
-                      justAdded={justAdded}
-                      canAdd={canAdd}
-                      onAdd={() => handleAddTier(r.tierId)}
-                    />
-                  );
-                })}
-              </ProposalCatalogLinesPanel>
-              <footer className="proposal-catalog-tiers__footer">
-                <button
-                  type="button"
-                  className="roadmap-btn roadmap-btn--ghost roadmap-btn--sm"
-                  disabled={!canAdd}
-                  onClick={() => {
-                    if (!canAdd) return;
-                    setDatesModalPending({ kind: "scratch" });
-                  }}
-                >
-                  + Custom one-off tier
-                </button>
-              </footer>
-            </div>
-          ) : null}
+                + Custom one-off tier
+              </button>
+            </footer>
+          </div>
+
+          <div className="proposal-catalog-extras">
+            <header className="proposal-catalog-extras__head">
+              <p className="proposal-catalog-step-prompt">Extras</p>
+              <p className="proposal-catalog-offerings__hint">
+                Dynamic add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced from
+                solutions already in this scenario.
+              </p>
+            </header>
+            <ProposalCatalogListSearch
+              id={`${searchId}-extras`}
+              value={search}
+              onChange={setSearch}
+              placeholder="Search extras…"
+              label="Search extras"
+            />
+            <ProposalCatalogLinesPanel
+              count={variableTierRows.length}
+              isEmpty={variableTierRows.length === 0}
+              emptyTitle="No extras"
+              emptyText="Extras are configured in the Solutions Directory."
+            >
+              {variableTierRows.map((r) => {
+                const onProposal = addedTierRefIds.has(r.tierId);
+                const justAdded = justAddedId === `tier:${r.tierId}`;
+                const priceDisplay = isTravelVariableTierRefId(r.tierId)
+                  ? "Enter hours"
+                  : isPercentVariableTierRefId(r.tierId)
+                    ? "Select tier"
+                    : "—";
+                return (
+                  <ProposalCatalogLineRow
+                    key={r.tierId}
+                    kind="tier"
+                    title={r.tierName}
+                    detail={variableTierRuleSummary(r.tierId)}
+                    hours={isTravelVariableTierRefId(r.tierId) ? "—" : r.hoursDisplay}
+                    price={priceDisplay}
+                    onProposal={onProposal}
+                    justAdded={justAdded}
+                    canAdd={canAdd}
+                    onAdd={() => handleAddVariableTierRow(r.tierId)}
+                  />
+                );
+              })}
+            </ProposalCatalogLinesPanel>
+          </div>
         </>
       )}
 

@@ -39,7 +39,6 @@ import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
 import { PackageBuilderSlotLimitsPanel } from "../components/PackageBuilderSlotLimitsPanel";
-import { PresetPackageTaxonomyTagsPanel } from "../components/PresetPackageTaxonomyTagsPanel";
 import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
 import { useToast } from "../context/ToastContext";
 import type {
@@ -69,7 +68,7 @@ type AdminTab =
   | "audit";
 
 /** Create-only vs list + edit, plus tier slot ceilings editor. Shown under Package / Solutions builder tabs. */
-export type AdminSubTab = "create" | "update" | "preset_tags" | "build_slots";
+export type AdminSubTab = "create" | "update" | "build_slots";
 
 /** Single caption row so label+input stacks align across grid columns (avoids extra flex rows for “(locked)”). */
 function AdminFieldCaption({ children }: { children: ReactNode }) {
@@ -526,25 +525,6 @@ export function AdminView() {
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={adminSubTab === "preset_tags"}
-                  className={
-                    adminSubTab === "preset_tags"
-                      ? "admin-subtab admin-subtab--active"
-                      : "admin-subtab"
-                  }
-                  onClick={() => {
-                    setAdminSubTab("preset_tags");
-                    setOpErr(null);
-                    setOpOk(null);
-                  }}
-                >
-                  Add Tags to Preset Packages
-                </button>
-              )}
-              {tab === "packages" && (
-                <button
-                  type="button"
-                  role="tab"
                   aria-selected={adminSubTab === "build_slots"}
                   className={
                     adminSubTab === "build_slots"
@@ -561,22 +541,6 @@ export function AdminView() {
                 </button>
               )}
             </div>
-          )}
-
-          {tab === "packages" && adminSubTab === "preset_tags" && (
-            <section className="admin-panel admin-panel--editor" style={panel}>
-              <div className="admin-editor-layout admin-editor-layout--wide">
-                <PresetPackageTaxonomyTagsPanel
-                  packages={packages}
-                  muted={muted}
-                  input={input}
-                  btnPrimary={btnPrimary}
-                  setOpErr={setOpErr}
-                  setOpOk={setOpOk}
-                  onSaved={refreshAfterSave}
-                />
-              </div>
-            </section>
           )}
 
           {tab === "packages" && adminSubTab === "build_slots" && (

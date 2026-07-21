@@ -11615,40 +11615,75 @@ button {
 
 .agency-catalog-directory__col--add,
 .agency-catalog-directory__cell--add {
-  width: 6.5rem;
+  width: 7.5rem;
   text-align: right;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .agency-catalog-directory__add-btn {
-  border: 1px solid rgba(13, 92, 77, 0.28);
-  background: rgba(13, 92, 77, 0.08);
-  color: rgba(13, 92, 77, 0.95);
-  border-radius: 8px;
-  padding: 0.28rem 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.75rem;
+  border: 1px solid rgba(13, 92, 77, 0.95);
+  background: #0d5c4d;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.42rem 0.95rem;
   font: inherit;
-  font-size: 0.75rem;
-  font-weight: 650;
+  font-size: 0.82rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(13, 92, 77, 0.28);
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
 }
 
 .agency-catalog-directory__add-btn:hover:not(:disabled) {
-  background: rgba(13, 92, 77, 0.14);
+  background: #0a4a3e;
+  border-color: #0a4a3e;
+  box-shadow: 0 2px 8px rgba(13, 92, 77, 0.35);
+  transform: translateY(-1px);
+}
+
+.agency-catalog-directory__add-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(13, 92, 77, 0.28),
+    0 1px 3px rgba(13, 92, 77, 0.28);
 }
 
 .agency-catalog-directory__add-btn.is-done {
-  background: rgba(13, 92, 77, 0.85);
-  border-color: transparent;
+  background: #15803d;
+  border-color: #15803d;
   color: #fff;
+  box-shadow: none;
 }
 
 .agency-catalog-directory__add-btn.is-again {
-  border-style: dashed;
+  background: rgba(13, 92, 77, 0.1);
+  border: 1.5px dashed rgba(13, 92, 77, 0.55);
+  color: rgba(13, 92, 77, 0.98);
+  box-shadow: none;
+}
+
+.agency-catalog-directory__add-btn.is-again:hover:not(:disabled) {
+  background: rgba(13, 92, 77, 0.16);
+  border-color: rgba(13, 92, 77, 0.75);
+  color: #0a4a3e;
+  transform: none;
 }
 
 .agency-catalog-directory__add-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .agency-catalog-directory__name-cell {
@@ -18935,17 +18970,10 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
 }
 
 .proposal-catalog-dashboard {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   margin-bottom: 1rem;
-  align-items: stretch;
-}
-
-@media (max-width: 52rem) {
-  .proposal-catalog-dashboard {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Budget progress card */
@@ -19022,14 +19050,9 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.proposal-budget-card__list:only-child,
-.proposal-budget-card__list li:only-child {
-  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.55rem;
 }
 
 .proposal-budget-card__item {
@@ -19144,7 +19167,8 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   min-height: 0;
   padding: 0.85rem 0.95rem;
   border-radius: 14px;
-  border: 1px solid rgba(226, 220, 211, 0.95);
+  border: 1px solid rgba(68, 64, 60, 0.14);
+  border-left: 4px solid #78716c;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }

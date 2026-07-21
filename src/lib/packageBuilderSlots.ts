@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PackageBuilderPackageType, PackageBuilderSlotTemplate } from "../types";
+import type { PackageBuilderPackageType, PackageBuilderSlotTemplate, PackagePricingOverrides } from "../types";
 import {
   emptySlotNarrativeFields,
   narrativeFieldsFromRow,
@@ -63,6 +63,28 @@ function normType(r: Record<string, unknown>): PackageBuilderPackageType {
   };
 }
 
+function parseOptionalScore012(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const r = Math.round(n);
+  if (r < 0 || r > 2) return null;
+  return r;
+}
+
+/** Default preset scores for new / seed slots (0 = lowest risk / Support). */
+export function emptySlotRiskPresets(): Pick<
+  PackageBuilderSlotTemplate,
+  "scope_risk" | "internal_coordination" | "client_revision_risk" | "strategic_value_score"
+> {
+  return {
+    scope_risk: 0,
+    internal_coordination: 0,
+    client_revision_risk: 0,
+    strategic_value_score: 0,
+  };
+}
+
 function normSlot(
   r: Record<string, unknown>,
   allowedIds: string[]
@@ -80,6 +102,10 @@ function normSlot(
       r.tier_notes != null && String(r.tier_notes).trim() !== ""
         ? String(r.tier_notes).trim()
         : null,
+    scope_risk: parseOptionalScore012(r.scope_risk) ?? 0,
+    internal_coordination: parseOptionalScore012(r.internal_coordination) ?? 0,
+    client_revision_risk: parseOptionalScore012(r.client_revision_risk) ?? 0,
+    strategic_value_score: parseOptionalScore012(r.strategic_value_score) ?? 0,
     ...narrativeFieldsFromRow(r),
     updated_at: r.updated_at != null ? String(r.updated_at) : null,
   };
@@ -117,6 +143,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
       updated_at: null,
     },
@@ -130,6 +157,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
       updated_at: null,
     },
@@ -143,6 +171,7 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       solution_tier_limit: null,
       allowed_solution_tier_ids: [],
       tier_notes: null,
+      ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
       updated_at: null,
     },
@@ -165,7 +194,7 @@ export async function fetchPackageBuilderCatalog(
     client
       .from("package_builder_slot_templates")
       .select(
-        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,package_owner,package_overview,package_overview_link,package_direction,package_what_is_it,package_why_is_it_valuable,package_when_should_it_be_used,package_assumption_prerequisites,package_in_scope,package_out_of_scope,package_final_deliverable,package_how_do_we_get_this_work_done,package_sop,package_resources,package_resource_templates,package_resource_tools,updated_at"
+        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,scope_risk,internal_coordination,client_revision_risk,strategic_value_score,package_owner,package_overview,package_overview_link,package_direction,package_what_is_it,package_why_is_it_valuable,package_when_should_it_be_used,package_assumption_prerequisites,package_in_scope,package_out_of_scope,package_final_deliverable,package_how_do_we_get_this_work_done,package_sop,package_resources,package_resource_templates,package_resource_tools,updated_at"
       )
       .order("package_type_id", { ascending: true })
       .order("sort_order", { ascending: true }),
@@ -266,18 +295,58 @@ export function isVaultTierAllowedForSlot(
   return slot.allowed_solution_tier_ids.includes(solutionTierId);
 }
 
-/** Copy limit + allow-list fields from one tier slot to another (labels unchanged). */
+/** Copy limit + allow-list + risk preset fields from one tier slot to another (labels unchanged). */
 export function copySlotLimitSettings(
   source: PackageBuilderSlotTemplate
 ): Pick<
   PackageBuilderSlotTemplate,
-  "hour_ceiling" | "price_ceiling" | "solution_tier_limit" | "allowed_solution_tier_ids"
+  | "hour_ceiling"
+  | "price_ceiling"
+  | "solution_tier_limit"
+  | "allowed_solution_tier_ids"
+  | "scope_risk"
+  | "internal_coordination"
+  | "client_revision_risk"
+  | "strategic_value_score"
 > {
   return {
     hour_ceiling: source.hour_ceiling,
     price_ceiling: source.price_ceiling,
     solution_tier_limit: source.solution_tier_limit,
     allowed_solution_tier_ids: [...source.allowed_solution_tier_ids],
+    scope_risk: source.scope_risk ?? 0,
+    internal_coordination: source.internal_coordination ?? 0,
+    client_revision_risk: source.client_revision_risk ?? 0,
+    strategic_value_score: source.strategic_value_score ?? 0,
+  };
+}
+
+/** Package-level pricing overrides written when creating a package from this slot. */
+export function packagePricingOverridesFromSlot(
+  slot: PackageBuilderSlotTemplate
+): Pick<
+  PackagePricingOverrides,
+  "scope_risk" | "internal_coordination" | "client_revision_risk" | "strategic_value_score"
+> {
+  return {
+    scope_risk: parseOptionalScore012(slot.scope_risk) ?? 0,
+    internal_coordination: parseOptionalScore012(slot.internal_coordination) ?? 0,
+    client_revision_risk: parseOptionalScore012(slot.client_revision_risk) ?? 0,
+    strategic_value_score: parseOptionalScore012(slot.strategic_value_score) ?? 0,
+  };
+}
+
+export function slotRiskPresetPayload(
+  slot: PackageBuilderSlotTemplate
+): Pick<
+  PackageBuilderSlotTemplate,
+  "scope_risk" | "internal_coordination" | "client_revision_risk" | "strategic_value_score"
+> {
+  return {
+    scope_risk: parseOptionalScore012(slot.scope_risk) ?? 0,
+    internal_coordination: parseOptionalScore012(slot.internal_coordination) ?? 0,
+    client_revision_risk: parseOptionalScore012(slot.client_revision_risk) ?? 0,
+    strategic_value_score: parseOptionalScore012(slot.strategic_value_score) ?? 0,
   };
 }
 

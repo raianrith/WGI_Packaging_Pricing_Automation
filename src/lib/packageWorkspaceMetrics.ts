@@ -28,7 +28,12 @@ import {
   parsePricingOverrides,
 } from "./packagePricingTaskOverrides";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "./taskHoursRollup";
-import { computeTierPricing, normalizeTierPricingMathConfig } from "./tierPricingMath";
+import {
+  clampScore012,
+  computeTierPricing,
+  normalizeTierPricingMathConfig,
+  type HourBreakdown,
+} from "./tierPricingMath";
 
 function sortTierIds(a: string, b: string): number {
   const pa = a.split("-").map(Number);
@@ -66,13 +71,45 @@ export type PackageWizardDiscountPreview = {
   modeledSellBeforeHourDiscount: number | null;
   /** Vault catalog sell after uniform hour discount % (scaled per tier when hours known). */
   modeledSellAfterHourDiscount: number | null;
-  /** After hour discount, then sell discount %. */
+  /** After hour discount, then sell discount %. Kept for callers; prefer packageModeledSell. */
   netSellAfterSellDiscount: number | null;
+  /** Package-level risk / strategic breakdown from discounted hours + slot presets. */
+  scopeRisk: number;
+  internalCoordination: number;
+  clientRevisionRisk: number;
+  strategicValueScore: number;
+  expectedEffortBase: number | null;
+  riskMultiplier: number | null;
+  riskMitigatedBase: number | null;
+  strategicMultiplier: number | null;
+  /** Modeled package sell after hour discount + risk/strategic math (ceiling). */
+  packageModeledSell: number | null;
+  /** Discounted resource hours before add-ons (same as hoursAfter when modeled). */
+  resourceHours: number | null;
+  accountMgmtAddonHours: number | null;
+  continuousImprovementAddonHours: number | null;
+  billableHours: number | null;
+  hourlyRate: number | null;
 };
+
+function hourBreakdownFromTotal(total: number): HourBreakdown {
+  return {
+    client: 0,
+    copy: 0,
+    design: 0,
+    web: 0,
+    video: 0,
+    data: 0,
+    paidMedia: 0,
+    hubspot: 0,
+    other: total,
+  };
+}
 
 /**
  * Build-a-Package step 4: match step 3 running totals (vault hours + sell per tier).
  * Hour discount scales each tier’s sell in proportion to its hours (uniform %).
+ * Also models package sell from discounted hours + preset risk/strategic scores.
  */
 export function computePackageWizardDiscountPreview(args: {
   tierQuantities: PackageTierQuantities;
@@ -84,12 +121,22 @@ export function computePackageWizardDiscountPreview(args: {
   missingPrice: boolean;
   hourPct: number;
   sellPct: number;
+  scopeRisk?: number | null;
+  internalCoordination?: number | null;
+  clientRevisionRisk?: number | null;
+  strategicValueScore?: number | null;
+  mathConfig?: TierPricingMathConfig | null;
 }): PackageWizardDiscountPreview {
   const hourPct = Math.min(100, Math.max(0, args.hourPct));
   const sellPct = Math.min(100, Math.max(0, args.sellPct));
   const catalogHours = args.catalogHours;
   const catalogSell = args.catalogSell;
   const hourFactor = 1 - hourPct / 100;
+
+  const scopeRisk = clampScore012(args.scopeRisk);
+  const internalCoordination = clampScore012(args.internalCoordination);
+  const clientRevisionRisk = clampScore012(args.clientRevisionRisk);
+  const strategicValueScore = clampScore012(args.strategicValueScore);
 
   const hoursAfter =
     args.missingHours || catalogHours <= 0
@@ -132,6 +179,43 @@ export function computePackageWizardDiscountPreview(args: {
       ? Math.round(modeledSellAfterHourDiscount * (1 - sellPct / 100))
       : null;
 
+  let expectedEffortBase: number | null = null;
+  let riskMultiplier: number | null = null;
+  let riskMitigatedBase: number | null = null;
+  let strategicMultiplier: number | null = null;
+  let packageModeledSell: number | null = null;
+  let resourceHours: number | null = null;
+  let accountMgmtAddonHours: number | null = null;
+  let continuousImprovementAddonHours: number | null = null;
+  let billableHours: number | null = null;
+  let hourlyRate: number | null = null;
+
+  if (hoursAfter != null && hoursAfter > 0) {
+    const math = normalizeTierPricingMathConfig(args.mathConfig ?? null);
+    const derived = computeTierPricing(
+      {
+        hours: hourBreakdownFromTotal(hoursAfter),
+        scopeRisk,
+        internalCoordination,
+        clientRevisionRisk,
+        strategicValueScore,
+      },
+      math
+    );
+    resourceHours = Math.round(derived.totalHours * 100) / 100;
+    accountMgmtAddonHours = Math.round(derived.accountMgmtAddonHours * 100) / 100;
+    continuousImprovementAddonHours =
+      Math.round(derived.continuousImprovementAddonHours * 100) / 100;
+    billableHours = Math.round(derived.hoursForExpectedEffort * 100) / 100;
+    hourlyRate = math.hourlyRate;
+    expectedEffortBase = Math.round(derived.expectedEffortBase);
+    riskMultiplier = derived.riskMultiplier;
+    riskMitigatedBase = Math.round(derived.riskMitigatedBase);
+    strategicMultiplier = derived.strategicMultiplier;
+    const afterSellPct = derived.sellPrice * (1 - sellPct / 100);
+    packageModeledSell = Math.round(afterSellPct);
+  }
+
   return {
     hourPct,
     sellPct,
@@ -141,6 +225,20 @@ export function computePackageWizardDiscountPreview(args: {
     modeledSellBeforeHourDiscount,
     modeledSellAfterHourDiscount,
     netSellAfterSellDiscount,
+    scopeRisk,
+    internalCoordination,
+    clientRevisionRisk,
+    strategicValueScore,
+    expectedEffortBase,
+    riskMultiplier,
+    riskMitigatedBase,
+    strategicMultiplier,
+    packageModeledSell,
+    resourceHours,
+    accountMgmtAddonHours,
+    continuousImprovementAddonHours,
+    billableHours,
+    hourlyRate,
   };
 }
 

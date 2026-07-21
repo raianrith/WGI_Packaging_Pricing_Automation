@@ -10,6 +10,7 @@ import type { PackageBuilderPackageType, PackageBuilderSlotTemplate, SolutionTie
 import {
   defaultPackageBuilderSlots,
   defaultPackageBuilderTypes,
+  emptySlotRiskPresets,
   fetchPackageBuilderCatalog,
   isPersistedPackageBuilderId,
   isPersistedPackageBuilderTypeId,
@@ -18,6 +19,7 @@ import {
   copySlotLimitSettings,
   slotLimitSummary,
   slotNarrativePayload,
+  slotRiskPresetPayload,
   slotsForPackageType,
   normalizePackageTypeTags,
 } from "../lib/packageBuilderSlots";
@@ -33,6 +35,24 @@ import { tierTaxonomyOptionsFromRows } from "../lib/tierTaxonomy";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { getSupabase } from "../lib/supabase";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
+import {
+  CLIENT_REVISION_RISK_SCORE_HINTS,
+  INTERNAL_COORDINATION_SCORE_HINTS,
+  SCOPE_RISK_SCORE_HINTS,
+  clampScore012,
+  riskScore012Options,
+  riskScore012SelectTitle,
+  strategicValueScoreSelectTitle,
+  strategicValueScoreUiLabel,
+} from "../lib/tierPricingMath";
+
+const SCOPE_OPTIONS = riskScore012Options(SCOPE_RISK_SCORE_HINTS);
+const INTERNAL_OPTIONS = riskScore012Options(INTERNAL_COORDINATION_SCORE_HINTS);
+const CLIENT_OPTIONS = riskScore012Options(CLIENT_REVISION_RISK_SCORE_HINTS);
+const STRATEGIC_OPTIONS = ([0, 1, 2] as const).map((s) => ({
+  value: String(s),
+  label: strategicValueScoreUiLabel(s),
+}));
 
 type VaultTierRow = { solution_tier_id: string; label: string };
 
@@ -242,6 +262,7 @@ export function PackageBuilderSlotLimitsPanel({
           solution_tier_limit: null,
           allowed_solution_tier_ids: [],
           tier_notes: null,
+          ...emptySlotRiskPresets(),
           ...emptySlotNarrativeFields(),
           updated_at: null,
         },
@@ -284,6 +305,7 @@ export function PackageBuilderSlotLimitsPanel({
           solution_tier_limit: null,
           allowed_solution_tier_ids: [],
           tier_notes: null,
+          ...emptySlotRiskPresets(),
           ...emptySlotNarrativeFields(),
           updated_at: null,
         },
@@ -506,6 +528,7 @@ export function PackageBuilderSlotLimitsPanel({
           hour_ceiling: s.hour_ceiling,
           price_ceiling: s.price_ceiling,
           solution_tier_limit: s.solution_tier_limit,
+          ...slotRiskPresetPayload(s),
           ...narrative,
           updated_at: nowIso,
         };
@@ -530,6 +553,7 @@ export function PackageBuilderSlotLimitsPanel({
             hour_ceiling: s.hour_ceiling,
             price_ceiling: s.price_ceiling,
             solution_tier_limit: s.solution_tier_limit,
+            ...slotRiskPresetPayload(s),
             ...slotNarrativePayload(s),
           })
           .select("id")
@@ -864,6 +888,97 @@ export function PackageBuilderSlotLimitsPanel({
                             />
                           </label>
                         </div>
+                        </div>
+
+                        <div className="admin-pkg-builder__limits-panel">
+                          <p className="admin-pkg-builder__limits-label">Preset risk &amp; strategic scores</p>
+                          <p className="admin-pkg-builder__limits-hint">
+                            Applied at package level when someone finishes building from this tier.
+                          </p>
+                          <div className="admin-pkg-builder__limits admin-pkg-builder__limits--scores">
+                            <label className="admin-pkg-builder__field">
+                              <span className="admin-pkg-builder__field-caption">Scope risk</span>
+                              <select
+                                className="admin-pkg-builder__score-select"
+                                style={input}
+                                title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
+                                value={String(clampScore012(r.scope_risk))}
+                                onChange={(e) =>
+                                  setSlot(r.id, { scope_risk: clampScore012(Number(e.target.value)) })
+                                }
+                                aria-label={`Tier ${r.sort_order} scope risk`}
+                              >
+                                {SCOPE_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="admin-pkg-builder__field">
+                              <span className="admin-pkg-builder__field-caption">Internal coordination</span>
+                              <select
+                                className="admin-pkg-builder__score-select"
+                                style={input}
+                                title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
+                                value={String(clampScore012(r.internal_coordination))}
+                                onChange={(e) =>
+                                  setSlot(r.id, {
+                                    internal_coordination: clampScore012(Number(e.target.value)),
+                                  })
+                                }
+                                aria-label={`Tier ${r.sort_order} internal coordination`}
+                              >
+                                {INTERNAL_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="admin-pkg-builder__field">
+                              <span className="admin-pkg-builder__field-caption">Client revision risk</span>
+                              <select
+                                className="admin-pkg-builder__score-select"
+                                style={input}
+                                title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
+                                value={String(clampScore012(r.client_revision_risk))}
+                                onChange={(e) =>
+                                  setSlot(r.id, {
+                                    client_revision_risk: clampScore012(Number(e.target.value)),
+                                  })
+                                }
+                                aria-label={`Tier ${r.sort_order} client revision risk`}
+                              >
+                                {CLIENT_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="admin-pkg-builder__field">
+                              <span className="admin-pkg-builder__field-caption">Strategic value</span>
+                              <select
+                                className="admin-pkg-builder__score-select"
+                                style={input}
+                                title={strategicValueScoreSelectTitle()}
+                                value={String(clampScore012(r.strategic_value_score))}
+                                onChange={(e) =>
+                                  setSlot(r.id, {
+                                    strategic_value_score: clampScore012(Number(e.target.value)),
+                                  })
+                                }
+                                aria-label={`Tier ${r.sort_order} strategic value`}
+                              >
+                                {STRATEGIC_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
                         </div>
 
                         <label className="admin-pkg-builder__field admin-pkg-builder__field--full">

@@ -66,6 +66,14 @@ export type PackageBuilderSlotTemplate = {
   allowed_solution_tier_ids: string[];
   /** Shown as a disclaimer when this tier is selected in Build a Package. */
   tier_notes: string | null;
+  /**
+   * Preset package-level pricing scores (0–2). Copied to `packages.package_pricing_overrides`
+   * when a package is created from this slot in Build a Package.
+   */
+  scope_risk: number | null;
+  internal_coordination: number | null;
+  client_revision_risk: number | null;
+  strategic_value_score: number | null;
   /** Default package narratives copied when building from this slot (see `package_builder_slot_narrative_fields.sql`). */
   package_owner?: string | null;
   package_overview?: string | null;

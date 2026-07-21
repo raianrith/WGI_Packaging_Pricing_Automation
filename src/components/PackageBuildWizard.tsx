@@ -7,6 +7,7 @@ import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import {
   isVaultTierAllowedForSlot,
+  packagePricingOverridesFromSlot,
   slotEnforcesHourCeiling,
   slotEnforcesPriceCeiling,
   slotEnforcesTierCountLimit,
@@ -17,6 +18,13 @@ import {
   applyPackageTierMembership,
   emptyPackageLinkPayload,
 } from "../lib/packageTierLinkPersistence";
+import { sanitizePricingOverridesForDb } from "../lib/packagePricingTaskOverrides";
+import {
+  ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE,
+  loadTierPricingMathConfigFromStorage,
+  normalizeTierPricingMathConfig,
+} from "../lib/tierPricingMath";
 import {
   adjustTierQuantity,
   catalogUsageFromQuantities,
@@ -325,7 +333,13 @@ export function PackageBuildWizard({
     return packageTierDiscountSummary(selectedSlot.label, selectedPackageType?.name);
   }, [selectedSlot, selectedPackageType?.name]);
 
+  const tierPricingMathConfig = useMemo(
+    () => normalizeTierPricingMathConfig(loadTierPricingMathConfigFromStorage()),
+    []
+  );
+
   const discountPreview = useMemo(() => {
+    const presets = selectedSlot ? packagePricingOverridesFromSlot(selectedSlot) : null;
     return computePackageWizardDiscountPreview({
       tierQuantities: tierPickQty,
       pricingRows: pricing,
@@ -336,8 +350,21 @@ export function PackageBuildWizard({
       missingPrice: usage.missingPrice,
       hourPct: wizardTierDiscount.hourPct,
       sellPct: 0,
+      scopeRisk: presets?.scope_risk,
+      internalCoordination: presets?.internal_coordination,
+      clientRevisionRisk: presets?.client_revision_risk,
+      strategicValueScore: presets?.strategic_value_score,
+      mathConfig: tierPricingMathConfig,
     });
-  }, [usage, tierPickQty, pricing, tasks, wizardTierDiscount.hourPct]);
+  }, [
+    usage,
+    tierPickQty,
+    pricing,
+    tasks,
+    wizardTierDiscount.hourPct,
+    selectedSlot,
+    tierPricingMathConfig,
+  ]);
 
   const beginPackageBuild = useCallback((packageType: PackageBuilderPackageType) => {
     setWizardOpen(true);
@@ -424,9 +451,22 @@ export function PackageBuildWizard({
         package_category: selectedPackageType?.name?.trim() || null,
         package_hour_discount_pct: hourPct,
         package_sell_discount_pct: sellPct,
+        ...(selectedSlot
+          ? {
+              package_pricing_overrides: packagePricingOverridesFromSlot(selectedSlot),
+            }
+          : {}),
         ...(selectedSlot ? packageNarrativeFromSlot(selectedSlot) : {}),
       };
-      const { error: insErr } = await client.from("packages").insert(row);
+      const insertRow = {
+        ...row,
+        ...(row.package_pricing_overrides
+          ? {
+              package_pricing_overrides: sanitizePricingOverridesForDb(row.package_pricing_overrides),
+            }
+          : {}),
+      };
+      const { error: insErr } = await client.from("packages").insert(insertRow);
       if (insErr) {
         toastError(friendlyMutationMessage(insErr.message));
         return;
@@ -934,82 +974,167 @@ export function PackageBuildWizard({
                     </span>
                     <span className="agency-pkg-wizard__chip">{tierLineCount} tier lines</span>
                   </div>
-                  <p className="agency-pkg-wizard__lead">
-                    {wizardTierDiscount.level
-                      ? `This package tier includes a fixed ${wizardTierDiscount.hourPct}% hour discount (no sell price discount). Totals below match what will be saved.`
-                      : "No fixed tier discount applies to this package tier label. Solution hours and sell are shown without a package discount."}
-                  </p>
 
-                  <div className="agency-pkg-wizard__discount-grid agency-pkg-wizard__discount-grid--single">
-                    <div className="agency-pkg-wizard__discount-card agency-pkg-wizard__discount-card--fixed">
-                      <div className="agency-pkg-wizard__discount-card-head">
+                  <div className="agency-pkg-wizard__pricing agency-pkg-wizard__pricing--simple">
+                    <header className="agency-pkg-wizard__pricing-head">
+                      <div>
                         <h3 className="agency-pkg-wizard__discount-title">Package pricing</h3>
                         {wizardTierDiscount.level ? (
                           <p className="agency-pkg-wizard__discount-rule">
                             {formatPackageTierDiscountRule(wizardTierDiscount.level)}
                           </p>
-                        ) : (
-                          <p className="agency-pkg-wizard__discount-hint">
-                            Expected labels: Basic (20%), Standard (25%), or Advanced (30%).
-                          </p>
-                        )}
+                        ) : null}
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-sell">
+                        <span className="agency-pkg-wizard__pricing-sell-label">Package sell</span>
+                        <strong>
+                          {discountPreview.packageModeledSell == null
+                            ? "—"
+                            : fmtUsd(discountPreview.packageModeledSell)}
+                        </strong>
+                      </div>
+                    </header>
+
+                    <dl className="agency-pkg-wizard__pricing-rows">
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>Discounted hours</dt>
+                        <dd>
+                          {usage.missingHours ? (
+                            "—"
+                          ) : (
+                            <>
+                              <span className="agency-pkg-wizard__discount-was">
+                                {fmtHoursTotal(discountPreview.catalogHours)} h
+                              </span>
+                              <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
+                                →
+                              </span>
+                              <strong>{fmtHoursTotal(discountPreview.hoursAfter ?? 0)} h</strong>
+                              {wizardTierDiscount.hourPct > 0 ? (
+                                <span className="agency-pkg-wizard__pricing-basic-tag">
+                                  −{wizardTierDiscount.hourPct}%
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </dd>
                       </div>
 
-                      <dl className="agency-pkg-wizard__discount-summary">
-                        <div className="agency-pkg-wizard__discount-summary-row">
-                          <dt>Hours</dt>
-                          <dd>
-                            {usage.missingHours ? (
-                              <strong>—</strong>
-                            ) : (
-                              <>
-                                <span className="agency-pkg-wizard__discount-was">
-                                  {fmtHoursTotal(discountPreview.catalogHours)} h
-                                </span>
-                                <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
-                                  →
-                                </span>
-                                <strong>{fmtHoursTotal(discountPreview.hoursAfter ?? 0)} h</strong>
-                              </>
-                            )}
-                          </dd>
-                        </div>
-                        <div className="agency-pkg-wizard__discount-summary-row">
-                          <dt>Solution sell</dt>
-                          <dd>
-                            {discountPreview.modeledSellBeforeHourDiscount == null ? (
-                              <strong>—</strong>
-                            ) : (
-                              <>
-                                <span className="agency-pkg-wizard__discount-was">
-                                  {fmtUsd(discountPreview.modeledSellBeforeHourDiscount)}
-                                </span>
-                                <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
-                                  →
-                                </span>
-                                <strong>{fmtUsd(discountPreview.modeledSellAfterHourDiscount ?? 0)}</strong>
-                              </>
-                            )}
-                          </dd>
-                        </div>
-                        <div className="agency-pkg-wizard__discount-summary-row agency-pkg-wizard__discount-summary-row--net">
-                          <dt>Net sell</dt>
-                          <dd>
-                            {discountPreview.netSellAfterSellDiscount == null ? (
-                              <strong>—</strong>
-                            ) : (
-                              <strong>{fmtUsd(discountPreview.netSellAfterSellDiscount)}</strong>
-                            )}
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
-                  </div>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--group">
+                        <dt>Resource hours</dt>
+                        <dd>
+                          {discountPreview.resourceHours == null
+                            ? "—"
+                            : `${fmtHoursTotal(discountPreview.resourceHours)} h`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--sub">
+                        <dt>
+                          Account mgmt
+                          <span>({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}%)</span>
+                        </dt>
+                        <dd>
+                          {discountPreview.accountMgmtAddonHours == null
+                            ? "—"
+                            : `+${fmtHoursTotal(discountPreview.accountMgmtAddonHours)} h`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--sub">
+                        <dt>
+                          Continuous improvement
+                          <span>({CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}%)</span>
+                        </dt>
+                        <dd>
+                          {discountPreview.continuousImprovementAddonHours == null
+                            ? "—"
+                            : `+${fmtHoursTotal(discountPreview.continuousImprovementAddonHours)} h`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>Billable hours</dt>
+                        <dd>
+                          <strong>
+                            {discountPreview.billableHours == null
+                              ? "—"
+                              : `${fmtHoursTotal(discountPreview.billableHours)} h`}
+                          </strong>
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>Hourly rate</dt>
+                        <dd>
+                          {discountPreview.hourlyRate == null
+                            ? "—"
+                            : `${fmtUsd(discountPreview.hourlyRate)} / h`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--emphasis">
+                        <dt>Expected effort</dt>
+                        <dd>
+                          <strong>
+                            {discountPreview.expectedEffortBase == null
+                              ? "—"
+                              : fmtUsd(discountPreview.expectedEffortBase)}
+                          </strong>
+                        </dd>
+                      </div>
 
-                  <p className="agency-pkg-wizard__discount-footnote">
-                    Estimates use solution component totals from your selection. Package Builder refines totals from the full task
-                    checklist.
-                  </p>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--scores">
+                        <dt>Presets</dt>
+                        <dd>
+                          <span>
+                            Scope {discountPreview.scopeRisk} · Coord {discountPreview.internalCoordination} ·
+                            Revision {discountPreview.clientRevisionRisk} · Strategic{" "}
+                            {discountPreview.strategicValueScore}
+                          </span>
+                        </dd>
+                      </div>
+
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>
+                          Risk multiplier
+                          <span>
+                            (sum{" "}
+                            {discountPreview.scopeRisk +
+                              discountPreview.internalCoordination +
+                              discountPreview.clientRevisionRisk}
+                            )
+                          </span>
+                        </dt>
+                        <dd>
+                          {discountPreview.riskMultiplier == null
+                            ? "—"
+                            : `× ${discountPreview.riskMultiplier}`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>Risk mitigated</dt>
+                        <dd>
+                          {discountPreview.riskMitigatedBase == null
+                            ? "—"
+                            : fmtUsd(discountPreview.riskMitigatedBase)}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row">
+                        <dt>Strategic multiplier</dt>
+                        <dd>
+                          {discountPreview.strategicMultiplier == null
+                            ? "—"
+                            : `× ${discountPreview.strategicMultiplier}`}
+                        </dd>
+                      </div>
+                      <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--total">
+                        <dt>Package sell</dt>
+                        <dd>
+                          <strong>
+                            {discountPreview.packageModeledSell == null
+                              ? "—"
+                              : fmtUsd(discountPreview.packageModeledSell)}
+                          </strong>
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
                 </>
               )}
             </div>

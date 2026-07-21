@@ -1414,7 +1414,7 @@ export function PackagesBuilderPanel({
                 taskHourRollup={packageTaskHourRollupDiscounted}
                 onPackagePricingDraft={onPackagePricingDraft}
                 packageHourDiscountPct={hourDiscountPctStr}
-                packageDiscountsReadOnly
+                onPackageHourDiscountPctChange={setHourDiscountPctStr}
                 packageSellDiscountPct="0"
               />
             ) : null}

@@ -919,7 +919,7 @@ export function PricingPanel({
                 title={
                   packageDiscountsReadOnly
                     ? "Fixed by package tier (Basic 20%, Standard 25%, Advanced 30%)."
-                    : "Applied evenly across all hour groups before expected effort pricing (package-level)."
+                    : "Applied evenly across all hour groups before expected effort pricing. Saved with the package."
                 }
               />
             </label>

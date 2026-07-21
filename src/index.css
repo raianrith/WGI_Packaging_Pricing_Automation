@@ -7626,30 +7626,14 @@ button {
   color: var(--muted);
 }
 
-/* Package aggregate: emphasized discount controls + net sell (PricingPanel package mode) */
+/* Package aggregate: discount controls + net sell (PricingPanel package mode) */
 .admin-pricing-package-discount-field {
   grid-column: 1 / -1;
   align-self: stretch;
-  padding: 0.65rem 0.85rem !important;
-  margin-top: 0.35rem;
-  border-radius: 12px !important;
-  background: rgba(255, 193, 7, 0.16);
-  border: 1px solid rgba(212, 150, 0, 0.55) !important;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset;
-}
-
-.admin-pricing-package-discount-field .admin-field-caption {
-  font-weight: 650;
-  color: rgba(115, 80, 0, 0.95);
-}
-
-.admin-pricing-package-discount-field--net {
-  background: rgba(74, 179, 155, 0.14);
-  border-color: rgba(38, 120, 105, 0.48) !important;
 }
 
 .admin-pricing-package-discount-field--net .admin-field-caption {
-  color: rgba(26, 90, 75, 0.98);
+  font-weight: 650;
 }
 
 .admin-pricing-details {
@@ -16519,24 +16503,6 @@ html[data-theme="dark"] .admin-pricing-details {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-html[data-theme="dark"] .admin-pricing-package-discount-field {
-  background: rgba(255, 193, 7, 0.11);
-  border-color: rgba(255, 200, 110, 0.38) !important;
-}
-
-html[data-theme="dark"] .admin-pricing-package-discount-field .admin-field-caption {
-  color: rgba(255, 220, 160, 0.95);
-}
-
-html[data-theme="dark"] .admin-pricing-package-discount-field--net {
-  background: rgba(167, 139, 250, 0.13);
-  border-color: rgba(100, 200, 180, 0.36) !important;
-}
-
-html[data-theme="dark"] .admin-pricing-package-discount-field--net .admin-field-caption {
-  color: #c4b5fd;
 }
 
 html[data-theme="dark"] .admin-task-group-builder .admin-tg-task-picker__li,

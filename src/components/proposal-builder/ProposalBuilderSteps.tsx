@@ -4,7 +4,8 @@ export type ProposalBuilderStep =
   | "catalog"
   | "board"
   | "review"
-  | "client_service";
+  | "client_service"
+  | "client_ready";
 
 export type ProposalStepDef = {
   id: ProposalBuilderStep;
@@ -28,8 +29,14 @@ const STEPS: ProposalStepDef[] = [
   {
     id: "client_service",
     number: 6,
-    label: "Client Service Review",
+    label: "Ops Review",
     hint: "Tasks & Hours",
+  },
+  {
+    id: "client_ready",
+    number: 7,
+    label: "Client Ready Proposal",
+    hint: "Final View & PDF",
   },
 ];
 

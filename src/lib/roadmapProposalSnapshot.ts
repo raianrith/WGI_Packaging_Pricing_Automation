@@ -2,6 +2,7 @@ import type { RoadmapProposalRow } from "../types";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "./roadmapModel";
 
 import { normalizeIsoDateInput } from "./proposalDates";
+import { isProposalKind, type ProposalKind } from "./proposalKindPresets";
 
 export type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
 
@@ -21,6 +22,8 @@ export type RoadmapProposalSnapshot = {
   proposalStartDate: string;
   /** Proposal-level schedule end (ISO `YYYY-MM-DD`). */
   proposalEndDate: string;
+  /** Program vs Project proposal structure preset. */
+  proposalKind?: ProposalKind;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
@@ -48,6 +51,7 @@ export function parseProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalS
     clientBudget: typeof raw.clientBudget === "string" ? raw.clientBudget : row.client_budget ?? "",
     proposalStartDate: normalizeIsoDateInput(raw.proposalStartDate),
     proposalEndDate: normalizeIsoDateInput(raw.proposalEndDate),
+    proposalKind: isProposalKind(raw.proposalKind) ? raw.proposalKind : undefined,
     scenarios: raw.scenarios as RoadmapScenario[],
     phases: raw.phases as RoadmapPhase[],
     cards: raw.cards as RoadmapCard[],

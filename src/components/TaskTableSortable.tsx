@@ -58,11 +58,12 @@ export function TaskSortableList({ itemIds, disabled, onReorder, children }: Tas
 type SortableTableRowTrProps = {
   id: UniqueIdentifier;
   disabled?: boolean;
+  className?: string;
   /** Return table cells; first cell usually shows `dragHandle`. */
   renderCells: (dragHandle: ReactElement) => ReactElement[];
 };
 
-export function SortableTableRowTr({ id, disabled, renderCells }: SortableTableRowTrProps) {
+export function SortableTableRowTr({ id, disabled, className, renderCells }: SortableTableRowTrProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -89,12 +90,12 @@ export function SortableTableRowTr({ id, disabled, renderCells }: SortableTableR
     </button>
   );
 
+  const rowClass = [className, isDragging ? "admin-task-row--dragging" : undefined]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <tr
-      ref={setNodeRef}
-      style={style}
-      className={isDragging ? "admin-task-row--dragging" : undefined}
-    >
+    <tr ref={setNodeRef} style={style} className={rowClass || undefined}>
       {renderCells(dragHandle)}
     </tr>
   );

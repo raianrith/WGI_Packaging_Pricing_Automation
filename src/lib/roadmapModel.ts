@@ -65,6 +65,10 @@ export type RoadmapCardTaskLayout = {
   hiddenIds?: string[];
   /** Per-task hours overrides (`task_id` → hours). */
   hourOverrides?: Record<string, number | null>;
+  /** Client-facing display names for catalog/package tasks (`task_id` → label). */
+  nameOverrides?: Record<string, string>;
+  /** Explicit display order of visible task ids (catalog + extras). */
+  taskOrder?: string[];
   /** Tasks that exist only on this proposal line. */
   extras?: RoadmapCardExtraTask[];
 };

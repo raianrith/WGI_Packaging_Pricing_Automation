@@ -66,7 +66,7 @@ type Props = {
   proposalStartDate: string;
   proposalEndDate: string;
   onAddPackage: (p: Package, dates: ProposalOfferingDates) => void;
-  onAddTier: (t: SolutionTier, dates: ProposalOfferingDates) => void;
+  onAddTier: (t: SolutionTier, dates: ProposalOfferingDates, clientFacingLabel?: string) => void;
   onAddVariableTier: (t: SolutionTier, dates: ProposalOfferingDates, opts?: AddVariableTierOpts) => void;
   previewVariableTierPriceUsd: (refId: string, opts?: AddVariableTierOpts) => number | null;
   variableTierLinkTargets: VariableTierLinkTarget[];
@@ -153,12 +153,17 @@ export function ProposalCatalogPanel({
   const [expandedSolutionIds, setExpandedSolutionIds] = useState<Set<string>>(() => new Set());
 
   type PendingOfferingAdd =
-    | { kind: "tier"; tier: SolutionTier }
+    | { kind: "tier"; tier: SolutionTier; clientFacingLabel: string }
     | { kind: "package"; pkg: Package }
     | { kind: "scratch" }
     | { kind: "variable"; tier: SolutionTier; opts: AddVariableTierOpts };
 
   const [datesModalPending, setDatesModalPending] = useState<PendingOfferingAdd | null>(null);
+  const [labelPrompt, setLabelPrompt] = useState<{
+    tier: SolutionTier;
+    solutionName: string;
+    draft: string;
+  } | null>(null);
 
   const targetPhases = useMemo(
     () => sortedPhasesForScenario(phases, targetScenarioId),
@@ -338,7 +343,7 @@ export function ProposalCatalogPanel({
     let justAdded: string | null = null;
     switch (pending.kind) {
       case "tier":
-        onAddTier(pending.tier, dates);
+        onAddTier(pending.tier, dates, pending.clientFacingLabel);
         justAdded = `tier:${pending.tier.solution_tier_id}`;
         break;
       case "package":
@@ -365,7 +370,8 @@ export function ProposalCatalogPanel({
   const datesModalItemLabel = useMemo(() => {
     const pending = datesModalPending;
     if (!pending) return undefined;
-    if (pending.kind === "tier" || pending.kind === "variable") return pending.tier.solution_tier_name;
+    if (pending.kind === "tier") return pending.clientFacingLabel || pending.tier.solution_tier_name;
+    if (pending.kind === "variable") return pending.tier.solution_tier_name;
     if (pending.kind === "package") return pending.pkg.package_name;
     return "Scratch tier";
   }, [datesModalPending]);
@@ -373,8 +379,34 @@ export function ProposalCatalogPanel({
   const handleAddTier = (tierId: string) => {
     const tier = tierById.get(tierId);
     if (!tier || !canAdd) return;
-    setDatesModalPending({ kind: "tier", tier });
+    const row = catalogTierTableRows.find((r) => r.tierId === tierId);
+    const solutionName =
+      row?.solutionName?.trim() ||
+      tier.solution_tier_name.trim() ||
+      tier.solution_tier_id;
+    setLabelPrompt({
+      tier,
+      solutionName,
+      draft: solutionName,
+    });
   };
+
+  const confirmLabelPrompt = () => {
+    if (!labelPrompt || !canAdd) return;
+    const label =
+      labelPrompt.draft.trim() ||
+      labelPrompt.solutionName.trim() ||
+      labelPrompt.tier.solution_tier_name.trim() ||
+      labelPrompt.tier.solution_tier_id;
+    setDatesModalPending({
+      kind: "tier",
+      tier: labelPrompt.tier,
+      clientFacingLabel: label,
+    });
+    setLabelPrompt(null);
+  };
+
+  const cancelLabelPrompt = () => setLabelPrompt(null);
 
   const handleAddPackage = (packageId: string) => {
     const pkg = ctx.packages.find((p) => p.package_id === packageId);
@@ -1092,6 +1124,81 @@ export function ProposalCatalogPanel({
         onCancel={() => setDatesModalPending(null)}
         onConfirm={confirmOfferingDates}
       />
+
+      {labelPrompt ? (
+        <div
+          className="agency-pkg-label-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelLabelPrompt();
+          }}
+        >
+          <div
+            className="agency-pkg-label-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proposal-sol-label-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="agency-pkg-label-modal__header">
+              <div className="agency-pkg-label-modal__head-copy">
+                <p className="agency-pkg-label-modal__eyebrow">Add solution</p>
+                <h3 id="proposal-sol-label-title" className="agency-pkg-label-modal__title">
+                  Client Facing Label
+                </h3>
+                <p className="agency-pkg-label-modal__sub">
+                  {labelPrompt.solutionName}
+                  {labelPrompt.tier.solution_tier_name.trim() &&
+                  labelPrompt.tier.solution_tier_name.trim() !== labelPrompt.solutionName
+                    ? ` · ${labelPrompt.tier.solution_tier_name}`
+                    : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="agency-pkg-label-modal__close"
+                aria-label="Close"
+                onClick={cancelLabelPrompt}
+              >
+                ×
+              </button>
+            </header>
+            <div className="agency-pkg-label-modal__body">
+              <label className="agency-pkg-label-modal__field">
+                <span className="agency-pkg-label-modal__field-label">
+                  How this should appear to the client
+                </span>
+                <input
+                  className="agency-pkg-label-modal__input"
+                  value={labelPrompt.draft}
+                  onChange={(e) =>
+                    setLabelPrompt((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmLabelPrompt();
+                    }
+                  }}
+                  autoFocus
+                  placeholder={labelPrompt.solutionName || "Client facing label"}
+                />
+              </label>
+              <p className="agency-pkg-label-modal__hint">
+                Defaults to the solution name. Change it if you want a different title on the proposal.
+              </p>
+            </div>
+            <footer className="agency-pkg-label-modal__footer">
+              <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={cancelLabelPrompt}>
+                Cancel
+              </button>
+              <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={confirmLabelPrompt}>
+                Continue
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

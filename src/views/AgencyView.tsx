@@ -41,6 +41,7 @@ import {
 import { buildCatalogDirectoryRows } from "../lib/buildCatalogDirectoryRows";
 import { anchorTierForPackage } from "../lib/packageCombinedTasks";
 import { buildMergedTaskRowsForPackageTier, parseTaskExtensions } from "../lib/packageTaskLayout";
+import { normalizeTierQuantity } from "../lib/packageTierQuantities";
 import {
   effectiveResourceExamples,
   effectiveResourceTools,
@@ -1202,6 +1203,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     const rows: Array<{
       solution: Solution;
       tier: SolutionTier;
+      quantity: number;
       hours: string;
       sell: string;
       tax: string;
@@ -1250,6 +1252,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
         rows.push({
           solution: s,
           tier: tierDisplay,
+          quantity: useMergedPackage ? normalizeTierQuantity(link?.quantity) : 1,
           hours:
             pricingHours != null
               ? formatKpiNumber(pricingHours)
@@ -1284,15 +1287,30 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   }, [data, mode, pkgId, packageWorkspacePkg]);
 
   const tierMetaByIdForPackageWorkspace = useMemo(() => {
-    const m = new Map<string, { tierName: string; solutionName: string }>();
+    const m = new Map<
+      string,
+      { tierName: string; solutionName: string; clientFacingLabel: string }
+    >();
     if (!data || mode !== "package" || pkgId == null || pkgId === STANDALONE_PACKAGE_NAV_ID) return m;
     const ids = tierIdsForPackage(data.packageTiers, pkgId);
+    const linksByTier = new Map(
+      data.packageTiers
+        .filter((r) => r.package_id === pkgId)
+        .map((r) => [r.solution_tier_id, r] as const)
+    );
     for (const t of data.tiers) {
       if (!ids.has(t.solution_tier_id)) continue;
       const sol = data.solutions.find((s) => s.solution_id === t.solution_id);
+      const solutionName = sol?.solution_name?.trim() || t.solution_id;
+      const tierName = t.solution_tier_name?.trim() || t.solution_tier_id;
+      const link = linksByTier.get(t.solution_tier_id);
+      const ov = parseTierOverrides(link?.tier_overrides);
+      const clientFacingLabel =
+        ov.solution_tier_name?.trim() || solutionName || tierName;
       m.set(t.solution_tier_id, {
-        tierName: t.solution_tier_name,
-        solutionName: sol?.solution_name ?? t.solution_id,
+        tierName,
+        solutionName,
+        clientFacingLabel,
       });
     }
     return m;
@@ -1821,6 +1839,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       <tr>
                         <th scope="col">Solution</th>
                         <th scope="col">Tier</th>
+                        <th scope="col">Quantity</th>
                         <th scope="col">Hours</th>
                         <th scope="col">Sell</th>
                         <th scope="col">Tax</th>
@@ -1831,6 +1850,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                         <tr key={row.tier.solution_tier_id}>
                           <td>{row.solution.solution_name}</td>
                           <td>{row.tier.solution_tier_name}</td>
+                          <td>{row.quantity}</td>
                           <td>{row.hours}</td>
                           <td>{row.sell}</td>
                           <td>{row.tax}</td>
@@ -2091,6 +2111,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       <table className="agency-task-table">
                         <thead>
                           <tr>
+                            <th scope="col">Client Facing Label</th>
                             <th scope="col">Tier</th>
                             <th scope="col">Task</th>
                             <th scope="col">Implementer</th>
@@ -2119,6 +2140,11 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                                     : undefined
                                 }
                               >
+                                <td>
+                                  <span className="agency-task-table__client-label">
+                                    {meta?.clientFacingLabel ?? "—"}
+                                  </span>
+                                </td>
                                 <td>
                                   {meta ? (
                                     <>
@@ -2160,7 +2186,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                           {packageUnifiedTaskTableTotals.anyTime ? (
                             <>
                               <tr className="agency-task-table__addon-row">
-                                <td colSpan={3} className="agency-task-table__addon-label">
+                                <td colSpan={4} className="agency-task-table__addon-label">
                                   Account mgmt add-on ({ACCOUNT_MGMT_HOURS_ADDON_RATE * 100}% of resource hours)
                                 </td>
                                 <td className="agency-task-table__td--num agency-task-table__addon-time">
@@ -2172,7 +2198,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                                 </td>
                               </tr>
                               <tr className="agency-task-table__addon-row">
-                                <td colSpan={3} className="agency-task-table__addon-label">
+                                <td colSpan={4} className="agency-task-table__addon-label">
                                   Continuous improvement add-on (
                                   {CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100}% of resource hours)
                                 </td>
@@ -2189,7 +2215,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                             </>
                           ) : null}
                           <tr className="agency-task-table__totals-row">
-                            <td colSpan={3} className="agency-task-table__totals-label">
+                            <td colSpan={4} className="agency-task-table__totals-label">
                               Totals
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">

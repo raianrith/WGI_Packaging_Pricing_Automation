@@ -233,6 +233,14 @@ export function PackageBuildWizard({
   const [selectedPackageType, setSelectedPackageType] = useState<PackageBuilderPackageType | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<PackageBuilderSlotTemplate | null>(null);
   const [tierPickQty, setTierPickQty] = useState<PackageTierQuantities>(() => emptyTierQuantities());
+  const [clientFacingLabels, setClientFacingLabels] = useState<Record<string, string>>({});
+  const [labelPrompt, setLabelPrompt] = useState<{
+    tierId: string;
+    solutionName: string;
+    tierName: string;
+    draft: string;
+    mode: "add" | "edit";
+  } | null>(null);
   const [tierSearch, setTierSearch] = useState("");
   const [pkgName, setPkgName] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
@@ -260,6 +268,15 @@ export function PackageBuildWizard({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [expandedFamilyTypeId, closeFamilyDetail]);
+
+  useEffect(() => {
+    if (!labelPrompt) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLabelPrompt(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [labelPrompt]);
 
   const solutionById = useMemo(() => {
     const m = new Map<string, Solution>();
@@ -372,6 +389,8 @@ export function PackageBuildWizard({
     setSelectedPackageType({ ...packageType });
     setSelectedSlot(null);
     setTierPickQty(emptyTierQuantities());
+    setClientFacingLabels({});
+    setLabelPrompt(null);
     setTierSearch("");
     setPkgName(`${packageType.name} package`);
   }, []);
@@ -417,9 +436,79 @@ export function PackageBuildWizard({
           )
         );
       }
+      const nextQty = result.quantities[tierId] ?? 0;
+      if (nextQty <= 0) {
+        queueMicrotask(() => {
+          setClientFacingLabels((labels) => {
+            if (!(tierId in labels)) return labels;
+            const { [tierId]: _, ...rest } = labels;
+            return rest;
+          });
+        });
+      }
       return result.quantities;
     });
   };
+
+  const requestAddTier = (tier: SolutionTier, solutionName: string) => {
+    if (selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tier.solution_tier_id)) return;
+    const maxTiers =
+      selectedSlot && slotEnforcesTierCountLimit(selectedSlot)
+        ? selectedSlot.solution_tier_limit
+        : null;
+    const currentQty = tierPickQty[tier.solution_tier_id] ?? 0;
+    if (maxTiers != null && currentQty <= 0) {
+      const probe = adjustTierQuantity(tierPickQty, tier.solution_tier_id, 1, maxTiers);
+      if (probe.blockedByMaxTiers) {
+        toastNote(
+          `This tier allows at most ${selectedSlot!.solution_tier_limit} solution component line${
+            selectedSlot!.solution_tier_limit === 1 ? "" : "s"
+          }. Remove one to add another.`
+        );
+        return;
+      }
+    }
+    if (currentQty > 0) {
+      changeTierQty(tier.solution_tier_id, 1);
+      return;
+    }
+    const defaultLabel = solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
+    setLabelPrompt({
+      tierId: tier.solution_tier_id,
+      solutionName: solutionName.trim() || tier.solution_tier_name,
+      tierName: tier.solution_tier_name,
+      draft: defaultLabel,
+      mode: "add",
+    });
+  };
+
+  const openEditLabel = (tier: SolutionTier, solutionName: string) => {
+    const existing = clientFacingLabels[tier.solution_tier_id]?.trim();
+    const defaultLabel = existing || solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
+    setLabelPrompt({
+      tierId: tier.solution_tier_id,
+      solutionName: solutionName.trim() || tier.solution_tier_name,
+      tierName: tier.solution_tier_name,
+      draft: defaultLabel,
+      mode: "edit",
+    });
+  };
+
+  const confirmLabelPrompt = () => {
+    if (!labelPrompt) return;
+    const label =
+      labelPrompt.draft.trim() ||
+      labelPrompt.solutionName.trim() ||
+      labelPrompt.tierName.trim() ||
+      labelPrompt.tierId;
+    setClientFacingLabels((prev) => ({ ...prev, [labelPrompt.tierId]: label }));
+    if (labelPrompt.mode === "add") {
+      changeTierQty(labelPrompt.tierId, 1);
+    }
+    setLabelPrompt(null);
+  };
+
+  const cancelLabelPrompt = () => setLabelPrompt(null);
 
   const createPackage = async () => {
     const client = getSupabase();
@@ -472,7 +561,14 @@ export function PackageBuildWizard({
         return;
       }
       const payloadByTier: Record<string, ReturnType<typeof emptyPackageLinkPayload>> = {};
-      for (const tid of wantedIds) payloadByTier[tid] = emptyPackageLinkPayload();
+      for (const tid of wantedIds) {
+        const label = clientFacingLabels[tid]?.trim();
+        const payload = emptyPackageLinkPayload();
+        if (label) {
+          payload.tier_overrides = { solution_tier_name: label };
+        }
+        payloadByTier[tid] = payload;
+      }
       const assignErr = await applyPackageTierMembership(client, newId, tierPickQty, payloadByTier);
       if (assignErr) {
         toastError(
@@ -726,6 +822,8 @@ export function PackageBuildWizard({
                             setSelectedPackageType({ ...pt });
                             setSelectedSlot(null);
                             setTierPickQty(emptyTierQuantities());
+                            setClientFacingLabels({});
+                            setLabelPrompt(null);
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">{pt.name}</span>
@@ -764,6 +862,8 @@ export function PackageBuildWizard({
                           onClick={() => {
                             setSelectedSlot({ ...s });
                             setTierPickQty(emptyTierQuantities());
+                            setClientFacingLabels({});
+                            setLabelPrompt(null);
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">
@@ -937,13 +1037,38 @@ export function PackageBuildWizard({
                                       type="button"
                                       className="agency-pkg-wizard__qty-btn"
                                       aria-label={`Increase quantity for ${t.solution_tier_name}`}
-                                      onClick={() => changeTierQty(t.solution_tier_id, 1)}
+                                      onClick={() =>
+                                        requestAddTier(t, sol?.solution_name ?? t.solution_tier_name)
+                                      }
                                     >
                                       +
                                     </button>
                                   </div>
                                 </td>
-                                <td>{sol?.solution_name ?? t.solution_id}</td>
+                                <td>
+                                  <div className="agency-pkg-wizard__sol-cell">
+                                    <span>{sol?.solution_name ?? t.solution_id}</span>
+                                    {qty > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="agency-pkg-wizard__label-chip"
+                                        onClick={() =>
+                                          openEditLabel(t, sol?.solution_name ?? t.solution_tier_name)
+                                        }
+                                        title="Edit client facing label"
+                                      >
+                                        <span className="agency-pkg-wizard__label-chip-kicker">
+                                          Client label
+                                        </span>
+                                        <span className="agency-pkg-wizard__label-chip-value">
+                                          {clientFacingLabels[t.solution_tier_id]?.trim() ||
+                                            sol?.solution_name ||
+                                            t.solution_tier_name}
+                                        </span>
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </td>
                                 <td>{t.solution_tier_name}</td>
                                 <td className="col-hours">
                                   {qty > 0 && h != null
@@ -1252,6 +1377,85 @@ export function PackageBuildWizard({
           </div>
         </div>
       )}
+
+      {labelPrompt ? (
+        <div
+          className="agency-pkg-label-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelLabelPrompt();
+          }}
+        >
+          <div
+            className="agency-pkg-label-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="agency-pkg-label-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="agency-pkg-label-modal__header">
+              <div className="agency-pkg-label-modal__head-copy">
+                <p className="agency-pkg-label-modal__eyebrow">Solution component</p>
+                <h3 id="agency-pkg-label-title" className="agency-pkg-label-modal__title">
+                  Client Facing Label
+                </h3>
+                <p className="agency-pkg-label-modal__sub">
+                  {labelPrompt.solutionName}
+                  {labelPrompt.tierName.trim() && labelPrompt.tierName !== labelPrompt.solutionName
+                    ? ` · ${labelPrompt.tierName}`
+                    : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="agency-pkg-label-modal__close"
+                aria-label="Close"
+                onClick={cancelLabelPrompt}
+              >
+                ×
+              </button>
+            </header>
+            <div className="agency-pkg-label-modal__body">
+              <label className="agency-pkg-label-modal__field">
+                <span className="agency-pkg-label-modal__field-label">How this should appear to the client</span>
+                <input
+                  className="agency-pkg-label-modal__input"
+                  value={labelPrompt.draft}
+                  onChange={(e) => setLabelPrompt((prev) => (prev ? { ...prev, draft: e.target.value } : prev))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmLabelPrompt();
+                    }
+                  }}
+                  autoFocus
+                  placeholder={labelPrompt.solutionName || "Client facing label"}
+                />
+              </label>
+              <p className="agency-pkg-label-modal__hint">
+                Defaults to the solution name. Change it if you want a different client-facing title for this
+                package component.
+              </p>
+            </div>
+            <footer className="agency-pkg-label-modal__footer">
+              <button
+                type="button"
+                className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
+                onClick={cancelLabelPrompt}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
+                onClick={confirmLabelPrompt}
+              >
+                {labelPrompt.mode === "add" ? "Add to package" : "Save label"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -25,6 +25,7 @@ import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOr
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
 import { ProposalClientServiceReviewPanel } from "../components/proposal-builder/ProposalClientServiceReviewPanel";
+import { ProposalClientReadyPanel } from "../components/proposal-builder/ProposalClientReadyPanel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
@@ -36,6 +37,7 @@ import {
   tierTemplatesForProposalDisplay,
 } from "../lib/tierResourceFields";
 import { computePackageWorkspaceCatalogNumbers } from "../lib/packageWorkspaceMetrics";
+import { mergeTierWithPackageOverrides, parseTierOverrides } from "../lib/packageTierOverrides";
 import { catalogDisplayTierHours, formatTierHoursDisplay } from "../lib/vaultTierMetrics";
 import { displayTierCategoryLabel } from "../lib/tierCategories";
 import {
@@ -43,7 +45,8 @@ import {
   normalizeTierPricingMathConfig,
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
-import { downloadProposalPdf } from "../lib/proposalPdfExport";
+import { downloadProposalOpsPdf, downloadProposalPdf } from "../lib/proposalPdfExport";
+import { ProposalExportPreviewTables } from "../components/proposal-builder/ProposalExportPreviewTables";
 import {
   normalizeIsoDateInput,
   proposalDateRangeLabel,
@@ -56,6 +59,12 @@ import {
   ROADMAP_NAME_FORMAT_EXAMPLE,
   ROADMAP_NAME_FORMAT_HINT,
 } from "../lib/roadmapNameFormat";
+import {
+  createScenariosAndPhasesForKind,
+  defaultPhaseTitleForKind,
+  defaultScenarioTitleForKind,
+  type ProposalKind,
+} from "../lib/proposalKindPresets";
 import {
   cloneProposalStructure,
   parseProposalSnapshot,
@@ -366,8 +375,17 @@ function cardForPackage(
 ): RoadmapCard {
   const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
   const { hours, price } = packageHoursPriceForCatalog(p, ctx);
+  const linksByTier = new Map(
+    ctx.packageTiers.filter((l) => l.package_id === p.package_id).map((l) => [l.solution_tier_id, l])
+  );
   const tierNames = tids
-    .map((id) => ctx.tiers.find((t) => t.solution_tier_id === id)?.solution_tier_name)
+    .map((id) => {
+      const tier = ctx.tiers.find((t) => t.solution_tier_id === id);
+      if (!tier) return null;
+      const link = linksByTier.get(id);
+      const merged = mergeTierWithPackageOverrides(tier, parseTierOverrides(link?.tier_overrides));
+      return merged.solution_tier_name?.trim() || tier.solution_tier_name?.trim() || null;
+    })
     .filter(Boolean) as string[];
   const desc =
     tierNames.length > 0
@@ -381,7 +399,8 @@ function cardForTier(
   ctx: CatalogCtx,
   scenarioId: string,
   phaseId: string,
-  dates?: ProposalOfferingDates
+  dates?: ProposalOfferingDates,
+  clientFacingLabel?: string
 ): RoadmapCard {
   const pr = ctx.pricingMap.get(t.solution_tier_id) ?? null;
   const pkgNames = ctx.packageTiers
@@ -389,12 +408,16 @@ function cardForTier(
     .map((pt) => ctx.packages.find((pk) => pk.package_id === pt.package_id)?.package_name ?? pt.package_id);
   const pkgLine = pkgNames.length ? `Packages: ${pkgNames.join(", ")}.` : "";
   const desc = [tierPitchText(t), pkgLine].filter(Boolean).join("\n\n").trim();
+  const headline =
+    clientFacingLabel?.trim() ||
+    t.solution_tier_name.trim() ||
+    t.solution_tier_id;
   return makeCard(
     "tier",
     t.solution_tier_id,
     scenarioId,
     phaseId,
-    t.solution_tier_name,
+    headline,
     desc || "No client-facing description yet — add in Admin or type here.",
     tierHoursLine(t.solution_tier_id, pr, ctx.tasks),
     sellPriceLine(pr),
@@ -418,30 +441,11 @@ function parseMoneyInput(raw: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-function descPreview(text: string, max = 200): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  return t.length <= max ? t : `${t.slice(0, max)}…`;
-}
-
-const DEFAULT_SCENARIOS = ["Scenario 1"];
+const INITIAL_SCENARIOS_AND_PHASES = createScenariosAndPhasesForKind("program", newRoadmapCardKey);
 
 function createInitialScenariosAndPhases(): { scenarios: RoadmapScenario[]; phases: RoadmapPhase[] } {
-  const scenarios: RoadmapScenario[] = DEFAULT_SCENARIOS.map((title) => ({
-    id: newRoadmapCardKey(),
-    title,
-    narrative: "",
-  }));
-  const phases: RoadmapPhase[] = scenarios.map((s) => ({
-    id: newRoadmapCardKey(),
-    scenarioId: s.id,
-    title: "Phase 1",
-    sortOrder: 0,
-  }));
-  return { scenarios, phases };
+  return createScenariosAndPhasesForKind("program", newRoadmapCardKey);
 }
-
-const INITIAL_SCENARIOS_AND_PHASES = createInitialScenariosAndPhases();
 
 function sortId(a: string, b: string): number {
   const pa = a.split("-").map(Number);
@@ -604,8 +608,17 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
       const p = ctx.packages.find((x) => x.package_id === card.refId);
       if (!p) return <p className="roadmap-muted">Package not found.</p>;
       const tids = tierIdsForPackage(ctx.packageTiers, p.package_id);
+      const linksByTier = new Map(
+        ctx.packageTiers.filter((l) => l.package_id === p.package_id).map((l) => [l.solution_tier_id, l])
+      );
       const tierNames = tids
-        .map((id) => ctx.tiers.find((tt) => tt.solution_tier_id === id)?.solution_tier_name)
+        .map((id) => {
+          const tier = ctx.tiers.find((tt) => tt.solution_tier_id === id);
+          if (!tier) return null;
+          const link = linksByTier.get(id);
+          const merged = mergeTierWithPackageOverrides(tier, parseTierOverrides(link?.tier_overrides));
+          return merged.solution_tier_name?.trim() || tier.solution_tier_name?.trim() || null;
+        })
         .filter(Boolean) as string[];
       return (
         <div className="roadmap-details-scroll">
@@ -741,7 +754,7 @@ export function RoadmapPlanningView() {
   const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
   const [savedProposalsLoading, setSavedProposalsLoading] = useState(false);
   const [savingProposal, setSavingProposal] = useState(false);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState<"client" | "ops" | null>(null);
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
@@ -755,6 +768,7 @@ export function RoadmapPlanningView() {
   const [proposalEndDate, setProposalEndDate] = useState("");
   const [scenarios, setScenarios] = useState<RoadmapScenario[]>(() => INITIAL_SCENARIOS_AND_PHASES.scenarios);
   const [phases, setPhases] = useState<RoadmapPhase[]>(() => INITIAL_SCENARIOS_AND_PHASES.phases);
+  const [proposalKind, setProposalKind] = useState<ProposalKind>("program");
   const [cards, setCards] = useState<RoadmapCard[]>([]);
   const [targetScenarioId, setTargetScenarioId] = useState<string>(
     () => INITIAL_SCENARIOS_AND_PHASES.scenarios[0]!.id
@@ -919,11 +933,23 @@ export function RoadmapPlanningView() {
       clientBudget,
       proposalStartDate,
       proposalEndDate,
+      proposalKind,
       scenarios,
       phases,
       cards,
     }),
-    [cards, clientBudget, clientLabel, horizon, phases, proposalEndDate, proposalStartDate, roadmapTitle, scenarios]
+    [
+      cards,
+      clientBudget,
+      clientLabel,
+      horizon,
+      phases,
+      proposalEndDate,
+      proposalKind,
+      proposalStartDate,
+      roadmapTitle,
+      scenarios,
+    ]
   );
 
   const saveCurrentProposal = useCallback(async () => {
@@ -1058,7 +1084,7 @@ export function RoadmapPlanningView() {
   }, [proposalIsDirty]);
 
   const startNewProposal = useCallback(() => {
-    const init = createInitialScenariosAndPhases();
+    const init = createScenariosAndPhasesForKind("program", newRoadmapCardKey);
     const emptySnapshot: RoadmapProposalSnapshot = {
       version: 1,
       clientLabel: "",
@@ -1067,6 +1093,7 @@ export function RoadmapPlanningView() {
       clientBudget: "",
       proposalStartDate: "",
       proposalEndDate: "",
+      proposalKind: "program",
       scenarios: init.scenarios,
       phases: init.phases,
       cards: [],
@@ -1077,6 +1104,7 @@ export function RoadmapPlanningView() {
     setProposalStartDate("");
     setProposalEndDate("");
     setHorizon("6");
+    setProposalKind("program");
     setScenarios(init.scenarios);
     setPhases(init.phases);
     setCards([]);
@@ -1138,6 +1166,7 @@ export function RoadmapPlanningView() {
       setClientBudget(snapshot.clientBudget);
       setProposalStartDate(snapshot.proposalStartDate);
       setProposalEndDate(snapshot.proposalEndDate);
+      setProposalKind(snapshot.proposalKind ?? "program");
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -1152,6 +1181,7 @@ export function RoadmapPlanningView() {
           clientBudget: snapshot.clientBudget,
           proposalStartDate: snapshot.proposalStartDate,
           proposalEndDate: snapshot.proposalEndDate,
+          proposalKind: snapshot.proposalKind ?? "program",
           scenarios: nextScenarios,
           phases: nextPhases,
           cards: snapshot.cards,
@@ -1186,6 +1216,7 @@ export function RoadmapPlanningView() {
       const nextPhases = cloned.phases.length > 0 ? cloned.phases : fallback.phases;
       setScenarios(nextScenarios);
       setPhases(nextPhases);
+      setProposalKind(snapshot.proposalKind ?? "program");
       setCards(cloned.cards);
       const firstScenarioId = nextScenarios[0]?.id ?? "";
       setTargetScenarioId(firstScenarioId);
@@ -1594,11 +1625,49 @@ export function RoadmapPlanningView() {
     [cards, phases, scenarios, targetScenarioId, targetPhaseId, toastNote, toastSuccess, setCardsSynced]
   );
 
+  const applyProposalKind = useCallback(
+    (kind: ProposalKind) => {
+      if (kind === proposalKind) return;
+      const hasItems = cards.length > 0;
+      const hasCustomStructure =
+        scenarios.length > 1 ||
+        phases.length !== (kind === "program" ? 5 : 3) ||
+        scenarios.some((s) => s.title.trim() && s.title.trim() !== "Proposal Scenario 1");
+      if (hasItems || hasCustomStructure) {
+        const ok = window.confirm(
+          `Switch to ${kind === "program" ? "Program" : "Project"} proposal? This replaces scenarios and sections with the preset structure${
+            hasItems ? " and removes current line items" : ""
+          }.`
+        );
+        if (!ok) return;
+      }
+      const init = createScenariosAndPhasesForKind(kind, newRoadmapCardKey);
+      setProposalKind(kind);
+      setScenarios(init.scenarios);
+      setPhases(init.phases);
+      setCards([]);
+      setTargetScenarioId(init.scenarios[0]!.id);
+      setTargetPhaseId(init.phases[0]?.id ?? "");
+    },
+    [cards.length, phases.length, proposalKind, scenarios]
+  );
+
   const addScenario = useCallback(() => {
     const id = newRoadmapCardKey();
-    setScenarios((prev) => [...prev, { id, title: `Scenario ${prev.length + 1}`, narrative: "" }]);
-    setPhases((prev) => [...prev, { id: newRoadmapCardKey(), scenarioId: id, title: "Phase 1", sortOrder: 0 }]);
-  }, []);
+    setScenarios((prev) => [
+      ...prev,
+      { id, title: defaultScenarioTitleForKind(proposalKind, prev.length), narrative: "" },
+    ]);
+    setPhases((prev) => [
+      ...prev,
+      {
+        id: newRoadmapCardKey(),
+        scenarioId: id,
+        title: defaultPhaseTitleForKind(proposalKind, 0),
+        sortOrder: 0,
+      },
+    ]);
+  }, [proposalKind]);
 
   const duplicateScenarioById = useCallback((scenarioId: string) => {
     const newSid = newRoadmapCardKey();
@@ -1641,21 +1710,24 @@ export function RoadmapPlanningView() {
     setCardsSynced((cPrev) => cPrev.filter((c) => c.scenarioId !== scenarioId));
   }, [setCardsSynced]);
 
-  const addPhaseForScenario = useCallback((scenarioId: string) => {
-    setPhases((prev) => {
-      const existing = prev.filter((p) => p.scenarioId === scenarioId);
-      const nextOrder = existing.length === 0 ? 0 : Math.max(...existing.map((x) => x.sortOrder)) + 1;
-      return [
-        ...prev,
-        {
-          id: newRoadmapCardKey(),
-          scenarioId,
-          title: `Phase ${existing.length + 1}`,
-          sortOrder: nextOrder,
-        },
-      ];
-    });
-  }, []);
+  const addPhaseForScenario = useCallback(
+    (scenarioId: string) => {
+      setPhases((prev) => {
+        const existing = prev.filter((p) => p.scenarioId === scenarioId);
+        const nextOrder = existing.length === 0 ? 0 : Math.max(...existing.map((x) => x.sortOrder)) + 1;
+        return [
+          ...prev,
+          {
+            id: newRoadmapCardKey(),
+            scenarioId,
+            title: defaultPhaseTitleForKind(proposalKind, existing.length),
+            sortOrder: nextOrder,
+          },
+        ];
+      });
+    },
+    [proposalKind]
+  );
 
   const deletePhaseById = useCallback(
     (phaseId: string) => {
@@ -1682,47 +1754,74 @@ export function RoadmapPlanningView() {
 
   const budgetNumber = useMemo(() => parseMoneyInput(clientBudget), [clientBudget]);
 
-  const downloadPdf = useCallback(() => {
-    if (!catalogCtx) return;
-    setPdfGenerating(true);
-    try {
-      downloadProposalPdf({
-        roadmapTitle,
-        clientLabel,
-        horizonMonths: horizon === "custom" ? "custom" : Number(horizon),
-        proposalStartDate,
-        proposalEndDate,
-        clientBudgetRaw: clientBudget,
-        budgetNumber,
-        scenarios,
-        phases,
-        cards,
-        ctx: catalogCtx,
-        computeScratchSellPrice,
-        formatHoursShort,
-      });
-      toastSuccess("Proposal PDF downloaded.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not generate PDF.";
-      toastError(msg);
-    } finally {
-      setPdfGenerating(false);
-    }
+  const pdfExportBase = useCallback(() => {
+    if (!catalogCtx) return null;
+    return {
+      roadmapTitle,
+      clientLabel,
+      horizonMonths: (horizon === "custom" ? "custom" : Number(horizon)) as number | "custom",
+      proposalStartDate,
+      proposalEndDate,
+      clientBudgetRaw: clientBudget,
+      budgetNumber,
+      scenarios,
+      phases,
+      cards,
+      ctx: catalogCtx,
+      computeScratchSellPrice,
+      formatHoursShort,
+    };
   }, [
+    budgetNumber,
     cards,
     catalogCtx,
     clientBudget,
     clientLabel,
-    budgetNumber,
     horizon,
+    phases,
     proposalEndDate,
     proposalStartDate,
-    phases,
     roadmapTitle,
     scenarios,
-    toastError,
-    toastSuccess,
   ]);
+
+  const downloadPdf = useCallback(() => {
+    const input = pdfExportBase();
+    if (!input) return;
+    setPdfGenerating("client");
+    try {
+      downloadProposalPdf(input);
+      toastSuccess("Client PDF downloaded.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not generate PDF.";
+      toastError(msg);
+    } finally {
+      setPdfGenerating(null);
+    }
+  }, [pdfExportBase, toastError, toastSuccess]);
+
+  const downloadOpsPdf = useCallback(() => {
+    const input = pdfExportBase();
+    if (!input || !catalogCtx) return;
+    setPdfGenerating("ops");
+    try {
+      downloadProposalOpsPdf({
+        ...input,
+        tasksCtx: {
+          tasks: catalogCtx.tasks,
+          packageTiers: catalogCtx.packageTiers,
+          tiers: catalogCtx.tiers,
+          solutions: catalogCtx.solutions,
+        },
+      });
+      toastSuccess("Ops PDF downloaded.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not generate ops PDF.";
+      toastError(msg);
+    } finally {
+      setPdfGenerating(null);
+    }
+  }, [catalogCtx, pdfExportBase, toastError, toastSuccess]);
 
   const scenarioRollups = useMemo(() => {
     return scenarios.map((scenario) => {
@@ -1894,9 +1993,9 @@ export function RoadmapPlanningView() {
           setPackageSwitchPromptPath(packageAddPath);
         }
       }}
-      onAddTier={(t, dates) => {
+      onAddTier={(t, dates, clientFacingLabel) => {
         if (!canAddToTarget) return;
-        addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates));
+        addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates, clientFacingLabel));
       }}
       onAddVariableTier={(t, dates, opts) => {
         if (!canAddToTarget) return;
@@ -2111,6 +2210,8 @@ export function RoadmapPlanningView() {
                   onCopy={copyStructureFromSavedProposal}
                 />
                 <ProposalScenariosPanel
+                  proposalKind={proposalKind}
+                  onProposalKindChange={applyProposalKind}
                   scenarios={scenarios}
                   phases={phases}
                   cards={cards}
@@ -2253,155 +2354,27 @@ export function RoadmapPlanningView() {
               <button
                 type="button"
                 className="roadmap-btn roadmap-btn--primary"
-                disabled={pdfGenerating}
+                disabled={pdfGenerating != null}
                 onClick={downloadPdf}
               >
-                {pdfGenerating ? "Generating PDF…" : "Download PDF"}
+                {pdfGenerating === "client" ? "Generating PDF…" : "Download PDF"}
               </button>
             </div>
           </div>
-          <div className="roadmap-export-table-wrap" aria-label="Roadmap export tables">
-            {scenarios.map((scenario) => {
-              const scenCards = cards.filter((c) => c.scenarioId === scenario.id);
-              const phaseOrder = sortedPhasesForScenario(phases, scenario.id);
-              let includedGrand = 0;
-              for (const c of scenCards) {
-                if (c.scope !== "included") continue;
-                const p = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
-                if (p != null) includedGrand += p;
-              }
-              const renderRow = (c: RoadmapCard) => {
-                const appliedToLabel = variableTierAppliedToLabel(c, scenCards);
-                return (
-                <tr key={c.key}>
-                  <td className="roadmap-export-table__col roadmap-export-table__col--deliverable">
-                    <div className="roadmap-export-table__deliverable">
-                      <div className="roadmap-export-table__deliverable-head">
-                        <strong className="roadmap-export-table__name">
-                          {c.headline.trim() || "(untitled)"}
-                        </strong>
-                        <span
-                          className={`roadmap-export-table__scope roadmap-export-table__scope--${c.scope}`}
-                        >
-                          {c.scope}
-                        </span>
-                      </div>
-                      {appliedToLabel && !isTravelVariableTierRefId(c.refId) ? (
-                        <span className="roadmap-export-table__applied">
-                          Applied to{" "}
-                          <strong>{appliedToLabel}</strong>
-                        </span>
-                      ) : null}
-                      {c.description.trim() && c.kind !== "tier" && c.kind !== "custom_tier" ? (
-                        <p className="roadmap-export-table__desc">{descPreview(c.description, 140)}</p>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="roadmap-export-table__col roadmap-export-table__col--dates">
-                    {proposalDateRangeLabel(c.startDate, c.endDate)}
-                  </td>
-                  <td className="roadmap-export-table__col roadmap-export-table__col--num">
-                    {effectivePriceStr(c, ctx, computeScratchSellPrice) || "—"}
-                  </td>
-                </tr>
-              );
-              };
-              return (
-                <section key={scenario.id} className="roadmap-export-table">
-                  <header className="roadmap-export-table__head">
-                    <h3 className="roadmap-export-table__title">{scenario.title}</h3>
-                    <span className="roadmap-export-table__sum">{formatUsd(includedGrand)} included</span>
-                  </header>
-                  {scenCards.length === 0 ? (
-                    <p className="roadmap-export-table__empty">Nothing added yet.</p>
-                  ) : (
-                    <>
-                      {phaseOrder.map((phase) => {
-                        const rows = scenCards.filter((c) => c.phaseId === phase.id && c.scope === "included");
-                        if (rows.length === 0) return null;
-                        let ps = 0;
-                        let ph = 0;
-                        let phn = 0;
-                        for (const c of rows) {
-                          const pu = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
-                          if (pu != null) ps += pu;
-                          const hh = cardHoursForScenarioRollup(c, ctx);
-                          if (hh != null) {
-                            ph += hh;
-                            phn += 1;
-                          }
-                        }
-                        return (
-                          <div key={phase.id} className="roadmap-export-phase">
-                            <h4 className="roadmap-export-phase__title">
-                              {phase.title.trim() || "Phase"}{" "}
-                              <span className="roadmap-export-phase__sub">
-                                {formatUsd(ps)}
-                                {phn > 0 ? ` · ~${formatHoursShort(ph)} h` : ""}
-                              </span>
-                            </h4>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Deliverable</th>
-                                  <th>Dates</th>
-                                  <th>Price</th>
-                                </tr>
-                              </thead>
-                              <tbody>{rows.map(renderRow)}</tbody>
-                            </table>
-                          </div>
-                        );
-                      })}
-                      {(() => {
-                        const opt = scenCards.filter((c) => c.scope === "optional");
-                        if (!opt.length) return null;
-                        return (
-                          <div className="roadmap-export-phase roadmap-export-phase--optional">
-                            <h4 className="roadmap-export-phase__title">Optional Add-Ons</h4>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Deliverable</th>
-                                  <th>Dates</th>
-                                  <th>Price</th>
-                                </tr>
-                              </thead>
-                              <tbody>{opt.map(renderRow)}</tbody>
-                            </table>
-                          </div>
-                        );
-                      })()}
-                      {(() => {
-                        const def = scenCards.filter((c) => c.scope === "deferred");
-                        if (!def.length) return null;
-                        return (
-                          <div className="roadmap-export-phase roadmap-export-phase--deferred">
-                            <h4 className="roadmap-export-phase__title">Deferred (Not In Core)</h4>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Deliverable</th>
-                                  <th>Dates</th>
-                                  <th>Price</th>
-                                </tr>
-                              </thead>
-                              <tbody>{def.map(renderRow)}</tbody>
-                            </table>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+          <ProposalExportPreviewTables
+            scenarios={scenarios}
+            phases={phases}
+            cards={cards}
+            ctx={ctx}
+            computeScratchSellPrice={computeScratchSellPrice}
+            formatUsd={formatUsd}
+            formatHoursShort={formatHoursShort}
+          />
         </section>
                 <ProposalStepNav
                   step="review"
                   onStepChange={setBuilderStep}
-                  nextLabel="Client Service Review"
+                  nextLabel="Ops Review"
                   {...proposalStepSaveProps}
                 />
               </>
@@ -2416,6 +2389,11 @@ export function RoadmapPlanningView() {
                     cards={cards}
                     tasks={catalogCtx.tasks}
                     packageTiers={catalogCtx.packageTiers}
+                    tiers={catalogCtx.tiers}
+                    solutions={catalogCtx.solutions}
+                    effectivePriceForCard={(c) =>
+                      effectivePriceStr(c, catalogCtx, computeScratchSellPrice)
+                    }
                     onPatchCard={(key, next) => {
                       setCardsSynced((prev) => prev.map((c) => (c.key === key ? next : c)));
                     }}
@@ -2423,7 +2401,43 @@ export function RoadmapPlanningView() {
                 ) : (
                   <p className="roadmap-muted">Loading catalog tasks…</p>
                 )}
-                <ProposalStepNav step="client_service" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
+                <ProposalStepNav
+                  step="client_service"
+                  onStepChange={setBuilderStep}
+                  nextLabel="Client Ready Proposal"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "client_ready" ? (
+              <>
+                <ProposalClientReadyPanel
+                  roadmapTitle={roadmapTitle}
+                  clientLabel={clientLabel}
+                  dateRangeLabel={proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
+                  scenarios={scenarios}
+                  phases={phases}
+                  cards={cards}
+                  ctx={catalogCtx}
+                  tasksCtx={
+                    catalogCtx
+                      ? {
+                          tasks: catalogCtx.tasks,
+                          packageTiers: catalogCtx.packageTiers,
+                          tiers: catalogCtx.tiers,
+                          solutions: catalogCtx.solutions,
+                        }
+                      : null
+                  }
+                  computeScratchSellPrice={computeScratchSellPrice}
+                  formatUsd={formatUsd}
+                  formatHoursShort={formatHoursShort}
+                  pdfGenerating={pdfGenerating}
+                  onClientDownload={downloadPdf}
+                  onOpsDownload={downloadOpsPdf}
+                />
+                <ProposalStepNav step="client_ready" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
               </>
             ) : null}
           </div>

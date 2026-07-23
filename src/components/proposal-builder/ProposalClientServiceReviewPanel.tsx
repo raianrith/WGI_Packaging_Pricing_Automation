@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import type { PackageSolutionTier, TaskRow } from "../../types";
+import { useMemo, useState, type ReactNode } from "react";
+import type { PackageSolutionTier, SolutionTier, TaskRow } from "../../types";
 import {
   sortedPhasesForScenario,
   type RoadmapCard,
@@ -9,13 +9,17 @@ import {
 import {
   addProposalExtraTask,
   cardSupportsTaskReview,
-  formatProposalTaskHoursTotal,
+  formatProposalHoursValue,
+  formatProposalUsdValue,
   hideProposalTask,
-  renameProposalExtraTask,
+  proposalLineCompareMetrics,
+  reorderProposalTasks,
   resolveProposalCardTasks,
+  setProposalTaskClientLabel,
   setProposalTaskHours,
   type ProposalCardTasksCtx,
 } from "../../lib/proposalCardTasks";
+import { SortableTableRowTr, TaskSortableList } from "../TaskTableSortable";
 import { proposalStepDef } from "./ProposalBuilderSteps";
 
 type Props = {
@@ -24,14 +28,326 @@ type Props = {
   cards: RoadmapCard[];
   tasks: TaskRow[];
   packageTiers: PackageSolutionTier[];
+  tiers?: SolutionTier[];
+  solutions?: Array<{ solution_id: string; solution_name: string }>;
+  effectivePriceForCard: (card: RoadmapCard) => string;
   onPatchCard: (key: string, next: RoadmapCard) => void;
 };
 
-function kindLabel(kind: RoadmapCard["kind"]): string {
-  if (kind === "package") return "Package";
-  if (kind === "tier") return "Solution tier";
-  if (kind === "custom_tier") return "Custom tier";
-  return kind;
+function phaseTitle(phases: RoadmapPhase[], phaseId: string) {
+  return phases.find((p) => p.id === phaseId)?.title.trim() || "Phase";
+}
+
+function MetricCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "muted" | "changed" | "current";
+}) {
+  return (
+    <div
+      className={`proposal-csr-metrics__cell${tone ? ` proposal-csr-metrics__cell--${tone}` : ""}`}
+    >
+      <span className="proposal-csr-metrics__label">{label}</span>
+      <strong className="proposal-csr-metrics__value">{value}</strong>
+    </div>
+  );
+}
+
+function CsrCard({
+  card,
+  phases,
+  ctx,
+  expanded,
+  onToggle,
+  effectivePriceForCard,
+  onPatchCard,
+  tone,
+}: {
+  card: RoadmapCard;
+  phases: RoadmapPhase[];
+  ctx: ProposalCardTasksCtx;
+  expanded: boolean;
+  onToggle: () => void;
+  effectivePriceForCard: (card: RoadmapCard) => string;
+  onPatchCard: (key: string, next: RoadmapCard) => void;
+  tone: "package" | "solution";
+}) {
+  const taskRows = resolveProposalCardTasks(card, ctx);
+  const metrics = proposalLineCompareMetrics(card, ctx, effectivePriceForCard(card));
+  const changed = metrics.hoursChanged || metrics.priceChanged;
+
+  return (
+    <li
+      className={`proposal-csr-card proposal-csr-card--${tone}${expanded ? " is-expanded" : ""}${
+        changed ? " is-changed" : ""
+      }`}
+    >
+      <button
+        type="button"
+        className="proposal-csr-card__head"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="proposal-csr-card__mark" aria-hidden>
+          <span className="proposal-csr-card__chevron">{expanded ? "▾" : "▸"}</span>
+        </span>
+        <span className="proposal-csr-card__main">
+          <span className="proposal-csr-card__title-row">
+            <span className={`proposal-csr-card__kind proposal-csr-card__kind--${tone}`}>
+              {tone === "package" ? "Package" : card.kind === "custom_tier" ? "Custom" : "Solution"}
+            </span>
+            <span className="proposal-csr-card__title">{card.headline.trim() || "Untitled"}</span>
+            {changed ? <span className="proposal-csr-card__changed-pill">Updated</span> : null}
+          </span>
+          <span className="proposal-csr-card__meta">
+            {phaseTitle(phases, card.phaseId)} · {taskRows.length} task
+            {taskRows.length === 1 ? "" : "s"}
+          </span>
+          <div className="proposal-csr-metrics" aria-label="Hours and price comparison">
+            <MetricCell
+              label="Original hours"
+              value={formatProposalHoursValue(metrics.originalHours)}
+              tone="muted"
+            />
+            <MetricCell
+              label="Original price"
+              value={formatProposalUsdValue(metrics.originalPriceUsd)}
+              tone="muted"
+            />
+            <MetricCell
+              label="Current hours"
+              value={formatProposalHoursValue(metrics.currentHours)}
+              tone={metrics.hoursChanged ? "changed" : "current"}
+            />
+            <MetricCell
+              label="Current price"
+              value={
+                metrics.currentPriceUsd != null
+                  ? formatProposalUsdValue(metrics.currentPriceUsd)
+                  : effectivePriceForCard(card).trim() || "—"
+              }
+              tone={metrics.priceChanged ? "changed" : "current"}
+            />
+          </div>
+        </span>
+      </button>
+
+      {expanded ? (
+        <div className="proposal-csr-card__body">
+          {taskRows.length === 0 ? (
+            <p className="proposal-csr-card__none">No tasks on this line yet.</p>
+          ) : (
+            <table className="proposal-csr-table">
+              <thead>
+                <tr>
+                  <th scope="col" className="proposal-csr-table__col--move">
+                    <span className="visually-hidden">Reorder</span>
+                  </th>
+                  <th scope="col">Solution Name</th>
+                  <th scope="col">Solution Tier Name</th>
+                  <th scope="col">Client Facing Label</th>
+                  <th scope="col">Task</th>
+                  <th scope="col" className="proposal-csr-table__col--hours">
+                    Original
+                  </th>
+                  <th scope="col" className="proposal-csr-table__col--hours">
+                    Hours
+                  </th>
+                  <th scope="col" className="proposal-csr-table__col--actions">
+                    <span className="visually-hidden">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <TaskSortableList
+                itemIds={taskRows.map((r) => r.id)}
+                onReorder={(nextIds) =>
+                  onPatchCard(
+                    card.key,
+                    reorderProposalTasks(
+                      card,
+                      ctx,
+                      nextIds.map((id) => String(id))
+                    )
+                  )
+                }
+              >
+                <tbody>
+                  {taskRows.map((row) => {
+                    const rowChanged =
+                      !row.isExtra &&
+                      row.catalogHours != null &&
+                      row.hours != null &&
+                      Math.abs(row.hours - row.catalogHours) >= 0.005;
+                    return (
+                      <SortableTableRowTr
+                        key={row.id}
+                        id={row.id}
+                        className={rowChanged ? "is-changed" : undefined}
+                        renderCells={(dragHandle) => [
+                          <td key="move" className="proposal-csr-table__col--move">
+                            <div className="proposal-csr-table__move">{dragHandle}</div>
+                          </td>,
+                          <td key="sol">
+                            <span className="proposal-csr-table__meta-text">
+                              {row.solutionName?.trim() || "—"}
+                            </span>
+                          </td>,
+                          <td key="tier">
+                            <span className="proposal-csr-table__meta-text">
+                              {row.solutionTierName?.trim() || "—"}
+                            </span>
+                          </td>,
+                          <td key="label">
+                            {row.componentLabel?.trim() ? (
+                              <span className="proposal-csr-table__solution-label">
+                                {row.componentLabel.trim()}
+                              </span>
+                            ) : (
+                              <span className="proposal-csr-table__solution-label proposal-csr-table__solution-label--empty">
+                                —
+                              </span>
+                            )}
+                          </td>,
+                          <td key="task">
+                            {row.isExtra ? (
+                              <input
+                                className="roadmap-input proposal-csr-table__name-input"
+                                value={row.name}
+                                onChange={(e) =>
+                                  onPatchCard(
+                                    card.key,
+                                    setProposalTaskClientLabel(card, ctx, row.id, e.target.value)
+                                  )
+                                }
+                                aria-label="Proposal task name"
+                              />
+                            ) : (
+                              <span className="proposal-csr-table__task-name">{row.catalogName}</span>
+                            )}
+                          </td>,
+                          <td
+                            key="original"
+                            className="proposal-csr-table__col--hours proposal-csr-table__original"
+                          >
+                            {row.isExtra ? "—" : formatProposalHoursValue(row.catalogHours)}
+                          </td>,
+                          <td key="hours" className="proposal-csr-table__col--hours">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.25}
+                              className={`roadmap-input proposal-csr-table__hours${
+                                rowChanged ? " is-changed" : ""
+                              }`}
+                              value={row.hours ?? ""}
+                              placeholder={row.catalogHours != null ? String(row.catalogHours) : "0"}
+                              onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                const hours =
+                                  raw === ""
+                                    ? null
+                                    : Number.isFinite(Number(raw))
+                                      ? Number(raw)
+                                      : null;
+                                onPatchCard(card.key, setProposalTaskHours(card, ctx, row.id, hours));
+                              }}
+                              aria-label={`Hours for ${row.name}`}
+                            />
+                          </td>,
+                          <td key="actions" className="proposal-csr-table__col--actions">
+                            <button
+                              type="button"
+                              className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
+                              onClick={() =>
+                                onPatchCard(card.key, hideProposalTask(card, ctx, row.id))
+                              }
+                            >
+                              {row.isExtra ? "Remove" : "Delete"}
+                            </button>
+                          </td>,
+                        ]}
+                      />
+                    );
+                  })}
+                </tbody>
+              </TaskSortableList>
+            </table>
+          )}
+
+          <div className="proposal-csr-card__footer">
+            <button
+              type="button"
+              className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
+              onClick={() => onPatchCard(card.key, addProposalExtraTask(card, ctx))}
+            >
+              + Add task
+            </button>
+            {card.taskLayout ? (
+              <span className="proposal-csr-card__note">Proposal-only edits · catalog unchanged</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function Section({
+  title,
+  hint,
+  count,
+  tone,
+  children,
+}: {
+  title: string;
+  hint: string;
+  count: number;
+  tone: "package" | "solution";
+  children: ReactNode;
+}) {
+  if (count === 0) return null;
+  return (
+    <section className={`proposal-csr-section proposal-csr-section--${tone}`} aria-label={title}>
+      <header className="proposal-csr-section__head">
+        <div className="proposal-csr-section__intro">
+          <span className={`proposal-csr-section__icon proposal-csr-section__icon--${tone}`} aria-hidden>
+            {tone === "package" ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5v-7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+                <path d="M12 12v8M3.5 9 12 13.5 20.5 9" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path d="M8 9.5h8M8 13h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            )}
+          </span>
+          <div>
+            <h3 className="proposal-csr-section__title">{title}</h3>
+            <p className="proposal-csr-section__hint">{hint}</p>
+          </div>
+        </div>
+        <span className={`proposal-csr-section__count proposal-csr-section__count--${tone}`}>
+          {count} item{count === 1 ? "" : "s"}
+        </span>
+      </header>
+      <ul className="proposal-csr__list">{children}</ul>
+    </section>
+  );
 }
 
 export function ProposalClientServiceReviewPanel({
@@ -40,10 +356,16 @@ export function ProposalClientServiceReviewPanel({
   cards,
   tasks,
   packageTiers,
+  tiers,
+  solutions,
+  effectivePriceForCard,
   onPatchCard,
 }: Props) {
   const stepMeta = proposalStepDef("client_service");
-  const ctx: ProposalCardTasksCtx = useMemo(() => ({ tasks, packageTiers }), [tasks, packageTiers]);
+  const ctx: ProposalCardTasksCtx = useMemo(
+    () => ({ tasks, packageTiers, tiers, solutions }),
+    [tasks, packageTiers, tiers, solutions]
+  );
   const [viewScenarioId, setViewScenarioId] = useState(scenarios[0]?.id ?? "");
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
 
@@ -63,8 +385,63 @@ export function ProposalClientServiceReviewPanel({
       });
   }, [cards, phases, activeScenarioId]);
 
-  const phaseTitle = (phaseId: string) =>
-    phases.find((p) => p.id === phaseId)?.title.trim() || "Phase";
+  const packageCards = useMemo(
+    () => scenarioCards.filter((c) => c.kind === "package"),
+    [scenarioCards]
+  );
+  const solutionCards = useMemo(
+    () => scenarioCards.filter((c) => c.kind === "tier" || c.kind === "custom_tier"),
+    [scenarioCards]
+  );
+
+  const proposalTotals = useMemo(() => {
+    const included = scenarioCards.filter((c) => c.scope === "included");
+    const lines = included.length > 0 ? included : scenarioCards;
+    let originalHours = 0;
+    let currentHours = 0;
+    let originalPrice = 0;
+    let currentPrice = 0;
+    let origHCount = 0;
+    let curHCount = 0;
+    let origPCount = 0;
+    let curPCount = 0;
+
+    for (const card of lines) {
+      const m = proposalLineCompareMetrics(card, ctx, effectivePriceForCard(card));
+      if (m.originalHours != null) {
+        originalHours += m.originalHours;
+        origHCount += 1;
+      }
+      if (m.currentHours != null) {
+        currentHours += m.currentHours;
+        curHCount += 1;
+      }
+      if (m.originalPriceUsd != null) {
+        originalPrice += m.originalPriceUsd;
+        origPCount += 1;
+      }
+      if (m.currentPriceUsd != null) {
+        currentPrice += m.currentPriceUsd;
+        curPCount += 1;
+      }
+    }
+
+    const hoursChanged = Math.abs(currentHours - originalHours) >= 0.005;
+    const priceChanged = Math.round(currentPrice) !== Math.round(originalPrice);
+    const priceDelta = currentPrice - originalPrice;
+
+    return {
+      lineCount: lines.length,
+      usedIncludedOnly: included.length > 0,
+      originalHours: origHCount > 0 ? originalHours : null,
+      currentHours: curHCount > 0 ? currentHours : null,
+      originalPrice: origPCount > 0 ? originalPrice : null,
+      currentPrice: curPCount > 0 ? currentPrice : null,
+      hoursChanged,
+      priceChanged,
+      priceDelta: origPCount > 0 && curPCount > 0 ? priceDelta : null,
+    };
+  }, [scenarioCards, ctx, effectivePriceForCard]);
 
   const toggleExpanded = (key: string) => {
     setExpandedKeys((prev) => {
@@ -75,18 +452,29 @@ export function ProposalClientServiceReviewPanel({
     });
   };
 
-  const updateCard = (_card: RoadmapCard, next: RoadmapCard) => {
-    onPatchCard(_card.key, next);
-  };
+  const renderCards = (list: RoadmapCard[], tone: "package" | "solution") =>
+    list.map((card) => (
+      <CsrCard
+        key={card.key}
+        card={card}
+        phases={phases}
+        ctx={ctx}
+        expanded={expandedKeys.has(card.key)}
+        onToggle={() => toggleExpanded(card.key)}
+        effectivePriceForCard={effectivePriceForCard}
+        onPatchCard={onPatchCard}
+        tone={tone}
+      />
+    ));
 
   return (
     <div className="proposal-step-panel proposal-csr">
-      <header className="proposal-step-panel__head">
+      <header className="proposal-step-panel__head proposal-csr__head">
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">
-          Review every task on solutions and packages in this proposal. Change hours, remove tasks, or
-          add proposal-only tasks — catalog solutions stay unchanged.
+          Review packages and solutions separately. Change task hours to update the proposal price —
+          original catalog values stay visible for comparison.
         </p>
       </header>
 
@@ -107,133 +495,77 @@ export function ProposalClientServiceReviewPanel({
         </div>
       ) : null}
 
+      {scenarioCards.length > 0 ? (
+        <div
+          className={`proposal-csr-totals${
+            proposalTotals.priceChanged || proposalTotals.hoursChanged ? " is-changed" : ""
+          }`}
+          aria-label="Overall proposal comparison"
+        >
+          <div className="proposal-csr-totals__intro">
+            <p className="proposal-csr-totals__eyebrow">Overall proposal</p>
+            <h3 className="proposal-csr-totals__title">
+              {proposalTotals.usedIncludedOnly ? "Included total" : "Scenario total"}
+            </h3>
+            <p className="proposal-csr-totals__hint">
+              {proposalTotals.lineCount} included line
+              {proposalTotals.lineCount === 1 ? "" : "s"}
+              {proposalTotals.priceChanged && proposalTotals.priceDelta != null
+                ? ` · ${proposalTotals.priceDelta > 0 ? "+" : ""}${formatProposalUsdValue(
+                    proposalTotals.priceDelta
+                  )} after task edits`
+                : " · same as original until you edit tasks"}
+            </p>
+          </div>
+          <div className="proposal-csr-totals__grid">
+            <MetricCell
+              label="Original hours"
+              value={formatProposalHoursValue(proposalTotals.originalHours)}
+              tone="muted"
+            />
+            <MetricCell
+              label="Original price"
+              value={formatProposalUsdValue(proposalTotals.originalPrice)}
+              tone="muted"
+            />
+            <MetricCell
+              label="Current hours"
+              value={formatProposalHoursValue(proposalTotals.currentHours)}
+              tone={proposalTotals.hoursChanged ? "changed" : "current"}
+            />
+            <MetricCell
+              label="Current price"
+              value={formatProposalUsdValue(proposalTotals.currentPrice)}
+              tone={proposalTotals.priceChanged ? "changed" : "current"}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {scenarioCards.length === 0 ? (
         <p className="proposal-csr__empty">
           No solutions or packages in this scenario yet. Add them in earlier steps, then come back to
           refine tasks.
         </p>
       ) : (
-        <ul className="proposal-csr__list">
-          {scenarioCards.map((card) => {
-            const expanded = expandedKeys.has(card.key);
-            const taskRows = resolveProposalCardTasks(card, ctx);
-            const hoursTotal = formatProposalTaskHoursTotal(taskRows);
-            return (
-              <li key={card.key} className={`proposal-csr-card${expanded ? " is-expanded" : ""}`}>
-                <button
-                  type="button"
-                  className="proposal-csr-card__head"
-                  aria-expanded={expanded}
-                  onClick={() => toggleExpanded(card.key)}
-                >
-                  <span className="proposal-csr-card__chevron" aria-hidden>
-                    {expanded ? "▾" : "▸"}
-                  </span>
-                  <span className="proposal-csr-card__main">
-                    <span className="proposal-csr-card__title">{card.headline.trim() || "Untitled"}</span>
-                    <span className="proposal-csr-card__meta">
-                      {kindLabel(card.kind)} · {phaseTitle(card.phaseId)} · {taskRows.length} task
-                      {taskRows.length === 1 ? "" : "s"} · {hoursTotal}
-                    </span>
-                  </span>
-                </button>
-
-                {expanded ? (
-                  <div className="proposal-csr-card__body">
-                    {taskRows.length === 0 ? (
-                      <p className="proposal-csr-card__none">No tasks on this line yet.</p>
-                    ) : (
-                      <table className="proposal-csr-table">
-                        <thead>
-                          <tr>
-                            <th scope="col">Task</th>
-                            <th scope="col" className="proposal-csr-table__col--hours">
-                              Hours
-                            </th>
-                            <th scope="col" className="proposal-csr-table__col--actions">
-                              <span className="visually-hidden">Actions</span>
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {taskRows.map((row) => (
-                            <tr key={row.id}>
-                              <td>
-                                {row.isExtra ? (
-                                  <input
-                                    className="roadmap-input proposal-csr-table__name-input"
-                                    value={row.name}
-                                    onChange={(e) =>
-                                      updateCard(
-                                        card,
-                                        renameProposalExtraTask(card, ctx, row.id, e.target.value)
-                                      )
-                                    }
-                                    aria-label="Proposal task name"
-                                  />
-                                ) : (
-                                  <div className="proposal-csr-table__name">
-                                    <span>{row.name}</span>
-                                    {row.source === "package" ? (
-                                      <span className="proposal-csr-table__badge">Package</span>
-                                    ) : null}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="proposal-csr-table__col--hours">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.25}
-                                  className="roadmap-input proposal-csr-table__hours"
-                                  value={row.hours ?? ""}
-                                  placeholder={row.catalogHours != null ? String(row.catalogHours) : "0"}
-                                  onChange={(e) => {
-                                    const raw = e.target.value.trim();
-                                    const hours =
-                                      raw === ""
-                                        ? null
-                                        : Number.isFinite(Number(raw))
-                                          ? Number(raw)
-                                          : null;
-                                    updateCard(card, setProposalTaskHours(card, ctx, row.id, hours));
-                                  }}
-                                  aria-label={`Hours for ${row.name}`}
-                                />
-                              </td>
-                              <td className="proposal-csr-table__col--actions">
-                                <button
-                                  type="button"
-                                  className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
-                                  onClick={() => updateCard(card, hideProposalTask(card, ctx, row.id))}
-                                >
-                                  {row.isExtra ? "Remove" : "Delete"}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-
-                    <div className="proposal-csr-card__footer">
-                      <button
-                        type="button"
-                        className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost"
-                        onClick={() => updateCard(card, addProposalExtraTask(card, ctx))}
-                      >
-                        + Add task
-                      </button>
-                      {card.taskLayout ? (
-                        <span className="proposal-csr-card__note">Proposal-only edits · catalog unchanged</span>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="proposal-csr__sections">
+          <Section
+            title="Packages"
+            hint="Bundled offerings — edit hours and see price update"
+            count={packageCards.length}
+            tone="package"
+          >
+            {renderCards(packageCards, "package")}
+          </Section>
+          <Section
+            title="Solutions"
+            hint="Individual solution tiers and custom tiers"
+            count={solutionCards.length}
+            tone="solution"
+          >
+            {renderCards(solutionCards, "solution")}
+          </Section>
+        </div>
       )}
     </div>
   );

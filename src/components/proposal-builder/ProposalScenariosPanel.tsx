@@ -1,7 +1,10 @@
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
+import type { ProposalKind } from "../../lib/proposalKindPresets";
 
 type Props = {
+  proposalKind: ProposalKind;
+  onProposalKindChange: (kind: ProposalKind) => void;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
@@ -15,6 +18,8 @@ type Props = {
 };
 
 export function ProposalScenariosPanel({
+  proposalKind,
+  onProposalKindChange,
   scenarios,
   phases,
   cards,
@@ -26,19 +31,45 @@ export function ProposalScenariosPanel({
   onAddPhase,
   onDeletePhase,
 }: Props) {
+  const sectionWord = "section";
+  const sectionWordPlural = "sections";
+
   return (
     <div className="proposal-step-panel">
       <header className="proposal-step-panel__head">
         <h2 className="proposal-step-panel__title">Scenarios &amp; Phases</h2>
         <p className="proposal-step-panel__lead">
-          Add as many what-if scenarios as you need, name each one, and define the phases inside it (for example Phase 1
-          discovery, Phase 2 build). You can still adjust phases later in Organize.
+          Choose Program or Project proposal to load the right starting structure, then rename scenarios and sections as
+          needed. You can still adjust them later in Organize.
         </p>
       </header>
 
+      <div
+        className="proposal-kind-toggle"
+        role="group"
+        aria-label="Proposal type"
+      >
+        <button
+          type="button"
+          className={`proposal-kind-toggle__btn${proposalKind === "program" ? " is-active" : ""}`}
+          aria-pressed={proposalKind === "program"}
+          onClick={() => onProposalKindChange("program")}
+        >
+          Program proposal
+        </button>
+        <button
+          type="button"
+          className={`proposal-kind-toggle__btn${proposalKind === "project" ? " is-active" : ""}`}
+          aria-pressed={proposalKind === "project"}
+          onClick={() => onProposalKindChange("project")}
+        >
+          Project proposal
+        </button>
+      </div>
+
       <p className="proposal-scenarios-summary" aria-live="polite">
-        <strong>{scenarios.length}</strong> scenario{scenarios.length === 1 ? "" : "s"} ·{" "}
-        <strong>{phases.length}</strong> phase{phases.length === 1 ? "" : "s"} total
+        <strong>{scenarios.length}</strong> proposal scenario{scenarios.length === 1 ? "" : "s"} ·{" "}
+        <strong>{phases.length}</strong> {phases.length === 1 ? sectionWord : sectionWordPlural} total
       </p>
 
       <ul className="proposal-scenario-list">
@@ -49,16 +80,16 @@ export function ProposalScenariosPanel({
             <li key={s.id} className="proposal-scenario-card">
               <div className="proposal-scenario-card__header">
                 <div className="proposal-scenario-card__main">
-                  <span className="proposal-scenario-card__index">Scenario {i + 1}</span>
+                  <span className="proposal-scenario-card__index">Proposal scenario {i + 1}</span>
                   <input
                     className="roadmap-input proposal-scenario-card__title"
                     value={s.title}
                     onChange={(e) => onUpdateScenarioTitle(s.id, e.target.value)}
-                    placeholder="e.g. Scenario 1"
-                    aria-label={`Scenario ${i + 1} name`}
+                    placeholder="e.g. Proposal Scenario 1"
+                    aria-label={`Proposal scenario ${i + 1} name`}
                   />
                   <p className="proposal-scenario-card__meta">
-                    {scenarioPhases.length} phase{scenarioPhases.length === 1 ? "" : "s"}
+                    {scenarioPhases.length} {scenarioPhases.length === 1 ? sectionWord : sectionWordPlural}
                     {itemCount > 0 ? (
                       <>
                         {" "}
@@ -87,7 +118,7 @@ export function ProposalScenariosPanel({
               </div>
 
               <div className="proposal-scenario-phases">
-                <p className="proposal-scenario-phases__label">Phases In This Scenario</p>
+                <p className="proposal-scenario-phases__label">Sections in this proposal scenario</p>
                 <ul className="proposal-scenario-phases__list">
                   {scenarioPhases.map((ph, phIdx) => {
                     const phaseItemCount = cards.filter((c) => c.phaseId === ph.id).length;
@@ -98,27 +129,35 @@ export function ProposalScenariosPanel({
                           className="roadmap-input proposal-scenario-phase-row__title"
                           value={ph.title}
                           onChange={(e) => onUpdatePhaseTitle(ph.id, e.target.value)}
-                          placeholder={`Phase ${phIdx + 1}`}
-                          aria-label={`${s.title || "Scenario"} phase ${phIdx + 1} name`}
+                          placeholder={
+                            proposalKind === "project" ? `Section ${phIdx + 1}` : `Phase ${phIdx + 1}`
+                          }
+                          aria-label={`${s.title || "Scenario"} section ${phIdx + 1} name`}
                         />
                         {phaseItemCount > 0 ? (
-                          <span className="proposal-scenario-phase-row__count" title="Line items in this phase">
+                          <span className="proposal-scenario-phase-row__count" title="Line items in this section">
                             {phaseItemCount} item{phaseItemCount === 1 ? "" : "s"}
                           </span>
-                        ) : (
+                        ) : proposalKind === "program" ? (
                           <span className="proposal-scenario-phase-row__count proposal-scenario-phase-row__count--empty">
                             Empty
                           </span>
-                        )}
+                        ) : null}
                         <button
                           type="button"
-                          className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost proposal-scenario-phase-row__delete"
+                          className={`roadmap-btn roadmap-btn--sm roadmap-btn--ghost proposal-scenario-phase-row__delete${
+                            proposalKind === "project" ? " proposal-scenario-phase-row__delete--icon" : ""
+                          }`}
                           disabled={scenarioPhases.length <= 1}
                           onClick={() => onDeletePhase(ph.id)}
-                          aria-label={`Delete ${ph.title || "phase"}`}
-                          title={scenarioPhases.length <= 1 ? "Each scenario needs at least one phase" : "Delete phase"}
+                          aria-label={`Delete ${ph.title || "section"}`}
+                          title={
+                            scenarioPhases.length <= 1
+                              ? "Each scenario needs at least one section"
+                              : "Delete section"
+                          }
                         >
-                          Remove
+                          {proposalKind === "project" ? "×" : "Remove"}
                         </button>
                       </li>
                     );
@@ -129,7 +168,7 @@ export function ProposalScenariosPanel({
                   className="roadmap-btn roadmap-btn--sm roadmap-btn--ghost proposal-scenario-phases__add"
                   onClick={() => onAddPhase(s.id)}
                 >
-                  + Add phase
+                  + Add section
                 </button>
               </div>
             </li>
@@ -138,7 +177,7 @@ export function ProposalScenariosPanel({
       </ul>
 
       <button type="button" className="roadmap-btn roadmap-btn--ghost proposal-scenario-list__add" onClick={onAddScenario}>
-        + Add scenario
+        + Add proposal scenario
       </button>
     </div>
   );

@@ -523,6 +523,56 @@ export function AgencyPackagesHub() {
     setOpOk(null);
   }, [setOpErr, setOpOk]);
 
+  const deletePackageById = useCallback(
+    async (packageId: string, packageName: string) => {
+      const label = packageName.trim() || packageId;
+      if (
+        !globalThis.confirm(
+          `Delete package “${label}” and all its tier links? This cannot be undone.`
+        )
+      ) {
+        return;
+      }
+      const client = getSupabase();
+      if (!client) {
+        toastError("Supabase client is not available.");
+        return;
+      }
+      const beforePkg = packages.find((p) => p.package_id === packageId) ?? null;
+      const beforeTierIds = packageTiers
+        .filter((x) => x.package_id === packageId)
+        .map((x) => x.solution_tier_id);
+
+      const { error: d1 } = await client.from("package_solution_tiers").delete().eq("package_id", packageId);
+      if (d1) {
+        toastError(d1.message);
+        return;
+      }
+      const { error: d2 } = await client.from("packages").delete().eq("package_id", packageId);
+      if (d2) {
+        toastError(d2.message);
+        await load();
+        return;
+      }
+      await logAudit(client, {
+        entityType: "packages",
+        entityId: packageId,
+        action: "delete",
+        before: beforePkg
+          ? {
+              ...(beforePkg as unknown as Record<string, unknown>),
+              solution_tier_ids: beforeTierIds,
+            }
+          : null,
+        after: null,
+      });
+      if (editPackageId === packageId) setEditPackageId(null);
+      setOpOk(`Package ${label} deleted.`);
+      await load();
+    },
+    [editPackageId, load, logAudit, packageTiers, packages, setOpOk, toastError]
+  );
+
   const setLayoutMode = useCallback((mode: PackageLayoutMode) => {
     setPackageLayoutMode(mode);
     if (typeof globalThis.window !== "undefined") {
@@ -779,6 +829,13 @@ export function AgencyPackagesHub() {
                               <Link className="agency-pkg-hub__card-open agency-pkg-hub__list-open" to={workspacePath}>
                                 Open
                               </Link>
+                              <button
+                                type="button"
+                                className="agency-pkg-hub__card-delete agency-pkg-hub__list-delete"
+                                onClick={() => void deletePackageById(p.package_id, p.package_name)}
+                              >
+                                Delete
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -851,6 +908,13 @@ export function AgencyPackagesHub() {
                           onClick={() => setEditPackageId(p.package_id)}
                         >
                           Edit package
+                        </button>
+                        <button
+                          type="button"
+                          className="agency-pkg-hub__card-delete"
+                          onClick={() => void deletePackageById(p.package_id, p.package_name)}
+                        >
+                          Delete
                         </button>
                         <Link
                           className="agency-pkg-hub__card-open"

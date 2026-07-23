@@ -11036,6 +11036,11 @@ button {
   margin-left: 0;
 }
 
+.agency-pkg-hub__list-delete {
+  padding: 0.3rem 0.62rem;
+  font-size: 0.78rem;
+}
+
 .agency-pkg-hub__list-sr-only {
   position: absolute;
   width: 1px;
@@ -11371,6 +11376,33 @@ button {
 
 .agency-pkg-hub__card-edit:focus-visible {
   outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agency-pkg-hub__card-delete {
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: #9b1c1c;
+  background: rgba(255, 252, 247, 0.92);
+  border: 1px solid rgba(155, 28, 28, 0.28);
+  border-radius: 999px;
+  padding: 0.38rem 0.85rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.agency-pkg-hub__card-delete:hover {
+  background: rgba(155, 28, 28, 0.08);
+  border-color: rgba(155, 28, 28, 0.45);
+  color: #7f1d1d;
+}
+
+.agency-pkg-hub__card-delete:focus-visible {
+  outline: 2px solid #9b1c1c;
   outline-offset: 2px;
 }
 
@@ -17736,6 +17768,18 @@ html[data-theme="dark"] .agency-pkg-hub__card-edit:hover {
   background: rgba(167, 139, 250, 0.12);
   border-color: rgba(167, 139, 250, 0.35);
   color: #f7fbff;
+}
+
+html[data-theme="dark"] .agency-pkg-hub__card-delete {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+
+html[data-theme="dark"] .agency-pkg-hub__card-delete:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
 }
 
 html[data-theme="dark"] .agency-pkg-edit-modal {

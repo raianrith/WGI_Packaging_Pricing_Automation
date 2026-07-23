@@ -1318,17 +1318,11 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   const packageUnifiedTaskTableTotals = useMemo(() => {
     let sumTime = 0;
-    let sumDuration = 0;
     let anyTime = false;
-    let anyDuration = false;
     for (const t of packageWorkspaceUnifiedRows) {
       if (t.task_time != null && Number.isFinite(Number(t.task_time))) {
         sumTime += Number(t.task_time);
         anyTime = true;
-      }
-      if (t.task_duration != null && Number.isFinite(Number(t.task_duration))) {
-        sumDuration += Number(t.task_duration);
-        anyDuration = true;
       }
     }
     const addons = anyTime
@@ -1336,9 +1330,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       : { accountMgmtAddonHours: 0, continuousImprovementAddonHours: 0, billableHours: 0 };
     return {
       sumTime,
-      sumDuration,
       anyTime,
-      anyDuration,
       accountMgmtAddonHours: addons.accountMgmtAddonHours,
       continuousImprovementAddonHours: addons.continuousImprovementAddonHours,
       sumBillableHours: addons.billableHours,
@@ -2118,10 +2110,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                             <th scope="col" className="agency-task-table__th--num">
                               Time
                             </th>
-                            <th scope="col" className="agency-task-table__th--num">
-                              Duration
-                            </th>
-                            <th scope="col">Dependencies</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2170,14 +2158,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                                 <td className="agency-task-table__td--num">
                                   {t.task_time != null ? formatKpiNumber(Number(t.task_time)) : "—"}
                                 </td>
-                                <td className="agency-task-table__td--num">
-                                  {t.task_duration != null
-                                    ? formatKpiNumber(Number(t.task_duration))
-                                    : "—"}
-                                </td>
-                                <td className="agency-task-table__td--meta">
-                                  {t.task_dependencies ?? "—"}
-                                </td>
                               </tr>
                             );
                           })}
@@ -2192,10 +2172,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                                 <td className="agency-task-table__td--num agency-task-table__addon-time">
                                   {formatKpiNumber(packageUnifiedTaskTableTotals.accountMgmtAddonHours)}
                                 </td>
-                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
-                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
-                                  Included in tier pricing (Admin)
-                                </td>
                               </tr>
                               <tr className="agency-task-table__addon-row">
                                 <td colSpan={4} className="agency-task-table__addon-label">
@@ -2207,30 +2183,22 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                                     packageUnifiedTaskTableTotals.continuousImprovementAddonHours
                                   )}
                                 </td>
-                                <td className="agency-task-table__td--num agency-task-table__addon-muted">—</td>
-                                <td className="agency-task-table__td--meta agency-task-table__addon-muted">
-                                  Included in tier pricing (Admin)
-                                </td>
                               </tr>
                             </>
                           ) : null}
                           <tr className="agency-task-table__totals-row">
                             <td colSpan={4} className="agency-task-table__totals-label">
                               Totals
+                              <span className="agency-task-table__totals-meta">
+                                {" "}
+                                · {packageWorkspaceUnifiedRows.length} task
+                                {packageWorkspaceUnifiedRows.length === 1 ? "" : "s"}
+                              </span>
                             </td>
                             <td className="agency-task-table__td--num agency-task-table__totals-value">
                               {packageUnifiedTaskTableTotals.anyTime
                                 ? formatKpiNumber(packageUnifiedTaskTableTotals.sumBillableHours)
                                 : "—"}
-                            </td>
-                            <td className="agency-task-table__td--num agency-task-table__totals-value">
-                              {packageUnifiedTaskTableTotals.anyDuration
-                                ? formatKpiNumber(packageUnifiedTaskTableTotals.sumDuration)
-                                : "—"}
-                            </td>
-                            <td className="agency-task-table__totals-meta">
-                              {packageWorkspaceUnifiedRows.length} task
-                              {packageWorkspaceUnifiedRows.length === 1 ? "" : "s"}
                             </td>
                           </tr>
                         </tfoot>

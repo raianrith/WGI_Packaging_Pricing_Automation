@@ -1,16 +1,22 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { PROPOSAL_DURATION_LABEL } from "../../branding";
 import { formatProposalDurationLabel } from "../../lib/roadmapProposalSnapshot";
 import type { RoadmapProposalRow } from "../../types";
+
+export type ProposalSavedLibraryVariant = "saved" | "awaiting_ops" | "client_ready";
 
 type Props = {
   proposals: RoadmapProposalRow[];
   loading: boolean;
   activeProposalId: string | null;
   deletingProposalId: string | null;
+  reviewingProposalId?: string | null;
   onRefresh: () => void;
   onOpen: (row: RoadmapProposalRow) => void;
   onDelete: (row: RoadmapProposalRow) => void;
+  onReviewedByOpsChange?: (row: RoadmapProposalRow, reviewed: boolean) => void;
+  onMoveToSaved?: (row: RoadmapProposalRow) => void;
+  variant?: ProposalSavedLibraryVariant;
 };
 
 function clientKey(row: RoadmapProposalRow): string {
@@ -71,16 +77,81 @@ function clientInitials(client: string): string {
   return `${words[0]![0] ?? ""}${words[1]![0] ?? ""}`.toUpperCase();
 }
 
+const VARIANT_COPY: Record<
+  ProposalSavedLibraryVariant,
+  {
+    ariaLabel: string;
+    eyebrow: string;
+    title: string;
+    lead: string;
+    emptyTitle: string;
+    emptyBody: ReactNode;
+    allListTitle: string;
+    countLabel: string;
+  }
+> = {
+  saved: {
+    ariaLabel: "Saved proposals",
+    eyebrow: "Proposal Library",
+    title: "Saved Proposals",
+    lead: "Filter by client or browse everything. Open any proposal to pick up where you left off.",
+    emptyTitle: "No Proposals Yet",
+    emptyBody: (
+      <>
+        Switch to the <strong>Create New Proposal</strong> tab, build your roadmap, then save from Review.
+      </>
+    ),
+    allListTitle: "All Saved Proposals",
+    countLabel: "saved",
+  },
+  awaiting_ops: {
+    ariaLabel: "Proposals awaiting Ops Review",
+    eyebrow: "Ops Queue",
+    title: "Proposals Awaiting Ops Review",
+    lead: "Proposals submitted from Preview Proposal. Open one to continue in Ops Review.",
+    emptyTitle: "Nothing Awaiting Ops Review",
+    emptyBody: (
+      <>
+        When a strategist clicks <strong>Submit for Ops Review</strong>, the proposal will appear here.
+      </>
+    ),
+    allListTitle: "All Awaiting Ops Review",
+    countLabel: "awaiting",
+  },
+  client_ready: {
+    ariaLabel: "Client Ready proposals",
+    eyebrow: "Client Ready",
+    title: "Client Ready Proposals",
+    lead: "Proposals marked Reviewed by Ops. Open one to finish the Client Ready Proposal step.",
+    emptyTitle: "No Client Ready Proposals Yet",
+    emptyBody: (
+      <>
+        Turn on <strong>Reviewed by Ops</strong> in the Ops queue to move a proposal here.
+      </>
+    ),
+    allListTitle: "All Client Ready Proposals",
+    countLabel: "ready",
+  },
+};
+
 export function ProposalSavedProposalsPanel({
   proposals,
   loading,
   activeProposalId,
   deletingProposalId,
+  reviewingProposalId = null,
   onRefresh,
   onOpen,
   onDelete,
+  onReviewedByOpsChange,
+  onMoveToSaved,
+  variant = "saved",
 }: Props) {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const copy = VARIANT_COPY[variant];
+  const showReviewedToggle = variant === "awaiting_ops" || variant === "client_ready";
+  const reviewedByOpsOn = variant === "client_ready";
+  const showMoveToSaved = showReviewedToggle && onMoveToSaved != null;
 
   const clientEntries = useMemo(() => {
     const map = new Map<string, number>();
@@ -99,26 +170,24 @@ export function ProposalSavedProposalsPanel({
     return sorted.filter((row) => clientKey(row) === selectedClient);
   }, [proposals, selectedClient]);
 
-  const listTitle = selectedClient == null ? "All Saved Proposals" : selectedClient;
+  const listTitle = selectedClient == null ? copy.allListTitle : selectedClient;
 
   return (
-    <section className="proposal-saved" aria-label="Saved proposals">
+    <section className="proposal-saved" aria-label={copy.ariaLabel}>
       <header className="proposal-saved__hero">
         <div className="proposal-saved__hero-glow" aria-hidden />
         <div className="proposal-saved__hero-inner">
           <div className="proposal-saved__hero-copy">
-            <p className="proposal-saved__eyebrow">Proposal Library</p>
-            <h2 className="proposal-saved__title">Saved Proposals</h2>
-            <p className="proposal-saved__lead">
-              Filter by client or browse everything. Open any proposal to pick up where you left off.
-            </p>
+            <p className="proposal-saved__eyebrow">{copy.eyebrow}</p>
+            <h2 className="proposal-saved__title">{copy.title}</h2>
+            <p className="proposal-saved__lead">{copy.lead}</p>
             {proposals.length > 0 ? (
               <div className="proposal-saved__hero-stats">
                 <span className="proposal-saved__hero-stat">
                   <strong>{clientEntries.length}</strong> client{clientEntries.length === 1 ? "" : "s"}
                 </span>
                 <span className="proposal-saved__hero-stat">
-                  <strong>{proposals.length}</strong> saved
+                  <strong>{proposals.length}</strong> {copy.countLabel}
                 </span>
               </div>
             ) : null}
@@ -137,13 +206,11 @@ export function ProposalSavedProposalsPanel({
       </header>
 
       {loading && proposals.length === 0 ? (
-        <p className="proposal-saved__empty roadmap-muted">Loading saved proposals…</p>
+        <p className="proposal-saved__empty roadmap-muted">Loading proposals…</p>
       ) : proposals.length === 0 ? (
         <div className="proposal-saved__empty-state">
-          <p className="proposal-saved__empty-title">No Proposals Yet</p>
-          <p className="roadmap-muted">
-            Switch to the <strong>Create New Proposal</strong> tab, build your roadmap, then save from Review.
-          </p>
+          <p className="proposal-saved__empty-title">{copy.emptyTitle}</p>
+          <p className="roadmap-muted">{copy.emptyBody}</p>
         </div>
       ) : (
         <div className="proposal-saved__layout">
@@ -253,15 +320,46 @@ export function ProposalSavedProposalsPanel({
                               ? ` · Updated ${formatCreatedDate(row.updated_at)}`
                               : ""}
                           </span>
-                          <button
-                            type="button"
-                            className="proposal-saved-card__delete"
-                            onClick={() => onDelete(row)}
-                            disabled={isDeleting}
-                            aria-label={`Delete ${row.roadmap_title}`}
-                          >
-                            {isDeleting ? "Deleting…" : "Delete"}
-                          </button>
+                          <div className="proposal-saved-card__foot-actions">
+                            {showMoveToSaved ? (
+                              <button
+                                type="button"
+                                className="proposal-saved-card__move-saved"
+                                onClick={() => onMoveToSaved(row)}
+                                disabled={reviewingProposalId === row.id || isDeleting}
+                              >
+                                {reviewingProposalId === row.id ? "Moving…" : "Move To Saved Proposals"}
+                              </button>
+                            ) : null}
+                            {showReviewedToggle && onReviewedByOpsChange ? (
+                              <label
+                                className={`proposal-saved-card__ops-toggle${
+                                  reviewedByOpsOn ? " is-on" : ""
+                                }`}
+                              >
+                                <span className="proposal-saved-card__ops-toggle-label">Reviewed by Ops</span>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  className="proposal-saved-card__ops-switch"
+                                  aria-checked={reviewedByOpsOn}
+                                  disabled={reviewingProposalId === row.id || isDeleting}
+                                  onClick={() => onReviewedByOpsChange(row, !reviewedByOpsOn)}
+                                >
+                                  <span className="proposal-saved-card__ops-switch-thumb" aria-hidden />
+                                </button>
+                              </label>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="proposal-saved-card__delete"
+                              onClick={() => onDelete(row)}
+                              disabled={isDeleting}
+                              aria-label={`Delete ${row.roadmap_title}`}
+                            >
+                              {isDeleting ? "Deleting…" : "Delete"}
+                            </button>
+                          </div>
                         </footer>
                       </div>
                     </li>

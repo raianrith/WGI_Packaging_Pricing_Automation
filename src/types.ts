@@ -41,6 +41,8 @@ export type PackageBuilderPackageType = {
   id: string;
   sort_order: number;
   name: string;
+  /** Shown on Custom Package Builder / configurable package cards. */
+  card_description: string | null;
   /** Playbook phase labels (multi-select). */
   phase_tags: string[];
   /** Playbook category labels (multi-select). */

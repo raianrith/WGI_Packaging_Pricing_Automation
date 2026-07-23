@@ -25,7 +25,7 @@ const STEPS: ProposalStepDef[] = [
   },
   { id: "catalog", number: 3, label: "Add Solutions", hint: "Tiers & Extras" },
   { id: "board", number: 4, label: "Organize Proposal", hint: "Scope & Compare" },
-  { id: "review", number: 5, label: "Strategist Review", hint: "Save & Export" },
+  { id: "review", number: 5, label: "Preview Proposal", hint: "Save & Export" },
   {
     id: "client_service",
     number: 6,
@@ -40,15 +40,30 @@ const STEPS: ProposalStepDef[] = [
   },
 ];
 
+const EARLY_STEP_IDS = new Set<ProposalBuilderStep>([
+  "setup",
+  "packages",
+  "catalog",
+  "board",
+  "review",
+]);
+
 type Props = {
   active: ProposalBuilderStep;
   onChange: (step: ProposalBuilderStep) => void;
   setupComplete: boolean;
   lineItemCount: number;
+  /** When false, Ops Review + Client Ready are hidden (Saved / Create flows). */
+  includeOpsPath?: boolean;
 };
 
 export function proposalStepDef(id: ProposalBuilderStep): ProposalStepDef {
   return STEPS.find((s) => s.id === id) ?? STEPS[0]!;
+}
+
+export function visibleProposalSteps(includeOpsPath: boolean): ProposalStepDef[] {
+  if (includeOpsPath) return STEPS;
+  return STEPS.filter((s) => EARLY_STEP_IDS.has(s.id));
 }
 
 export function ProposalBuilderSteps({
@@ -56,10 +71,13 @@ export function ProposalBuilderSteps({
   onChange,
   setupComplete,
   lineItemCount,
+  includeOpsPath = true,
 }: Props) {
+  const steps = visibleProposalSteps(includeOpsPath);
+
   function stepStatus(id: ProposalBuilderStep): "done" | "active" | "pending" {
     if (id === active) return "active";
-    const order = proposalStepOrder();
+    const order = proposalStepOrder(includeOpsPath);
     const ai = order.indexOf(active);
     const si = order.indexOf(id);
     if (si < ai) return "done";
@@ -72,7 +90,7 @@ export function ProposalBuilderSteps({
     <nav className="proposal-builder-rail" aria-label="Proposal builder steps">
       <p className="proposal-builder-rail__eyebrow">Your Path</p>
       <ol className="proposal-builder-rail__list">
-        {STEPS.map((step) => {
+        {steps.map((step) => {
           const status = stepStatus(step.id);
           return (
             <li key={step.id}>
@@ -101,15 +119,16 @@ export function ProposalBuilderSteps({
   );
 }
 
-export function proposalStepOrder(): ProposalBuilderStep[] {
-  return STEPS.map((s) => s.id);
+export function proposalStepOrder(includeOpsPath = true): ProposalBuilderStep[] {
+  return visibleProposalSteps(includeOpsPath).map((s) => s.id);
 }
 
 export function adjacentStep(
   current: ProposalBuilderStep,
-  dir: "prev" | "next"
+  dir: "prev" | "next",
+  includeOpsPath = true
 ): ProposalBuilderStep | null {
-  const order = proposalStepOrder();
+  const order = proposalStepOrder(includeOpsPath);
   const i = order.indexOf(current);
   if (i < 0) return null;
   const next = dir === "next" ? i + 1 : i - 1;

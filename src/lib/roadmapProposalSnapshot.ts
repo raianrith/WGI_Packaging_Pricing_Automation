@@ -12,6 +12,12 @@ export function formatProposalDurationLabel(horizon: string | null | undefined):
   return horizon;
 }
 
+export type ProposalReviewStatus = "draft" | "awaiting_ops_review" | "client_ready";
+
+export function isProposalReviewStatus(value: unknown): value is ProposalReviewStatus {
+  return value === "draft" || value === "awaiting_ops_review" || value === "client_ready";
+}
+
 export type RoadmapProposalSnapshot = {
   version: 1;
   clientLabel: string;
@@ -24,10 +30,26 @@ export type RoadmapProposalSnapshot = {
   proposalEndDate: string;
   /** Program vs Project proposal structure preset. */
   proposalKind?: ProposalKind;
+  /** Strategist → Ops → Client Ready handoff. */
+  reviewStatus?: ProposalReviewStatus;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
 };
+
+export function proposalReviewStatus(row: RoadmapProposalRow): ProposalReviewStatus {
+  if (!row.proposal_state || typeof row.proposal_state !== "object") return "draft";
+  const raw = (row.proposal_state as { reviewStatus?: unknown }).reviewStatus;
+  return isProposalReviewStatus(raw) ? raw : "draft";
+}
+
+export function isAwaitingOpsReview(row: RoadmapProposalRow): boolean {
+  return proposalReviewStatus(row) === "awaiting_ops_review";
+}
+
+export function isClientReadyProposal(row: RoadmapProposalRow): boolean {
+  return proposalReviewStatus(row) === "client_ready";
+}
 
 function isRoadmapHorizon(value: unknown): value is RoadmapHorizon {
   return value === "3" || value === "4" || value === "6" || value === "12" || value === "custom";
@@ -52,6 +74,7 @@ export function parseProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalS
     proposalStartDate: normalizeIsoDateInput(raw.proposalStartDate),
     proposalEndDate: normalizeIsoDateInput(raw.proposalEndDate),
     proposalKind: isProposalKind(raw.proposalKind) ? raw.proposalKind : undefined,
+    reviewStatus: isProposalReviewStatus(raw.reviewStatus) ? raw.reviewStatus : undefined,
     scenarios: raw.scenarios as RoadmapScenario[],
     phases: raw.phases as RoadmapPhase[],
     cards: raw.cards as RoadmapCard[],

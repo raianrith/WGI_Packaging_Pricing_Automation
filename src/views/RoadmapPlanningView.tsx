@@ -67,7 +67,10 @@ import {
 } from "../lib/proposalKindPresets";
 import {
   cloneProposalStructure,
+  isAwaitingOpsReview,
+  isClientReadyProposal,
   parseProposalSnapshot,
+  type ProposalReviewStatus,
   type RoadmapHorizon,
   type RoadmapProposalSnapshot,
 } from "../lib/roadmapProposalSnapshot";
@@ -756,7 +759,9 @@ export function RoadmapPlanningView() {
   const [savingProposal, setSavingProposal] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState<"client" | "ops" | null>(null);
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
+  const [reviewingProposalId, setReviewingProposalId] = useState<string | null>(null);
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
+  const [proposalReviewStatus, setProposalReviewStatus] = useState<ProposalReviewStatus>("draft");
   const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
   const savedProposalErrSeen = useRef<string | null>(null);
@@ -934,6 +939,7 @@ export function RoadmapPlanningView() {
       proposalStartDate,
       proposalEndDate,
       proposalKind,
+      reviewStatus: proposalReviewStatus,
       scenarios,
       phases,
       cards,
@@ -946,29 +952,37 @@ export function RoadmapPlanningView() {
       phases,
       proposalEndDate,
       proposalKind,
+      proposalReviewStatus,
       proposalStartDate,
       roadmapTitle,
       scenarios,
     ]
   );
 
-  const saveCurrentProposal = useCallback(async () => {
+  const saveCurrentProposal = useCallback(async (opts?: {
+    reviewStatus?: ProposalReviewStatus;
+    successMessage?: string;
+  }): Promise<boolean> => {
     const client = getSupabase();
-    if (!client) return;
+    if (!client) return false;
     const clientName = clientLabel.trim();
     const title = roadmapTitle.trim();
     if (!clientName || !title) {
       toastError("Add both Client name and Roadmap name before saving.");
-      return;
+      return false;
     }
     if (!isValidRoadmapNameFormat(title)) {
       toastError(`Roadmap name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
-      return;
+      return false;
     }
     setSavingProposal(true);
     const userId = user?.id ?? null;
     const email = user?.email ?? null;
-    const snapshot = currentProposalSnapshot();
+    const nextReviewStatus = opts?.reviewStatus ?? proposalReviewStatus;
+    const snapshot: RoadmapProposalSnapshot = {
+      ...currentProposalSnapshot(),
+      reviewStatus: nextReviewStatus,
+    };
     const payload = {
       client_label: clientName,
       roadmap_title: title,
@@ -997,13 +1011,15 @@ export function RoadmapPlanningView() {
     setSavingProposal(false);
     if (result.error) {
       toastError(`Could not save proposal: ${result.error.message}`);
-      return;
+      return false;
     }
     const saved = result.data as RoadmapProposalRow | null;
     if (saved?.id) setActiveProposalId(saved.id);
+    setProposalReviewStatus(nextReviewStatus);
     setLastSavedFingerprint(proposalSnapshotFingerprint(snapshot));
-    toastSuccess(`Saved "${title}" under ${clientName}.`);
+    toastSuccess(opts?.successMessage ?? `Saved "${title}" under ${clientName}.`);
     await loadSavedProposals();
+    return true;
   }, [
     activeProposalId,
     clientBudget,
@@ -1011,12 +1027,37 @@ export function RoadmapPlanningView() {
     currentProposalSnapshot,
     horizon,
     loadSavedProposals,
+    proposalReviewStatus,
     roadmapTitle,
     toastError,
     toastSuccess,
     user?.email,
     user?.id,
   ]);
+
+  const submitForOpsReview = useCallback(async () => {
+    const ok = await saveCurrentProposal({
+      reviewStatus: "awaiting_ops_review",
+      successMessage: `Submitted "${roadmapTitle.trim()}" for Ops Review.`,
+    });
+    if (!ok) return;
+    setActiveProposalId(null);
+    setBuilderMode("awaiting_ops");
+    setBuilderStep("setup");
+  }, [roadmapTitle, saveCurrentProposal]);
+
+  const markReviewedByOps = useCallback(async () => {
+    const ok = await saveCurrentProposal({
+      reviewStatus: "client_ready",
+      successMessage: `"${roadmapTitle.trim()}" marked Reviewed by Ops.`,
+    });
+    if (!ok) return;
+    setActiveProposalId(null);
+    setBuilderMode("client_ready");
+    setBuilderStep("setup");
+  }, [roadmapTitle, saveCurrentProposal]);
+
+  const includeOpsPath = builderMode === "awaiting_ops" || builderMode === "client_ready";
 
   const proposalStepSaveProps = useMemo(
     () => ({
@@ -1027,42 +1068,23 @@ export function RoadmapPlanningView() {
     [saveCurrentProposal, savingProposal, activeProposalId]
   );
 
-  const showSaveBanner =
-    builderMode === "create" ||
-    activeProposalId != null ||
-    cards.length > 0 ||
-    clientLabel.trim() !== "" ||
-    roadmapTitle.trim() !== "" ||
-    clientBudget.trim() !== "";
+  const awaitingOpsProposals = useMemo(
+    () => savedProposals.filter(isAwaitingOpsReview),
+    [savedProposals]
+  );
+
+  const clientReadyProposals = useMemo(
+    () => savedProposals.filter(isClientReadyProposal),
+    [savedProposals]
+  );
+
+  /** Hide while browsing library tabs; only when drafting or an open proposal is loaded. */
+  const showSaveBanner = builderMode === "create" || activeProposalId != null;
 
   const proposalIsDirty = useMemo(() => {
     if (lastSavedFingerprint === null) return false;
-    return (
-      proposalSnapshotFingerprint({
-        version: 1,
-        clientLabel,
-        roadmapTitle,
-        horizon,
-        clientBudget,
-        proposalStartDate,
-        proposalEndDate,
-        scenarios,
-        phases,
-        cards,
-      }) !== lastSavedFingerprint
-    );
-  }, [
-    lastSavedFingerprint,
-    clientLabel,
-    roadmapTitle,
-    horizon,
-    clientBudget,
-    proposalStartDate,
-    proposalEndDate,
-    scenarios,
-    phases,
-    cards,
-  ]);
+    return proposalSnapshotFingerprint(currentProposalSnapshot()) !== lastSavedFingerprint;
+  }, [lastSavedFingerprint, currentProposalSnapshot]);
 
   useEffect(() => {
     setGuard({
@@ -1110,6 +1132,7 @@ export function RoadmapPlanningView() {
     setCards([]);
     setTargetScenarioId(init.scenarios[0]!.id);
     setActiveProposalId(null);
+    setProposalReviewStatus("draft");
     setLastSavedFingerprint(proposalSnapshotFingerprint(emptySnapshot));
     setDetailsModalKey(null);
     setScratchDraft(null);
@@ -1137,13 +1160,14 @@ export function RoadmapPlanningView() {
         startNewProposal();
         return;
       }
-      setBuilderMode("saved");
+      setActiveProposalId(null);
+      setBuilderMode(mode);
     },
     [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, startNewProposal]
   );
 
   const loadSavedProposalIntoBoard = useCallback(
-    (row: RoadmapProposalRow) => {
+    (row: RoadmapProposalRow, opts?: { entryStep?: ProposalBuilderStep; libraryMode?: ProposalBuilderMode }) => {
       const snapshot = parseProposalSnapshot(row);
       if (!snapshot) {
         toastError("This saved proposal could not be read.");
@@ -1167,6 +1191,7 @@ export function RoadmapPlanningView() {
       setProposalStartDate(snapshot.proposalStartDate);
       setProposalEndDate(snapshot.proposalEndDate);
       setProposalKind(snapshot.proposalKind ?? "program");
+      setProposalReviewStatus(snapshot.reviewStatus ?? "draft");
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -1182,6 +1207,7 @@ export function RoadmapPlanningView() {
           proposalStartDate: snapshot.proposalStartDate,
           proposalEndDate: snapshot.proposalEndDate,
           proposalKind: snapshot.proposalKind ?? "program",
+          reviewStatus: snapshot.reviewStatus ?? "draft",
           scenarios: nextScenarios,
           phases: nextPhases,
           cards: snapshot.cards,
@@ -1190,8 +1216,8 @@ export function RoadmapPlanningView() {
       setDetailsModalKey(null);
       setScratchDraft(null);
       setScratchModalFocusCompose(false);
-      setBuilderMode("saved");
-      setBuilderStep("review");
+      setBuilderMode(opts?.libraryMode ?? "saved");
+      setBuilderStep(opts?.entryStep ?? "review");
       toastSuccess(`Opened "${row.roadmap_title}".`);
     },
     [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, toastError, toastSuccess]
@@ -1249,6 +1275,83 @@ export function RoadmapPlanningView() {
       await loadSavedProposals();
     },
     [activeProposalId, loadSavedProposals, toastError, toastSuccess]
+  );
+
+  const setReviewedByOps = useCallback(
+    async (row: RoadmapProposalRow, reviewed: boolean) => {
+      const client = getSupabase();
+      if (!client) return;
+      const snapshot = parseProposalSnapshot(row);
+      if (!snapshot) {
+        toastError("This saved proposal could not be read.");
+        return;
+      }
+      const nextStatus: ProposalReviewStatus = reviewed ? "client_ready" : "awaiting_ops_review";
+      const nextSnapshot: RoadmapProposalSnapshot = {
+        ...snapshot,
+        reviewStatus: nextStatus,
+      };
+      setReviewingProposalId(row.id);
+      const { error } = await client
+        .from("roadmap_proposals")
+        .update({
+          proposal_state: nextSnapshot,
+          updated_by_user_id: user?.id ?? null,
+          updated_by_email: user?.email ?? null,
+        })
+        .eq("id", row.id);
+      setReviewingProposalId(null);
+      if (error) {
+        toastError(`Could not update review status: ${error.message}`);
+        return;
+      }
+      if (activeProposalId === row.id) {
+        setProposalReviewStatus(nextStatus);
+      }
+      toastSuccess(
+        reviewed
+          ? `"${row.roadmap_title}" moved to Client Ready Proposals.`
+          : `"${row.roadmap_title}" returned to Ops Review queue.`
+      );
+      await loadSavedProposals();
+    },
+    [activeProposalId, loadSavedProposals, toastError, toastSuccess, user?.email, user?.id]
+  );
+
+  const moveProposalToSaved = useCallback(
+    async (row: RoadmapProposalRow) => {
+      const client = getSupabase();
+      if (!client) return;
+      const snapshot = parseProposalSnapshot(row);
+      if (!snapshot) {
+        toastError("This saved proposal could not be read.");
+        return;
+      }
+      const nextSnapshot: RoadmapProposalSnapshot = {
+        ...snapshot,
+        reviewStatus: "draft",
+      };
+      setReviewingProposalId(row.id);
+      const { error } = await client
+        .from("roadmap_proposals")
+        .update({
+          proposal_state: nextSnapshot,
+          updated_by_user_id: user?.id ?? null,
+          updated_by_email: user?.email ?? null,
+        })
+        .eq("id", row.id);
+      setReviewingProposalId(null);
+      if (error) {
+        toastError(`Could not move proposal: ${error.message}`);
+        return;
+      }
+      if (activeProposalId === row.id) {
+        setProposalReviewStatus("draft");
+      }
+      toastSuccess(`"${row.roadmap_title}" moved to Saved Proposals.`);
+      await loadSavedProposals();
+    },
+    [activeProposalId, loadSavedProposals, toastError, toastSuccess, user?.email, user?.id]
   );
 
   const errMsg = state.status === "error" ? state.message : null;
@@ -2051,9 +2154,17 @@ export function RoadmapPlanningView() {
             </div>
             <div className="roadmap-hero__mode-tabs">
               <ProposalBuilderModeTabs
-                active={activeProposalId ? "saved" : builderMode}
+                active={
+                  activeProposalId
+                    ? builderMode === "awaiting_ops" || builderMode === "client_ready"
+                      ? builderMode
+                      : "saved"
+                    : builderMode
+                }
                 onChange={handleBuilderModeChange}
                 savedCount={savedProposals.length}
+                awaitingOpsCount={awaitingOpsProposals.length}
+                clientReadyCount={clientReadyProposals.length}
               />
             </div>
           </div>
@@ -2067,16 +2178,54 @@ export function RoadmapPlanningView() {
           />
         ) : null}
 
-        {builderMode === "saved" && !activeProposalId ? (
+        {(builderMode === "saved" ||
+          builderMode === "awaiting_ops" ||
+          builderMode === "client_ready") &&
+        !activeProposalId ? (
           <div className="proposal-builder-saved-wrap">
             <ProposalSavedProposalsPanel
-              proposals={savedProposals}
+              key={builderMode}
+              proposals={
+                builderMode === "awaiting_ops"
+                  ? awaitingOpsProposals
+                  : builderMode === "client_ready"
+                    ? clientReadyProposals
+                    : savedProposals
+              }
               loading={savedProposalsLoading}
               activeProposalId={activeProposalId}
               deletingProposalId={deletingProposalId}
+              reviewingProposalId={reviewingProposalId}
               onRefresh={() => void loadSavedProposals()}
-              onOpen={loadSavedProposalIntoBoard}
+              onOpen={(row) =>
+                loadSavedProposalIntoBoard(row, {
+                  libraryMode: builderMode,
+                  entryStep:
+                    builderMode === "awaiting_ops"
+                      ? "client_service"
+                      : builderMode === "client_ready"
+                        ? "client_ready"
+                        : "review",
+                })
+              }
               onDelete={(row) => void deleteSavedProposal(row)}
+              onReviewedByOpsChange={
+                builderMode === "awaiting_ops" || builderMode === "client_ready"
+                  ? (row, reviewed) => void setReviewedByOps(row, reviewed)
+                  : undefined
+              }
+              onMoveToSaved={
+                builderMode === "awaiting_ops" || builderMode === "client_ready"
+                  ? (row) => void moveProposalToSaved(row)
+                  : undefined
+              }
+              variant={
+                builderMode === "awaiting_ops"
+                  ? "awaiting_ops"
+                  : builderMode === "client_ready"
+                    ? "client_ready"
+                    : "saved"
+              }
             />
           </div>
         ) : (
@@ -2086,6 +2235,7 @@ export function RoadmapPlanningView() {
             onChange={setBuilderStep}
             setupComplete={setupComplete}
             lineItemCount={cards.length}
+            includeOpsPath={includeOpsPath}
           />
           <div className="proposal-builder__main">
             {builderStep === "setup" ? (
@@ -2230,6 +2380,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="setup"
                   onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
                   nextDisabled={!setupComplete}
                   nextLabel={
                     setupComplete ? "Continue to add packages" : "Add a roadmap name to continue"
@@ -2275,6 +2426,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="packages"
                   onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
                   nextLabel="Continue to add solutions"
                   {...proposalStepSaveProps}
                 />
@@ -2287,6 +2439,7 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="catalog"
                   onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
                   nextLabel="Organize Proposal"
                   {...proposalStepSaveProps}
                 />
@@ -2323,7 +2476,8 @@ export function RoadmapPlanningView() {
               <ProposalStepNav
                 step="board"
                 onStepChange={setBuilderStep}
-                nextLabel="Strategist Review"
+                includeOpsPath={includeOpsPath}
+                nextLabel="Preview Proposal"
                 {...proposalStepSaveProps}
               />
             ) : null}
@@ -2333,7 +2487,7 @@ export function RoadmapPlanningView() {
                 <section className="roadmap-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
                     <p className="proposal-step-panel__eyebrow">Step 5</p>
-                    <h2 className="proposal-step-panel__title">Strategist Review</h2>
+                    <h2 className="proposal-step-panel__title">Preview Proposal</h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}
                       {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""}
@@ -2374,13 +2528,15 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="review"
                   onStepChange={setBuilderStep}
-                  nextLabel="Ops Review"
+                  includeOpsPath={includeOpsPath}
+                  nextLabel={includeOpsPath ? "Ops Review" : "Submit for Ops Review"}
+                  onNext={includeOpsPath ? undefined : () => void submitForOpsReview()}
                   {...proposalStepSaveProps}
                 />
               </>
             ) : null}
 
-            {builderStep === "client_service" ? (
+            {includeOpsPath && builderStep === "client_service" ? (
               <>
                 {catalogCtx ? (
                   <ProposalClientServiceReviewPanel
@@ -2404,13 +2560,14 @@ export function RoadmapPlanningView() {
                 <ProposalStepNav
                   step="client_service"
                   onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
                   nextLabel="Client Ready Proposal"
                   {...proposalStepSaveProps}
                 />
               </>
             ) : null}
 
-            {builderStep === "client_ready" ? (
+            {includeOpsPath && builderStep === "client_ready" ? (
               <>
                 <ProposalClientReadyPanel
                   roadmapTitle={roadmapTitle}
@@ -2436,8 +2593,17 @@ export function RoadmapPlanningView() {
                   pdfGenerating={pdfGenerating}
                   onClientDownload={downloadPdf}
                   onOpsDownload={downloadOpsPdf}
+                  onReviewedByOps={() => void markReviewedByOps()}
+                  reviewedByOpsBusy={savingProposal}
                 />
-                <ProposalStepNav step="client_ready" onStepChange={setBuilderStep} {...proposalStepSaveProps} />
+                <ProposalStepNav
+                  step="client_ready"
+                  onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
+                  nextLabel="Reviewed by Ops"
+                  onNext={() => void markReviewedByOps()}
+                  {...proposalStepSaveProps}
+                />
               </>
             ) : null}
           </div>

@@ -688,6 +688,9 @@ export function PackageBuildWizard({
                       <span className="agency-pkg-build-start__card-meta">
                         {tierCount} tier{tierCount === 1 ? "" : "s"}
                       </span>
+                      {pt.card_description ? (
+                        <span className="agency-pkg-build-start__card-desc">{pt.card_description}</span>
+                      ) : null}
                     </button>
                     <div
                       className={

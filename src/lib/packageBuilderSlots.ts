@@ -52,10 +52,13 @@ function normTagArray(v: unknown): string[] {
 }
 
 function normType(r: Record<string, unknown>): PackageBuilderPackageType {
+  const cardRaw = r.card_description;
   return {
     id: String(r.id ?? ""),
     sort_order: Number(r.sort_order ?? 0),
     name: String(r.name ?? ""),
+    card_description:
+      cardRaw != null && String(cardRaw).trim() !== "" ? String(cardRaw).trim() : null,
     phase_tags: normTagArray(r.phase_tags),
     category_tags: normTagArray(r.category_tags),
     tactic_tags: normTagArray(r.tactic_tags),
@@ -122,6 +125,7 @@ export function defaultPackageBuilderTypes(): PackageBuilderPackageType[] {
       id: "local-type-seed-1",
       sort_order: 1,
       name: "General",
+      card_description: null,
       phase_tags: [],
       category_tags: [],
       tactic_tags: [],
@@ -189,7 +193,7 @@ export async function fetchPackageBuilderCatalog(
   const [typesRes, slotsRes, allowedRes] = await Promise.all([
     client
       .from("package_builder_package_types")
-      .select("id,sort_order,name,phase_tags,category_tags,tactic_tags,updated_at")
+      .select("id,sort_order,name,card_description,phase_tags,category_tags,tactic_tags,updated_at")
       .order("sort_order", { ascending: true }),
     client
       .from("package_builder_slot_templates")

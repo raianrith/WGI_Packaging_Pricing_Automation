@@ -247,7 +247,7 @@ export function PackageBuilderSlotLimitsPanel({
       const id = newLocalPackageBuilderTypeId();
       const next = [
         ...prev,
-        { id, sort_order: maxOrder + 1, name: "New template", phase_tags: [], category_tags: [], tactic_tags: [], updated_at: null },
+        { id, sort_order: maxOrder + 1, name: "New template", card_description: null, phase_tags: [], category_tags: [], tactic_tags: [], updated_at: null },
       ];
       setSelectedTypeId(id);
       setSlots((sPrev) => [
@@ -430,6 +430,7 @@ export function PackageBuilderSlotLimitsPanel({
             .update({
               sort_order: t.sort_order,
               name: t.name,
+              card_description: t.card_description?.trim() ? t.card_description.trim() : null,
               phase_tags: t.phase_tags,
               category_tags: t.category_tags,
               tactic_tags: t.tactic_tags,
@@ -451,6 +452,7 @@ export function PackageBuilderSlotLimitsPanel({
           .insert({
             sort_order: t.sort_order,
             name: t.name,
+            card_description: t.card_description?.trim() ? t.card_description.trim() : null,
             phase_tags: t.phase_tags,
             category_tags: t.category_tags,
             tactic_tags: t.tactic_tags,
@@ -756,6 +758,24 @@ export function PackageBuilderSlotLimitsPanel({
                   disabled={busy}
                   onChange={(patch) => setType(selectedType.id, patch)}
                 />
+              ) : null}
+
+              {selectedType ? (
+                <label className="admin-pkg-builder__card-desc">
+                  <span className="admin-pkg-builder__field-caption">Package Card Description</span>
+                  <textarea
+                    style={textarea}
+                    rows={3}
+                    disabled={busy}
+                    value={selectedType.card_description ?? ""}
+                    placeholder="Short blurb shown on this package’s card in Custom Package Builder"
+                    onChange={(e) =>
+                      setType(selectedType.id, {
+                        card_description: e.target.value.length > 0 ? e.target.value : null,
+                      })
+                    }
+                  />
+                </label>
               ) : null}
 
               <section className="admin-pkg-builder__section">

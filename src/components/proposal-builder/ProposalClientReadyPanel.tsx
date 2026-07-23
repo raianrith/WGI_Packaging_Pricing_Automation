@@ -31,6 +31,8 @@ type Props = {
   pdfGenerating: PdfKind | null;
   onClientDownload: () => void;
   onOpsDownload: () => void;
+  onReviewedByOps?: () => void;
+  reviewedByOpsBusy?: boolean;
 };
 
 function ProposalGanttChart({
@@ -239,6 +241,8 @@ export function ProposalClientReadyPanel({
   pdfGenerating,
   onClientDownload,
   onOpsDownload,
+  onReviewedByOps,
+  reviewedByOpsBusy = false,
 }: Props) {
   const stepMeta = proposalStepDef("client_ready");
   const [viewScenarioId, setViewScenarioId] = useState(scenarios[0]?.id ?? "");
@@ -345,6 +349,16 @@ export function ProposalClientReadyPanel({
                 </span>
               </button>
             </div>
+            {onReviewedByOps ? (
+              <button
+                type="button"
+                className="proposal-client-ready__reviewed"
+                disabled={reviewedByOpsBusy || pdfGenerating != null}
+                onClick={onReviewedByOps}
+              >
+                {reviewedByOpsBusy ? "Marking…" : "Reviewed by Ops"}
+              </button>
+            ) : null}
           </div>
         </aside>
       </header>

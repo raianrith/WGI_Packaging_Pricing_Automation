@@ -283,8 +283,8 @@ export function ProposalCatalogPanel({
       return {
         ...def,
         numberLabel: `Step ${def.number} · Pre-built`,
-        label: "Add a Pre-Built Package",
-        lead: "Pick a package you already built and add it to the active scenario and phase.",
+        label: "Copy a Previously Created Package",
+        lead: "Copy a packages that has been used before.",
       };
     }
     if (panelVariant === "configurable_packages") {
@@ -316,13 +316,13 @@ export function ProposalCatalogPanel({
     panelVariant === "configurable_packages"
       ? "Pick A Template"
       : panelVariant === "preset_packages"
-        ? "Pick A Pre-Built Custom Package"
+        ? "Copy a Previously Created Package"
         : "Pick A Custom Package";
   const packageHint =
     panelVariant === "configurable_packages"
       ? "Configurable packages from Package Builder templates"
       : panelVariant === "preset_packages"
-        ? "Pre-built packages from the configurable package builder"
+        ? "Copy a packages that has been used before"
         : "Admin-defined custom bundles";
 
   const linkModalPreviewUsd =

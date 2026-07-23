@@ -5,9 +5,13 @@ type Props = {
   onStepChange: (step: ProposalBuilderStep) => void;
   nextDisabled?: boolean;
   nextLabel?: string;
+  /** When set, replaces the default advance-to-next-step behavior. */
+  onNext?: () => void;
   onSave?: () => void;
   saving?: boolean;
   saveLabel?: string;
+  /** When false, Back/Next skip Ops Review + Client Ready. */
+  includeOpsPath?: boolean;
 };
 
 export function ProposalStepNav({
@@ -15,12 +19,14 @@ export function ProposalStepNav({
   onStepChange,
   nextDisabled,
   nextLabel,
+  onNext,
   onSave,
   saving = false,
   saveLabel = "Save proposal",
+  includeOpsPath = true,
 }: Props) {
-  const prev = adjacentStep(step, "prev");
-  const next = adjacentStep(step, "next");
+  const prev = adjacentStep(step, "prev", includeOpsPath);
+  const next = adjacentStep(step, "next", includeOpsPath);
 
   return (
     <footer className="proposal-step-nav">
@@ -44,12 +50,18 @@ export function ProposalStepNav({
             {saving ? "Saving…" : saveLabel}
           </button>
         ) : null}
-        {next ? (
+        {next || onNext ? (
           <button
             type="button"
             className="roadmap-btn roadmap-btn--primary"
-            disabled={nextDisabled}
-            onClick={() => onStepChange(next)}
+            disabled={nextDisabled || saving}
+            onClick={() => {
+              if (onNext) {
+                onNext();
+                return;
+              }
+              if (next) onStepChange(next);
+            }}
           >
             {nextLabel ?? "Continue"} →
           </button>

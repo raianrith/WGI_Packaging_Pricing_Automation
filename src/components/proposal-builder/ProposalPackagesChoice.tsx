@@ -62,7 +62,7 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
             </svg>
           </span>
           <span className="proposal-packages-choice__card-text">
-            <span className="proposal-packages-choice__card-title">Use a pre-built package</span>
+            <span className="proposal-packages-choice__card-title">Copy a Previously Created Package</span>
             <span className="proposal-packages-choice__card-desc">
               Browse packages you already built and add one ready-made to the active scenario and phase.
             </span>
@@ -105,7 +105,7 @@ export function ProposalPackagesPathBar({ path, onSelectPath, onBackToOptions }:
           className={`proposal-packages-path__tab${path === "prebuilt" ? " is-active" : ""}`}
           onClick={() => onSelectPath("prebuilt")}
         >
-          Pre-built
+          Re-Use Past Packages
         </button>
       </div>
     </div>

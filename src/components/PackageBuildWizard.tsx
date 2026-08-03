@@ -33,6 +33,15 @@ import {
   totalTierLineCount,
   type PackageTierQuantities,
 } from "../lib/packageTierQuantities";
+import {
+  bucketSelectedCount,
+  isBucketComplete,
+  lockedMinQtyForTier,
+  reservedSolutionTierIds,
+  seedQtyFromPreselected,
+  selectionRulesSummary,
+  selectionRulesValid,
+} from "../lib/packageSlotSelectionRules";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
 import { computePackageWizardDiscountPreview } from "../lib/packageWorkspaceMetrics";
 import {
@@ -46,6 +55,7 @@ import { useToast } from "../context/ToastContext";
 import type {
   Package,
   PackageBuilderPackageType,
+  PackageBuilderSlotBucket,
   PackageBuilderSlotTemplate,
   Solution,
   SolutionTier,
@@ -102,6 +112,8 @@ function slotLimitTags(slot: PackageBuilderSlotTemplate): string[] {
   if (slot.allowed_solution_tier_ids.length > 0) {
     tags.push(`${slot.allowed_solution_tier_ids.length} allowed solution components`);
   }
+  const selection = selectionRulesSummary(slot);
+  if (selection) tags.push(selection);
   if (tags.length === 0) tags.push("No limits");
   return tags;
 }
@@ -209,6 +221,147 @@ export type PackageBuildWizardProps = {
   wizardTitle?: string;
 };
 
+function WizardSolutionTierTable({
+  rows,
+  tierPickQty,
+  pricingByTierId,
+  tasks,
+  solutionById,
+  clientFacingLabels,
+  minQtyForTier,
+  onDecrease,
+  onIncrease,
+  onEditLabel,
+  emptyMessage,
+}: {
+  rows: SolutionTier[];
+  tierPickQty: PackageTierQuantities;
+  pricingByTierId: Map<string, SolutionTierPricing>;
+  tasks: TaskRow[];
+  solutionById: Map<string, Solution>;
+  clientFacingLabels: Record<string, string>;
+  minQtyForTier: (tierId: string) => number;
+  onDecrease: (tierId: string) => void;
+  onIncrease: (tier: SolutionTier, solutionName: string) => void;
+  onEditLabel: (tier: SolutionTier, solutionName: string) => void;
+  emptyMessage?: string;
+}) {
+  if (rows.length === 0) {
+    return emptyMessage ? (
+      <p className="agency-pkg-wizard__section-empty">{emptyMessage}</p>
+    ) : null;
+  }
+  return (
+    <div className="agency-pkg-wizard__table-wrap">
+      <div className="agency-pkg-wizard__table-scroll">
+        <table className="agency-pkg-wizard__table">
+          <thead>
+            <tr>
+              <th className="col-qty" scope="col">
+                Qty
+              </th>
+              <th scope="col">Solution</th>
+              <th scope="col">Tier</th>
+              <th className="col-hours" scope="col">
+                Hours
+              </th>
+              <th className="col-sell" scope="col">
+                Sell
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((t) => {
+              const pr = pricingByTierId.get(t.solution_tier_id) ?? null;
+              const h = vaultTierHours(pr, tasks, t.solution_tier_id);
+              const usd = vaultSellPriceUsd(pr);
+              const sol = solutionById.get(t.solution_id);
+              const qty = tierPickQty[t.solution_tier_id] ?? 0;
+              const minQty = minQtyForTier(t.solution_tier_id);
+              const lineHours = h != null ? h * Math.max(qty, 1) : null;
+              const lineSell = usd != null && qty > 0 ? usd * qty : null;
+              const locked = minQty > 0;
+              return (
+                <tr
+                  key={t.solution_tier_id}
+                  className={[qty > 0 ? "is-selected" : "", locked ? "is-locked" : ""]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
+                >
+                  <td className="col-qty">
+                    <div className="agency-pkg-wizard__qty">
+                      <button
+                        type="button"
+                        className="agency-pkg-wizard__qty-btn"
+                        aria-label={`Decrease quantity for ${t.solution_tier_name}`}
+                        disabled={qty <= minQty}
+                        onClick={() => onDecrease(t.solution_tier_id)}
+                      >
+                        −
+                      </button>
+                      <span className="agency-pkg-wizard__qty-value" aria-live="polite">
+                        {qty}
+                      </span>
+                      <button
+                        type="button"
+                        className="agency-pkg-wizard__qty-btn"
+                        aria-label={`Increase quantity for ${t.solution_tier_name}`}
+                        onClick={() =>
+                          onIncrease(t, sol?.solution_name ?? t.solution_tier_name)
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                    {locked ? (
+                      <span className="agency-pkg-wizard__locked-hint">Min {minQty}</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <div className="agency-pkg-wizard__sol-cell">
+                      <span>{sol?.solution_name ?? t.solution_id}</span>
+                      {qty > 0 ? (
+                        <button
+                          type="button"
+                          className="agency-pkg-wizard__label-chip"
+                          onClick={() =>
+                            onEditLabel(t, sol?.solution_name ?? t.solution_tier_name)
+                          }
+                          title="Edit client facing label"
+                        >
+                          <span className="agency-pkg-wizard__label-chip-kicker">
+                            Client label
+                          </span>
+                          <span className="agency-pkg-wizard__label-chip-value">
+                            {clientFacingLabels[t.solution_tier_id]?.trim() ||
+                              sol?.solution_name ||
+                              t.solution_tier_name}
+                          </span>
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>{t.solution_tier_name}</td>
+                  <td className="col-hours">
+                    {qty > 0 && h != null
+                      ? lineHours!.toLocaleString(undefined, { maximumFractionDigits: 1 })
+                      : h != null
+                        ? h.toLocaleString(undefined, { maximumFractionDigits: 1 })
+                        : "—"}
+                  </td>
+                  <td className="col-sell">
+                    {qty > 0 && usd != null ? fmtUsd(lineSell!) : usd != null ? fmtUsd(usd) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function PackageBuildWizard({
   variant = "embedded",
   packageTypes,
@@ -295,14 +448,16 @@ export function PackageBuildWizard({
     return slotsForPackageType(slots, selectedPackageType.id);
   }, [slots, selectedPackageType]);
 
-  const tierRows = useMemo(() => {
-    const q = tierSearch.trim().toLowerCase();
-    let rows = [...tiers].sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-    if (selectedSlot) {
-      rows = rows.filter((t) => isVaultTierAllowedForSlot(selectedSlot, t.solution_tier_id));
-    }
-    if (!q) return rows;
-    return rows.filter((t) => {
+  const tierById = useMemo(() => {
+    const m = new Map<string, SolutionTier>();
+    for (const t of tiers) m.set(t.solution_tier_id, t);
+    return m;
+  }, [tiers]);
+
+  const matchesTierSearch = useCallback(
+    (t: SolutionTier) => {
+      const q = tierSearch.trim().toLowerCase();
+      if (!q) return true;
       const sol = solutionById.get(t.solution_id);
       const solName = sol?.solution_name?.toLowerCase() ?? "";
       return (
@@ -311,12 +466,62 @@ export function PackageBuildWizard({
         t.solution_id.toLowerCase().includes(q) ||
         solName.includes(q)
       );
+    },
+    [tierSearch, solutionById]
+  );
+
+  const alwaysIncludedRows = useMemo(() => {
+    if (!selectedSlot) return [] as SolutionTier[];
+    const rows: SolutionTier[] = [];
+    for (const p of selectedSlot.preselected_tiers) {
+      const t = tierById.get(p.solution_tier_id);
+      if (t && matchesTierSearch(t)) rows.push(t);
+    }
+    return rows;
+  }, [selectedSlot, tierById, matchesTierSearch]);
+
+  const bucketSections = useMemo(() => {
+    if (!selectedSlot) return [] as { bucket: PackageBuilderSlotBucket; rows: SolutionTier[] }[];
+    return selectedSlot.buckets.map((bucket) => {
+      const rows: SolutionTier[] = [];
+      for (const tid of bucket.member_tier_ids) {
+        const t = tierById.get(tid);
+        if (t && matchesTierSearch(t)) rows.push(t);
+      }
+      return { bucket, rows };
     });
-  }, [tiers, tierSearch, solutionById, selectedSlot]);
+  }, [selectedSlot, tierById, matchesTierSearch]);
+
+  /** Free picks: allow-list filtered, excluding locked + bucket members. */
+  const additionalTierRows = useMemo(() => {
+    if (!selectedSlot) return [] as SolutionTier[];
+    const reserved = reservedSolutionTierIds(selectedSlot);
+    return [...tiers]
+      .filter((t) => !reserved.has(t.solution_tier_id))
+      .filter((t) => isVaultTierAllowedForSlot(selectedSlot, t.solution_tier_id))
+      .filter(matchesTierSearch)
+      .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
+  }, [tiers, selectedSlot, matchesTierSearch]);
+
+  const hasSelectionSections =
+    (selectedSlot?.preselected_tiers.length ?? 0) > 0 || (selectedSlot?.buckets.length ?? 0) > 0;
 
   const usage = useMemo(
     () => catalogUsageFromQuantities(tierPickQty, pricingByTierId, tasks),
     [tierPickQty, pricingByTierId, tasks]
+  );
+
+  const labelForVaultTier = useCallback(
+    (tierId: string) => {
+      const t = tierById.get(tierId);
+      if (!t) return tierId;
+      const sol = solutionById.get(t.solution_id);
+      const solName = sol?.solution_name?.trim();
+      const tierName = t.solution_tier_name.trim();
+      if (solName && tierName) return `${solName} · ${tierName}`;
+      return tierName || solName || tierId;
+    },
+    [tierById, solutionById]
   );
 
   const tierLineCount = totalTierLineCount(tierPickQty);
@@ -341,13 +546,18 @@ export function PackageBuildWizard({
     tierLineCount > 0 &&
     !overHours &&
     !overPrice &&
-    !overTierCount;
+    !overTierCount &&
+    selectionRulesValid(ceiling, tierPickQty);
 
   const canCreate = tierStepValid && !createBusy;
 
   const wizardTierDiscount = useMemo(() => {
-    if (!selectedSlot) return { level: null, hourPct: 0, tierLabel: "Tier" };
-    return packageTierDiscountSummary(selectedSlot.label, selectedPackageType?.name);
+    if (!selectedSlot) return { level: null, hourPct: 0, tierLabel: "Tier", source: "none" as const };
+    return packageTierDiscountSummary(
+      selectedSlot.label,
+      selectedPackageType?.name,
+      selectedSlot.hour_discount_pct
+    );
   }, [selectedSlot, selectedPackageType?.name]);
 
   const tierPricingMathConfig = useMemo(
@@ -419,15 +629,59 @@ export function PackageBuildWizard({
     setWizardOpen(false);
   };
 
+  const applySlotSelection = useCallback(
+    (slot: PackageBuilderSlotTemplate) => {
+      setSelectedSlot({ ...slot });
+      setTierPickQty(seedQtyFromPreselected(slot));
+      const labels: Record<string, string> = {};
+      for (const p of slot.preselected_tiers) {
+        const t = tiers.find((x) => x.solution_tier_id === p.solution_tier_id);
+        const sol = t ? solutions.find((s) => s.solution_id === t.solution_id) : null;
+        labels[p.solution_tier_id] =
+          sol?.solution_name?.trim() ||
+          t?.solution_tier_name?.trim() ||
+          p.solution_tier_id;
+      }
+      setClientFacingLabels(labels);
+      setLabelPrompt(null);
+    },
+    [tiers, solutions]
+  );
+
   const changeTierQty = (tierId: string, delta: number) => {
-    if (delta > 0 && selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tierId)) return;
-    const maxTiers =
-      selectedSlot && slotEnforcesTierCountLimit(selectedSlot)
-        ? selectedSlot.solution_tier_limit
-        : null;
+    if (!selectedSlot) return;
+    const reserved = reservedSolutionTierIds(selectedSlot);
+    const isReserved = reserved.has(tierId);
+    if (delta > 0 && !isVaultTierAllowedForSlot(selectedSlot, tierId) && !isReserved) return;
+
+    const minQty = lockedMinQtyForTier(selectedSlot, tierId);
+    const maxTiers = slotEnforcesTierCountLimit(selectedSlot)
+      ? selectedSlot.solution_tier_limit
+      : null;
+
     setTierPickQty((prev) => {
+      const cur = prev[tierId] ?? 0;
+      if (delta < 0 && cur + delta < minQty) {
+        return prev;
+      }
+
+      // New distinct pick inside a bucket: enforce pick_count.
+      if (delta > 0 && cur < 1) {
+        for (const b of selectedSlot.buckets) {
+          if (!b.member_tier_ids.includes(tierId)) continue;
+          if (bucketSelectedCount(b, prev) >= b.pick_count) {
+            queueMicrotask(() =>
+              toastNote(
+                `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
+              )
+            );
+            return prev;
+          }
+        }
+      }
+
       const result = adjustTierQuantity(prev, tierId, delta, maxTiers);
-      if (result.blockedByMaxTiers && selectedSlot) {
+      if (result.blockedByMaxTiers) {
         queueMicrotask(() =>
           toastNote(
             `This tier allows at most ${selectedSlot.solution_tier_limit} solution component line${
@@ -435,9 +689,16 @@ export function PackageBuildWizard({
             }. Remove one to add another.`
           )
         );
+        return prev;
       }
-      const nextQty = result.quantities[tierId] ?? 0;
-      if (nextQty <= 0) {
+
+      let quantities = result.quantities;
+      if (minQty > 0 && (quantities[tierId] ?? 0) < minQty) {
+        quantities = { ...quantities, [tierId]: minQty };
+      }
+
+      const nextQty = quantities[tierId] ?? 0;
+      if (nextQty <= 0 && minQty <= 0) {
         queueMicrotask(() => {
           setClientFacingLabels((labels) => {
             if (!(tierId in labels)) return labels;
@@ -446,23 +707,26 @@ export function PackageBuildWizard({
           });
         });
       }
-      return result.quantities;
+      return quantities;
     });
   };
 
   const requestAddTier = (tier: SolutionTier, solutionName: string) => {
-    if (selectedSlot && !isVaultTierAllowedForSlot(selectedSlot, tier.solution_tier_id)) return;
-    const maxTiers =
-      selectedSlot && slotEnforcesTierCountLimit(selectedSlot)
-        ? selectedSlot.solution_tier_limit
-        : null;
+    if (!selectedSlot) return;
+    const reserved = reservedSolutionTierIds(selectedSlot);
+    const isReserved = reserved.has(tier.solution_tier_id);
+    if (!isVaultTierAllowedForSlot(selectedSlot, tier.solution_tier_id) && !isReserved) return;
+
+    const maxTiers = slotEnforcesTierCountLimit(selectedSlot)
+      ? selectedSlot.solution_tier_limit
+      : null;
     const currentQty = tierPickQty[tier.solution_tier_id] ?? 0;
     if (maxTiers != null && currentQty <= 0) {
       const probe = adjustTierQuantity(tierPickQty, tier.solution_tier_id, 1, maxTiers);
       if (probe.blockedByMaxTiers) {
         toastNote(
-          `This tier allows at most ${selectedSlot!.solution_tier_limit} solution component line${
-            selectedSlot!.solution_tier_limit === 1 ? "" : "s"
+          `This tier allows at most ${selectedSlot.solution_tier_limit} solution component line${
+            selectedSlot.solution_tier_limit === 1 ? "" : "s"
           }. Remove one to add another.`
         );
         return;
@@ -471,6 +735,16 @@ export function PackageBuildWizard({
     if (currentQty > 0) {
       changeTierQty(tier.solution_tier_id, 1);
       return;
+    }
+    // Bucket gate before label prompt
+    for (const b of selectedSlot.buckets) {
+      if (!b.member_tier_ids.includes(tier.solution_tier_id)) continue;
+      if (bucketSelectedCount(b, tierPickQty) >= b.pick_count) {
+        toastNote(
+          `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
+        );
+        return;
+      }
     }
     const defaultLabel = solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
     setLabelPrompt({
@@ -863,10 +1137,7 @@ export function PackageBuildWizard({
                               : "agency-pkg-wizard__choice"
                           }
                           onClick={() => {
-                            setSelectedSlot({ ...s });
-                            setTierPickQty(emptyTierQuantities());
-                            setClientFacingLabels({});
-                            setLabelPrompt(null);
+                            applySlotSelection(s);
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">
@@ -990,106 +1261,103 @@ export function PackageBuildWizard({
                     </div>
                   </div>
 
-                  <div className="agency-pkg-wizard__table-wrap">
-                    <div className="agency-pkg-wizard__table-scroll">
-                      <table className="agency-pkg-wizard__table">
-                        <thead>
-                          <tr>
-                            <th className="col-qty" scope="col">
-                              Qty
-                            </th>
-                            <th scope="col">Solution</th>
-                            <th scope="col">Tier</th>
-                            <th className="col-hours" scope="col">
-                              Hours
-                            </th>
-                            <th className="col-sell" scope="col">
-                              Sell
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tierRows.map((t) => {
-                            const pr = pricingByTierId.get(t.solution_tier_id) ?? null;
-                            const h = vaultTierHours(pr, tasks, t.solution_tier_id);
-                            const usd = vaultSellPriceUsd(pr);
-                            const sol = solutionById.get(t.solution_id);
-                            const qty = tierPickQty[t.solution_tier_id] ?? 0;
-                            const lineHours = h != null ? h * Math.max(qty, 1) : null;
-                            const lineSell = usd != null && qty > 0 ? usd * qty : null;
-                            return (
-                              <tr
-                                key={t.solution_tier_id}
-                                className={qty > 0 ? "is-selected" : undefined}
-                              >
-                                <td className="col-qty">
-                                  <div className="agency-pkg-wizard__qty">
-                                    <button
-                                      type="button"
-                                      className="agency-pkg-wizard__qty-btn"
-                                      aria-label={`Decrease quantity for ${t.solution_tier_name}`}
-                                      disabled={qty <= 0}
-                                      onClick={() => changeTierQty(t.solution_tier_id, -1)}
-                                    >
-                                      −
-                                    </button>
-                                    <span className="agency-pkg-wizard__qty-value" aria-live="polite">
-                                      {qty}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="agency-pkg-wizard__qty-btn"
-                                      aria-label={`Increase quantity for ${t.solution_tier_name}`}
-                                      onClick={() =>
-                                        requestAddTier(t, sol?.solution_name ?? t.solution_tier_name)
-                                      }
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </td>
-                                <td>
-                                  <div className="agency-pkg-wizard__sol-cell">
-                                    <span>{sol?.solution_name ?? t.solution_id}</span>
-                                    {qty > 0 ? (
-                                      <button
-                                        type="button"
-                                        className="agency-pkg-wizard__label-chip"
-                                        onClick={() =>
-                                          openEditLabel(t, sol?.solution_name ?? t.solution_tier_name)
-                                        }
-                                        title="Edit client facing label"
-                                      >
-                                        <span className="agency-pkg-wizard__label-chip-kicker">
-                                          Client label
-                                        </span>
-                                        <span className="agency-pkg-wizard__label-chip-value">
-                                          {clientFacingLabels[t.solution_tier_id]?.trim() ||
-                                            sol?.solution_name ||
-                                            t.solution_tier_name}
-                                        </span>
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                </td>
-                                <td>{t.solution_tier_name}</td>
-                                <td className="col-hours">
-                                  {qty > 0 && h != null
-                                    ? lineHours!.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                                    : h != null
-                                      ? h.toLocaleString(undefined, { maximumFractionDigits: 1 })
-                                      : "—"}
-                                </td>
-                                <td className="col-sell">
-                                  {qty > 0 && usd != null ? fmtUsd(lineSell!) : usd != null ? fmtUsd(usd) : "—"}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  {!selectionRulesValid(selectedSlot, tierPickQty) ? (
+                    <p className="agency-pkg-wizard__alert" role="status">
+                      Complete always-included quantities and pick exactly the required number from
+                      each choice group before continuing.
+                    </p>
+                  ) : null}
+
+                  {selectedSlot.preselected_tiers.length > 0 ? (
+                    <section className="agency-pkg-wizard__sel-section">
+                      <header className="agency-pkg-wizard__sel-head">
+                        <h3 className="agency-pkg-wizard__sel-title">Always included</h3>
+                        <p className="agency-pkg-wizard__sel-lead">
+                          Locked in this tier. You can increase quantity but cannot remove them.
+                        </p>
+                      </header>
+                      <WizardSolutionTierTable
+                        rows={alwaysIncludedRows}
+                        tierPickQty={tierPickQty}
+                        pricingByTierId={pricingByTierId}
+                        tasks={tasks}
+                        solutionById={solutionById}
+                        clientFacingLabels={clientFacingLabels}
+                        minQtyForTier={(id) => lockedMinQtyForTier(selectedSlot, id)}
+                        onDecrease={(id) => changeTierQty(id, -1)}
+                        onIncrease={requestAddTier}
+                        onEditLabel={openEditLabel}
+                        emptyMessage="No matching always-included components for this filter."
+                      />
+                    </section>
+                  ) : null}
+
+                  {bucketSections.map(({ bucket, rows }) => {
+                    const picked = bucketSelectedCount(bucket, tierPickQty);
+                    const complete = isBucketComplete(bucket, tierPickQty);
+                    return (
+                      <section
+                        key={bucket.id}
+                        className={
+                          complete
+                            ? "agency-pkg-wizard__sel-section agency-pkg-wizard__sel-section--bucket is-complete"
+                            : "agency-pkg-wizard__sel-section agency-pkg-wizard__sel-section--bucket"
+                        }
+                      >
+                        <header className="agency-pkg-wizard__sel-head">
+                          <h3 className="agency-pkg-wizard__sel-title">
+                            Pick {bucket.pick_count} from {bucket.name}
+                          </h3>
+                          <p className="agency-pkg-wizard__sel-lead">
+                            {picked} of {bucket.pick_count} selected
+                            {!complete ? " — choose exactly this many distinct components." : " — done."}
+                          </p>
+                        </header>
+                        <WizardSolutionTierTable
+                          rows={rows}
+                          tierPickQty={tierPickQty}
+                          pricingByTierId={pricingByTierId}
+                          tasks={tasks}
+                          solutionById={solutionById}
+                          clientFacingLabels={clientFacingLabels}
+                          minQtyForTier={() => 0}
+                          onDecrease={(id) => changeTierQty(id, -1)}
+                          onIncrease={requestAddTier}
+                          onEditLabel={openEditLabel}
+                          emptyMessage="No matching options in this group for this filter."
+                        />
+                      </section>
+                    );
+                  })}
+
+                  <section className="agency-pkg-wizard__sel-section">
+                    <header className="agency-pkg-wizard__sel-head">
+                      <h3 className="agency-pkg-wizard__sel-title">
+                        {hasSelectionSections ? "Additional components" : "Solution components"}
+                      </h3>
+                      {hasSelectionSections ? (
+                        <p className="agency-pkg-wizard__sel-lead">
+                          Optional picks outside always-included and choice groups
+                          {selectedSlot.allowed_solution_tier_ids.length > 0
+                            ? " (filtered by this tier’s allow-list)."
+                            : "."}
+                        </p>
+                      ) : null}
+                    </header>
+                    <WizardSolutionTierTable
+                      rows={additionalTierRows}
+                      tierPickQty={tierPickQty}
+                      pricingByTierId={pricingByTierId}
+                      tasks={tasks}
+                      solutionById={solutionById}
+                      clientFacingLabels={clientFacingLabels}
+                      minQtyForTier={() => 0}
+                      onDecrease={(id) => changeTierQty(id, -1)}
+                      onIncrease={requestAddTier}
+                      onEditLabel={openEditLabel}
+                      emptyMessage="No solution components match this filter."
+                    />
+                  </section>
                 </>
               )}
 
@@ -1107,9 +1375,13 @@ export function PackageBuildWizard({
                     <header className="agency-pkg-wizard__pricing-head">
                       <div>
                         <h3 className="agency-pkg-wizard__discount-title">Package pricing</h3>
-                        {wizardTierDiscount.level ? (
+                        {wizardTierDiscount.hourPct > 0 || wizardTierDiscount.source !== "none" ? (
                           <p className="agency-pkg-wizard__discount-rule">
-                            {formatPackageTierDiscountRule(wizardTierDiscount.level)}
+                            {formatPackageTierDiscountRule(
+                              wizardTierDiscount.level,
+                              wizardTierDiscount.hourPct,
+                              wizardTierDiscount.tierLabel
+                            )}
                           </p>
                         ) : null}
                       </div>
@@ -1124,10 +1396,52 @@ export function PackageBuildWizard({
                     </header>
 
                     <dl className="agency-pkg-wizard__pricing-rows">
+                      {usage.missingHours || usage.missingPrice || usage.hours <= 0 ? (
+                        <div className="agency-pkg-wizard__pricing-row agency-pkg-wizard__pricing-row--alert">
+                          <dt>Vault data</dt>
+                          <dd>
+                            {usage.hours <= 0 ? (
+                              <p className="agency-pkg-wizard__pricing-alert-lead">
+                                Selected components have no hour totals in the vault, so pricing
+                                cannot be modeled.
+                              </p>
+                            ) : (
+                              <p className="agency-pkg-wizard__pricing-alert-lead">
+                                Some selected components are missing vault data. Totals below use
+                                only the components that have hours and/or sell price.
+                              </p>
+                            )}
+                            {usage.missingHoursTierIds.length > 0 ? (
+                              <div className="agency-pkg-wizard__pricing-alert-list">
+                                <span className="agency-pkg-wizard__pricing-alert-list-label">
+                                  Missing hours
+                                </span>
+                                <ul>
+                                  {usage.missingHoursTierIds.map((id) => (
+                                    <li key={`h-${id}`}>{labelForVaultTier(id)}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {usage.missingPriceTierIds.length > 0 ? (
+                              <div className="agency-pkg-wizard__pricing-alert-list">
+                                <span className="agency-pkg-wizard__pricing-alert-list-label">
+                                  Missing sell price
+                                </span>
+                                <ul>
+                                  {usage.missingPriceTierIds.map((id) => (
+                                    <li key={`p-${id}`}>{labelForVaultTier(id)}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </dd>
+                        </div>
+                      ) : null}
                       <div className="agency-pkg-wizard__pricing-row">
                         <dt>Discounted hours</dt>
                         <dd>
-                          {usage.missingHours ? (
+                          {discountPreview.hoursAfter == null ? (
                             "—"
                           ) : (
                             <>
@@ -1137,7 +1451,7 @@ export function PackageBuildWizard({
                               <span className="agency-pkg-wizard__discount-arrow" aria-hidden>
                                 →
                               </span>
-                              <strong>{fmtHoursTotal(discountPreview.hoursAfter ?? 0)} h</strong>
+                              <strong>{fmtHoursTotal(discountPreview.hoursAfter)} h</strong>
                               {wizardTierDiscount.hourPct > 0 ? (
                                 <span className="agency-pkg-wizard__pricing-basic-tag">
                                   −{wizardTierDiscount.hourPct}%

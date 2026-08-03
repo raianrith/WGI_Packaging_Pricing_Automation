@@ -139,7 +139,7 @@ export function computePackageWizardDiscountPreview(args: {
   const strategicValueScore = clampScore012(args.strategicValueScore);
 
   const hoursAfter =
-    args.missingHours || catalogHours <= 0
+    catalogHours <= 0
       ? null
       : Math.round(catalogHours * hourFactor * 10) / 10;
 

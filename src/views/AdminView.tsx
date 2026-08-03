@@ -1569,7 +1569,7 @@ const BULK_GLOSSARY: Record<
       },
       {
         name: "solution_tier_phase",
-        description: "Tier phase (admin-managed list; playbook order: Foundational, Acceleration Phase, Growth Engine, Other).",
+        description: "Tier phase (admin-managed list; playbook order: Diagnose, Engineer, Activate, Extras, Other).",
       },
       {
         name: "solution_tier_category",

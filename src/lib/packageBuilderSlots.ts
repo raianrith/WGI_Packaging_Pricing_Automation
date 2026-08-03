@@ -1,10 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PackageBuilderPackageType, PackageBuilderSlotTemplate, PackagePricingOverrides } from "../types";
+import type {
+  PackageBuilderPackageType,
+  PackageBuilderSlotBucket,
+  PackageBuilderSlotPreselectedTier,
+  PackageBuilderSlotTemplate,
+  PackagePricingOverrides,
+} from "../types";
 import {
   emptySlotNarrativeFields,
   narrativeFieldsFromRow,
   normalizeSlotNarrativeFields,
 } from "./packageSlotNarrative";
+import {
+  cloneBucketsForDuplicate,
+  emptySlotSelectionRules,
+  normalizePreselectedTiers,
+  normalizeSlotBuckets,
+  selectionRulesSummary,
+} from "./packageSlotSelectionRules";
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -90,7 +103,9 @@ export function emptySlotRiskPresets(): Pick<
 
 function normSlot(
   r: Record<string, unknown>,
-  allowedIds: string[]
+  allowedIds: string[],
+  preselected: PackageBuilderSlotPreselectedTier[] = [],
+  buckets: PackageBuilderSlotBucket[] = []
 ): PackageBuilderSlotTemplate {
   return {
     id: String(r.id ?? ""),
@@ -100,7 +115,14 @@ function normSlot(
     hour_ceiling: parseOptionalNumber(r.hour_ceiling),
     price_ceiling: parseOptionalNumber(r.price_ceiling),
     solution_tier_limit: parseOptionalNumber(r.solution_tier_limit),
+    hour_discount_pct: (() => {
+      const n = parseOptionalNumber(r.hour_discount_pct);
+      if (n == null) return null;
+      return Math.min(100, Math.max(0, n));
+    })(),
     allowed_solution_tier_ids: allowedIds,
+    preselected_tiers: normalizePreselectedTiers(preselected),
+    buckets: normalizeSlotBuckets(buckets),
     tier_notes:
       r.tier_notes != null && String(r.tier_notes).trim() !== ""
         ? String(r.tier_notes).trim()
@@ -145,7 +167,9 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       hour_ceiling: 40,
       price_ceiling: 50_000,
       solution_tier_limit: null,
+      hour_discount_pct: null,
       allowed_solution_tier_ids: [],
+      ...emptySlotSelectionRules(),
       tier_notes: null,
       ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
@@ -159,7 +183,9 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       hour_ceiling: 80,
       price_ceiling: 100_000,
       solution_tier_limit: null,
+      hour_discount_pct: null,
       allowed_solution_tier_ids: [],
+      ...emptySlotSelectionRules(),
       tier_notes: null,
       ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
@@ -173,7 +199,9 @@ export function defaultPackageBuilderSlots(typeId: string): PackageBuilderSlotTe
       hour_ceiling: 160,
       price_ceiling: 200_000,
       solution_tier_limit: null,
+      hour_discount_pct: null,
       allowed_solution_tier_ids: [],
+      ...emptySlotSelectionRules(),
       tier_notes: null,
       ...emptySlotRiskPresets(),
       ...emptySlotNarrativeFields(),
@@ -190,7 +218,7 @@ export type PackageBuilderCatalog = {
 export async function fetchPackageBuilderCatalog(
   client: SupabaseClient
 ): Promise<{ catalog: PackageBuilderCatalog; error: string | null }> {
-  const [typesRes, slotsRes, allowedRes] = await Promise.all([
+  const [typesRes, slotsRes, allowedRes, preRes, bucketsRes, membersRes] = await Promise.all([
     client
       .from("package_builder_package_types")
       .select("id,sort_order,name,card_description,phase_tags,category_tags,tactic_tags,updated_at")
@@ -198,11 +226,22 @@ export async function fetchPackageBuilderCatalog(
     client
       .from("package_builder_slot_templates")
       .select(
-        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,tier_notes,scope_risk,internal_coordination,client_revision_risk,strategic_value_score,package_owner,package_overview,package_overview_link,package_direction,package_what_is_it,package_why_is_it_valuable,package_when_should_it_be_used,package_assumption_prerequisites,package_in_scope,package_out_of_scope,package_final_deliverable,package_how_do_we_get_this_work_done,package_sop,package_resources,package_resource_templates,package_resource_tools,updated_at"
+        "id,package_type_id,sort_order,label,hour_ceiling,price_ceiling,solution_tier_limit,hour_discount_pct,tier_notes,scope_risk,internal_coordination,client_revision_risk,strategic_value_score,package_owner,package_overview,package_overview_link,package_direction,package_what_is_it,package_why_is_it_valuable,package_when_should_it_be_used,package_assumption_prerequisites,package_in_scope,package_out_of_scope,package_final_deliverable,package_how_do_we_get_this_work_done,package_sop,package_resources,package_resource_templates,package_resource_tools,updated_at"
       )
       .order("package_type_id", { ascending: true })
       .order("sort_order", { ascending: true }),
     client.from("package_builder_slot_allowed_tiers").select("slot_id,solution_tier_id"),
+    client
+      .from("package_builder_slot_preselected_tiers")
+      .select("slot_id,solution_tier_id,default_qty"),
+    client
+      .from("package_builder_slot_buckets")
+      .select("id,slot_id,name,pick_count,sort_order")
+      .order("sort_order", { ascending: true }),
+    client
+      .from("package_builder_slot_bucket_members")
+      .select("bucket_id,solution_tier_id,sort_order")
+      .order("sort_order", { ascending: true }),
   ]);
 
   if (typesRes.error) {
@@ -225,6 +264,60 @@ export async function fetchPackageBuilderCatalog(
     }
   }
 
+  const preBySlot = new Map<string, PackageBuilderSlotPreselectedTier[]>();
+  if (!preRes.error && preRes.data) {
+    for (const row of preRes.data as {
+      slot_id: string;
+      solution_tier_id: string;
+      default_qty: number;
+    }[]) {
+      const sid = String(row.slot_id);
+      const list = preBySlot.get(sid) ?? [];
+      list.push({
+        solution_tier_id: String(row.solution_tier_id),
+        default_qty: Number(row.default_qty) || 1,
+      });
+      preBySlot.set(sid, list);
+    }
+  }
+
+  const membersByBucket = new Map<string, string[]>();
+  if (!membersRes.error && membersRes.data) {
+    for (const row of membersRes.data as {
+      bucket_id: string;
+      solution_tier_id: string;
+      sort_order: number;
+    }[]) {
+      const bid = String(row.bucket_id);
+      const list = membersByBucket.get(bid) ?? [];
+      list.push(String(row.solution_tier_id));
+      membersByBucket.set(bid, list);
+    }
+  }
+
+  const bucketsBySlot = new Map<string, PackageBuilderSlotBucket[]>();
+  if (!bucketsRes.error && bucketsRes.data) {
+    for (const row of bucketsRes.data as {
+      id: string;
+      slot_id: string;
+      name: string;
+      pick_count: number;
+      sort_order: number;
+    }[]) {
+      const sid = String(row.slot_id);
+      const bid = String(row.id);
+      const list = bucketsBySlot.get(sid) ?? [];
+      list.push({
+        id: bid,
+        name: String(row.name ?? ""),
+        pick_count: Number(row.pick_count) || 1,
+        sort_order: Number(row.sort_order) || list.length + 1,
+        member_tier_ids: membersByBucket.get(bid) ?? [],
+      });
+      bucketsBySlot.set(sid, list);
+    }
+  }
+
   let types = (typesRes.data ?? []).map((r) => normType(r as Record<string, unknown>));
   types = types.filter((t) => t.id.length > 0);
   types.sort((a, b) => a.sort_order - b.sort_order);
@@ -242,10 +335,18 @@ export async function fetchPackageBuilderCatalog(
     };
   }
 
+  const selectionLoadNote =
+    preRes.error?.message || bucketsRes.error?.message || membersRes.error?.message || null;
+
   let slots = (slotsRes.data ?? []).map((r) => {
     const rec = r as Record<string, unknown>;
     const id = String(rec.id ?? "");
-    return normSlot(rec, allowedBySlot.get(id) ?? []);
+    return normSlot(
+      rec,
+      allowedBySlot.get(id) ?? [],
+      preBySlot.get(id) ?? [],
+      bucketsBySlot.get(id) ?? []
+    );
   });
   slots = slots.filter((s) => s.id.length > 0);
   slots.sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label));
@@ -254,7 +355,7 @@ export async function fetchPackageBuilderCatalog(
     slots = defaultPackageBuilderSlots(defaultTypeId);
   }
 
-  return { catalog: { types, slots }, error: null };
+  return { catalog: { types, slots }, error: selectionLoadNote };
 }
 
 /** @deprecated Use fetchPackageBuilderCatalog */
@@ -299,7 +400,7 @@ export function isVaultTierAllowedForSlot(
   return slot.allowed_solution_tier_ids.includes(solutionTierId);
 }
 
-/** Copy limit + allow-list + risk preset fields from one tier slot to another (labels unchanged). */
+/** Copy limit + allow-list + selection rules + risk preset fields from one tier slot to another (labels unchanged). */
 export function copySlotLimitSettings(
   source: PackageBuilderSlotTemplate
 ): Pick<
@@ -307,7 +408,10 @@ export function copySlotLimitSettings(
   | "hour_ceiling"
   | "price_ceiling"
   | "solution_tier_limit"
+  | "hour_discount_pct"
   | "allowed_solution_tier_ids"
+  | "preselected_tiers"
+  | "buckets"
   | "scope_risk"
   | "internal_coordination"
   | "client_revision_risk"
@@ -317,12 +421,79 @@ export function copySlotLimitSettings(
     hour_ceiling: source.hour_ceiling,
     price_ceiling: source.price_ceiling,
     solution_tier_limit: source.solution_tier_limit,
+    hour_discount_pct: source.hour_discount_pct,
     allowed_solution_tier_ids: [...source.allowed_solution_tier_ids],
+    preselected_tiers: normalizePreselectedTiers(source.preselected_tiers),
+    buckets: cloneBucketsForDuplicate(source.buckets),
     scope_risk: source.scope_risk ?? 0,
     internal_coordination: source.internal_coordination ?? 0,
     client_revision_risk: source.client_revision_risk ?? 0,
     strategic_value_score: source.strategic_value_score ?? 0,
   };
+}
+
+/** Replace allow-list, preselects, and buckets for a persisted slot id. */
+export async function replaceSlotSelectionChildren(
+  client: SupabaseClient,
+  persistedSlotId: string,
+  slot: Pick<
+    PackageBuilderSlotTemplate,
+    "allowed_solution_tier_ids" | "preselected_tiers" | "buckets"
+  >
+): Promise<string | null> {
+  if (!isPersistedPackageBuilderId(persistedSlotId)) return null;
+
+  await client.from("package_builder_slot_allowed_tiers").delete().eq("slot_id", persistedSlotId);
+  if (slot.allowed_solution_tier_ids.length > 0) {
+    const rows = slot.allowed_solution_tier_ids.map((solution_tier_id) => ({
+      slot_id: persistedSlotId,
+      solution_tier_id,
+    }));
+    const { error: insAllowErr } = await client.from("package_builder_slot_allowed_tiers").insert(rows);
+    if (insAllowErr) return insAllowErr.message;
+  }
+
+  await client.from("package_builder_slot_preselected_tiers").delete().eq("slot_id", persistedSlotId);
+  const preRows = normalizePreselectedTiers(slot.preselected_tiers).map((p) => ({
+    slot_id: persistedSlotId,
+    solution_tier_id: p.solution_tier_id,
+    default_qty: p.default_qty,
+  }));
+  if (preRows.length > 0) {
+    const { error: preErr } = await client.from("package_builder_slot_preselected_tiers").insert(preRows);
+    if (preErr) return preErr.message;
+  }
+
+  // Cascade deletes members.
+  await client.from("package_builder_slot_buckets").delete().eq("slot_id", persistedSlotId);
+  const buckets = normalizeSlotBuckets(slot.buckets);
+  for (const [i, b] of buckets.entries()) {
+    const { data, error: bucketErr } = await client
+      .from("package_builder_slot_buckets")
+      .insert({
+        slot_id: persistedSlotId,
+        name: b.name,
+        pick_count: b.pick_count,
+        sort_order: i + 1,
+      })
+      .select("id")
+      .single();
+    if (bucketErr || !data) return bucketErr?.message ?? "Could not create choice bucket.";
+    const bucketId = String((data as { id: string }).id);
+    const memberRows = b.member_tier_ids.map((solution_tier_id, mi) => ({
+      bucket_id: bucketId,
+      solution_tier_id,
+      sort_order: mi + 1,
+    }));
+    if (memberRows.length > 0) {
+      const { error: memErr } = await client
+        .from("package_builder_slot_bucket_members")
+        .insert(memberRows);
+      if (memErr) return memErr.message;
+    }
+  }
+
+  return null;
 }
 
 /** Package-level pricing overrides written when creating a package from this slot. */
@@ -374,8 +545,13 @@ export function slotLimitSummary(slot: PackageBuilderSlotTemplate): string {
   if (slotEnforcesTierCountLimit(slot)) {
     parts.push(`≤ ${slot.solution_tier_limit} solution component${slot.solution_tier_limit === 1 ? "" : "s"}`);
   }
+  if (slot.hour_discount_pct != null && Number.isFinite(slot.hour_discount_pct)) {
+    parts.push(`${slot.hour_discount_pct}% hour discount`);
+  }
   if (slot.allowed_solution_tier_ids.length > 0) {
     parts.push(`${slot.allowed_solution_tier_ids.length} allowed solution component(s)`);
   }
+  const selection = selectionRulesSummary(slot);
+  if (selection) parts.push(selection);
   return parts.length > 0 ? parts.join(" · ") : "No limits configured";
 }

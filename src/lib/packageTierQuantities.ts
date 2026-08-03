@@ -108,6 +108,10 @@ export type CatalogUsageFromQuantities = {
   price: number;
   missingHours: boolean;
   missingPrice: boolean;
+  /** Selected tier ids with no vault hour total. */
+  missingHoursTierIds: string[];
+  /** Selected tier ids with no vault sell price. */
+  missingPriceTierIds: string[];
 };
 
 export function catalogUsageFromQuantities(
@@ -117,18 +121,25 @@ export function catalogUsageFromQuantities(
 ): CatalogUsageFromQuantities {
   let hours = 0;
   let price = 0;
-  let missingHours = false;
-  let missingPrice = false;
+  const missingHoursTierIds: string[] = [];
+  const missingPriceTierIds: string[] = [];
   for (const id of tierIdsFromQuantities(q)) {
     const qty = q[id] ?? 0;
     if (qty <= 0) continue;
     const pr = pricingByTierId.get(id) ?? null;
     const h = vaultTierHours(pr, tasks, id);
     const usd = vaultSellPriceUsd(pr);
-    if (h == null) missingHours = true;
+    if (h == null) missingHoursTierIds.push(id);
     else hours += h * qty;
-    if (usd == null) missingPrice = true;
+    if (usd == null) missingPriceTierIds.push(id);
     else price += usd * qty;
   }
-  return { hours, price, missingHours, missingPrice };
+  return {
+    hours,
+    price,
+    missingHours: missingHoursTierIds.length > 0,
+    missingPrice: missingPriceTierIds.length > 0,
+    missingHoursTierIds,
+    missingPriceTierIds,
+  };
 }

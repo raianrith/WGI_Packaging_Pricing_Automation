@@ -3,19 +3,19 @@ import { TIER_CATEGORY_OPTIONS, displayTierCategoryLabel, sortTierCategoryLabels
 
 /** Canonical playbook order for tier lifecycle phases (first match wins). */
 export const TIER_PHASE_CANONICAL_ORDER = [
-  "Foundational",
-  "Foundational Phase",
-  "Acceleration",
-  "Acceleration Phase",
-  "Growth Engine",
+  "Diagnose",
+  "Engineer",
+  "Activate",
+  "Extras",
   "Other",
 ] as const;
 
 /** Fallback when taxonomy_options table is missing or empty. */
 export const TIER_PHASE_FALLBACK = [
-  "Foundational",
-  "Acceleration Phase",
-  "Growth Engine",
+  "Diagnose",
+  "Engineer",
+  "Activate",
+  "Extras",
   "Other",
 ] as const;
 
@@ -35,10 +35,12 @@ function tierPhaseSortRank(label: string): number {
   if (exact >= 0) return exact;
 
   const lower = v.toLowerCase();
-  if (lower.includes("foundational")) return 0;
-  if (lower.includes("acceleration")) return 2;
-  if (lower.includes("growth engine")) return 4;
-  if (lower === "other") return 5;
+  // Current playbook + legacy aliases
+  if (lower.includes("diagnose") || lower.includes("foundational")) return 0;
+  if (lower.includes("engineer") || lower.includes("acceleration")) return 1;
+  if (lower.includes("activate") || lower.includes("growth engine")) return 2;
+  if (lower.includes("extra")) return 3;
+  if (lower === "other") return 4;
 
   return 50;
 }

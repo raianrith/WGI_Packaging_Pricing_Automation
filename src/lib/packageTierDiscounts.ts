@@ -44,16 +44,53 @@ export function packageHourDiscountPctForSlotLabel(
   return level ? PACKAGE_TIER_HOUR_DISCOUNT_PCT[level] : 0;
 }
 
-export function packageTierDiscountSummary(
-  slotLabel: string,
-  packageTypeName?: string
-): { level: PackageTierLevel | null; hourPct: number; tierLabel: string } {
-  const tierLabel = slotTierShortLabel(slotLabel, packageTypeName);
-  const level = resolvePackageTierLevel(tierLabel) ?? resolvePackageTierLevel(slotLabel);
-  const hourPct = level ? PACKAGE_TIER_HOUR_DISCOUNT_PCT[level] : 0;
-  return { level, hourPct, tierLabel };
+function clampHourDiscountPct(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, Math.round(n * 10) / 10));
 }
 
-export function formatPackageTierDiscountRule(level: PackageTierLevel): string {
-  return `${TIER_LEVEL_LABEL[level]} — ${PACKAGE_TIER_HOUR_DISCOUNT_PCT[level]}% hour discount`;
+/**
+ * Prefer an explicit slot `hour_discount_pct`; otherwise Basic/Standard/Advanced from the label.
+ */
+export function packageTierDiscountSummary(
+  slotLabel: string,
+  packageTypeName?: string,
+  configuredHourDiscountPct?: number | null
+): {
+  level: PackageTierLevel | null;
+  hourPct: number;
+  tierLabel: string;
+  source: "configured" | "label" | "none";
+} {
+  const tierLabel = slotTierShortLabel(slotLabel, packageTypeName);
+  const level = resolvePackageTierLevel(tierLabel) ?? resolvePackageTierLevel(slotLabel);
+  const configured = clampHourDiscountPct(configuredHourDiscountPct);
+  if (configured != null) {
+    return { level, hourPct: configured, tierLabel, source: "configured" };
+  }
+  if (level) {
+    return { level, hourPct: PACKAGE_TIER_HOUR_DISCOUNT_PCT[level], tierLabel, source: "label" };
+  }
+  return { level: null, hourPct: 0, tierLabel, source: "none" };
+}
+
+export function formatPackageTierDiscountRule(
+  level: PackageTierLevel | null,
+  hourPct: number,
+  tierLabel?: string
+): string {
+  const name = level ? TIER_LEVEL_LABEL[level] : tierLabel?.trim() || "Tier";
+  return `${name} — ${hourPct}% hour discount`;
+}
+
+export function suggestedHourDiscountPctForLabel(
+  slotLabel: string,
+  packageTypeName?: string
+): number | null {
+  const level =
+    resolvePackageTierLevel(slotTierShortLabel(slotLabel, packageTypeName)) ??
+    resolvePackageTierLevel(slotLabel);
+  return level ? PACKAGE_TIER_HOUR_DISCOUNT_PCT[level] : null;
 }

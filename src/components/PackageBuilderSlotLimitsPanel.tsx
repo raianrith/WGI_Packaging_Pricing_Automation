@@ -6,10 +6,14 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import type { PackageBuilderPackageType, PackageBuilderSlotTemplate, SolutionTier, SolutionTierTaxonomyOptionRow } from "../types";
+import type {
+  PackageBuilderPackageType,
+  PackageBuilderSlotBucket,
+  PackageBuilderSlotTemplate,
+  SolutionTier,
+  SolutionTierTaxonomyOptionRow,
+} from "../types";
 import {
-  defaultPackageBuilderSlots,
-  defaultPackageBuilderTypes,
   emptySlotRiskPresets,
   fetchPackageBuilderCatalog,
   isPersistedPackageBuilderId,
@@ -17,12 +21,23 @@ import {
   newLocalPackageBuilderSlotId,
   newLocalPackageBuilderTypeId,
   copySlotLimitSettings,
+  replaceSlotSelectionChildren,
   slotLimitSummary,
   slotNarrativePayload,
   slotRiskPresetPayload,
   slotsForPackageType,
   normalizePackageTypeTags,
+  defaultPackageBuilderSlots,
+  defaultPackageBuilderTypes,
 } from "../lib/packageBuilderSlots";
+import { suggestedHourDiscountPctForLabel } from "../lib/packageTierDiscounts";
+import {
+  emptySlotSelectionRules,
+  newLocalBucketId,
+  normalizePreselectedTiers,
+  normalizeSlotBuckets,
+  selectionRulesSummary,
+} from "../lib/packageSlotSelectionRules";
 import {
   detailsFormPatchToSlot,
   emptySlotNarrativeFields,
@@ -55,6 +70,7 @@ const STRATEGIC_OPTIONS = ([0, 1, 2] as const).map((s) => ({
 }));
 
 type VaultTierRow = { solution_tier_id: string; label: string };
+type EditorTab = "limits" | "components" | "content" | "tags" | "discount";
 
 type Props = {
   muted: CSSProperties;
@@ -84,6 +100,20 @@ function parseOptionalTierLimit(raw: number | null): number | null {
   return n;
 }
 
+function parseOptionalHourDiscountPct(raw: number | null): number | null {
+  if (raw == null || !Number.isFinite(raw)) return null;
+  return Math.min(100, Math.max(0, Math.round(raw * 10) / 10));
+}
+
+function filterVaultTiers(tiers: VaultTierRow[], q: string): VaultTierRow[] {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return tiers;
+  return tiers.filter(
+    (t) =>
+      t.label.toLowerCase().includes(needle) || t.solution_tier_id.toLowerCase().includes(needle)
+  );
+}
+
 export function PackageBuilderSlotLimitsPanel({
   muted,
   input,
@@ -107,10 +137,12 @@ export function PackageBuilderSlotLimitsPanel({
     return defaultPackageBuilderSlots(t.id).map((s) => ({ ...s }));
   });
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [editorTab, setEditorTab] = useState<EditorTab>("limits");
   const [vaultTiers, setVaultTiers] = useState<VaultTierRow[]>([]);
-  const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
-  const [expandedDetailsSlotId, setExpandedDetailsSlotId] = useState<string | null>(null);
-  const [tierFilter, setTierFilter] = useState("");
+  const [allowFilter, setAllowFilter] = useState("");
+  const [preFilter, setPreFilter] = useState("");
+  const [bucketMemberFilter, setBucketMemberFilter] = useState("");
   const [taxonomyOptions, setTaxonomyOptions] = useState(tierTaxonomyOptionsFromRows([]));
   const [loadNote, setLoadNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -181,6 +213,11 @@ export function PackageBuilderSlotLimitsPanel({
     [types, selectedTypeId]
   );
 
+  const selectedSlot = useMemo(
+    () => typeSlots.find((s) => s.id === selectedSlotId) ?? null,
+    [typeSlots, selectedSlotId]
+  );
+
   const catalogByType = useMemo(() => {
     return sortedTypes.map((t) => ({
       type: t,
@@ -193,14 +230,30 @@ export function PackageBuilderSlotLimitsPanel({
     [catalogByType]
   );
 
-  const filteredVaultTiers = useMemo(() => {
-    const q = tierFilter.trim().toLowerCase();
-    if (!q) return vaultTiers;
-    return vaultTiers.filter(
-      (t) =>
-        t.label.toLowerCase().includes(q) || t.solution_tier_id.toLowerCase().includes(q)
+  const vaultLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of vaultTiers) m.set(t.solution_tier_id, t.label);
+    return m;
+  }, [vaultTiers]);
+
+  const allowedVaultTiers = useMemo(
+    () => filterVaultTiers(vaultTiers, allowFilter),
+    [vaultTiers, allowFilter]
+  );
+
+  const preselectAddCandidates = useMemo(() => {
+    if (!selectedSlot) return [];
+    const taken = new Set(selectedSlot.preselected_tiers.map((p) => p.solution_tier_id));
+    return filterVaultTiers(
+      vaultTiers.filter((t) => !taken.has(t.solution_tier_id)),
+      preFilter
     );
-  }, [vaultTiers, tierFilter]);
+  }, [vaultTiers, preFilter, selectedSlot]);
+
+  const bucketMemberCandidates = useMemo(
+    () => filterVaultTiers(vaultTiers, bucketMemberFilter),
+    [vaultTiers, bucketMemberFilter]
+  );
 
   const packageFormStyles = useMemo(
     () => ({
@@ -220,6 +273,17 @@ export function PackageBuilderSlotLimitsPanel({
     }),
     [input, textarea, formGrid]
   );
+
+  useEffect(() => {
+    if (!selectedTypeId) {
+      setSelectedSlotId(null);
+      return;
+    }
+    setSelectedSlotId((prev) => {
+      if (prev && typeSlots.some((s) => s.id === prev)) return prev;
+      return typeSlots[0]?.id ?? null;
+    });
+  }, [selectedTypeId, typeSlots]);
 
   const setType = (id: string, patch: Partial<PackageBuilderPackageType>) => {
     setTypes((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -241,32 +305,171 @@ export function PackageBuilderSlotLimitsPanel({
     );
   };
 
+  const addPreselectedTier = (slotId: string, tierId: string) => {
+    if (!tierId) return;
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        if (s.preselected_tiers.some((p) => p.solution_tier_id === tierId)) return s;
+        return {
+          ...s,
+          preselected_tiers: [...s.preselected_tiers, { solution_tier_id: tierId, default_qty: 1 }],
+        };
+      })
+    );
+  };
+
+  const updatePreselectedQty = (slotId: string, tierId: string, qty: number) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          preselected_tiers: s.preselected_tiers.map((p) =>
+            p.solution_tier_id === tierId
+              ? { ...p, default_qty: Math.max(1, Math.floor(qty) || 1) }
+              : p
+          ),
+        };
+      })
+    );
+  };
+
+  const removePreselectedTier = (slotId: string, tierId: string) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          preselected_tiers: s.preselected_tiers.filter((p) => p.solution_tier_id !== tierId),
+        };
+      })
+    );
+  };
+
+  const addBucket = (slotId: string) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        const maxOrder = s.buckets.reduce((m, b) => Math.max(m, b.sort_order), 0);
+        const bucket: PackageBuilderSlotBucket = {
+          id: newLocalBucketId(),
+          name: "Choice group",
+          pick_count: 1,
+          sort_order: maxOrder + 1,
+          member_tier_ids: [],
+        };
+        return { ...s, buckets: [...s.buckets, bucket] };
+      })
+    );
+  };
+
+  const updateBucket = (
+    slotId: string,
+    bucketId: string,
+    patch: Partial<PackageBuilderSlotBucket>
+  ) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          buckets: s.buckets.map((b) => (b.id === bucketId ? { ...b, ...patch } : b)),
+        };
+      })
+    );
+  };
+
+  const removeBucket = (slotId: string, bucketId: string) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        const next = s.buckets
+          .filter((b) => b.id !== bucketId)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((b, i) => ({ ...b, sort_order: i + 1 }));
+        return { ...s, buckets: next };
+      })
+    );
+  };
+
+  const moveBucket = (slotId: string, bucketId: string, dir: -1 | 1) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        const ordered = [...s.buckets].sort((a, b) => a.sort_order - b.sort_order);
+        const idx = ordered.findIndex((b) => b.id === bucketId);
+        const swap = idx + dir;
+        if (idx < 0 || swap < 0 || swap >= ordered.length) return s;
+        const tmp = ordered[idx]!;
+        ordered[idx] = ordered[swap]!;
+        ordered[swap] = tmp;
+        return {
+          ...s,
+          buckets: ordered.map((b, i) => ({ ...b, sort_order: i + 1 })),
+        };
+      })
+    );
+  };
+
+  const toggleBucketMember = (slotId: string, bucketId: string, tierId: string, on: boolean) => {
+    setSlots((prev) =>
+      prev.map((s) => {
+        if (s.id !== slotId) return s;
+        return {
+          ...s,
+          buckets: s.buckets.map((b) => {
+            if (b.id !== bucketId) return b;
+            const cur = new Set(b.member_tier_ids);
+            if (on) cur.add(tierId);
+            else cur.delete(tierId);
+            return { ...b, member_tier_ids: [...cur] };
+          }),
+        };
+      })
+    );
+  };
+
   const addPackageType = () => {
     setTypes((prev) => {
       const maxOrder = prev.reduce((m, t) => Math.max(m, t.sort_order), 0);
       const id = newLocalPackageBuilderTypeId();
       const next = [
         ...prev,
-        { id, sort_order: maxOrder + 1, name: "New template", card_description: null, phase_tags: [], category_tags: [], tactic_tags: [], updated_at: null },
+        {
+          id,
+          sort_order: maxOrder + 1,
+          name: "New template",
+          card_description: null,
+          phase_tags: [],
+          category_tags: [],
+          tactic_tags: [],
+          updated_at: null,
+        },
       ];
       setSelectedTypeId(id);
+      const newSlotId = newLocalPackageBuilderSlotId();
       setSlots((sPrev) => [
         ...sPrev,
         {
-          id: newLocalPackageBuilderSlotId(),
+          id: newSlotId,
           package_type_id: id,
           sort_order: 1,
           label: "Basic",
           hour_ceiling: null,
           price_ceiling: null,
           solution_tier_limit: null,
+          hour_discount_pct: null,
           allowed_solution_tier_ids: [],
           tier_notes: null,
           ...emptySlotRiskPresets(),
           ...emptySlotNarrativeFields(),
+          ...emptySlotSelectionRules(),
           updated_at: null,
         },
       ]);
+      setSelectedSlotId(newSlotId);
+      setEditorTab("limits");
       return next;
     });
   };
@@ -290,27 +493,32 @@ export function PackageBuilderSlotLimitsPanel({
 
   const addSlot = () => {
     if (!selectedTypeId) return;
+    const newId = newLocalPackageBuilderSlotId();
     setSlots((prev) => {
       const inType = prev.filter((s) => s.package_type_id === selectedTypeId);
       const maxOrder = inType.reduce((m, s) => Math.max(m, s.sort_order), 0);
       return [
         ...prev,
         {
-          id: newLocalPackageBuilderSlotId(),
+          id: newId,
           package_type_id: selectedTypeId,
           sort_order: maxOrder + 1,
           label: "New tier",
           hour_ceiling: null,
           price_ceiling: null,
           solution_tier_limit: null,
+          hour_discount_pct: null,
           allowed_solution_tier_ids: [],
           tier_notes: null,
           ...emptySlotRiskPresets(),
           ...emptySlotNarrativeFields(),
+          ...emptySlotSelectionRules(),
           updated_at: null,
         },
       ];
     });
+    setSelectedSlotId(newId);
+    setEditorTab("limits");
   };
 
   const copySettingsFromTier = (targetId: string, sourceId: string) => {
@@ -331,6 +539,7 @@ export function PackageBuilderSlotLimitsPanel({
     if (!selectedTypeId) return;
     const source = slots.find((s) => s.id === sourceId);
     if (!source) return;
+    const newId = newLocalPackageBuilderSlotId();
     setSlots((prev) => {
       const inType = prev.filter((s) => s.package_type_id === selectedTypeId);
       const maxOrder = inType.reduce((m, s) => Math.max(m, s.sort_order), 0);
@@ -342,7 +551,7 @@ export function PackageBuilderSlotLimitsPanel({
         ...prev,
         {
           ...source,
-          id: newLocalPackageBuilderSlotId(),
+          id: newId,
           package_type_id: selectedTypeId,
           sort_order: maxOrder + 1,
           label: copyLabel,
@@ -351,6 +560,8 @@ export function PackageBuilderSlotLimitsPanel({
         },
       ];
     });
+    setSelectedSlotId(newId);
+    setEditorTab("limits");
   };
 
   const removeSlot = (id: string) => {
@@ -358,6 +569,7 @@ export function PackageBuilderSlotLimitsPanel({
     const count = slots.filter((s) => s.package_type_id === selectedTypeId).length;
     if (count <= 1) return;
     if (!globalThis.confirm("Remove this package tier slot?")) return;
+    const remaining = typeSlots.filter((s) => s.id !== id);
     setSlots((prev) => {
       const next = prev.filter((s) => s.id !== id);
       const byType = new Map<string, PackageBuilderSlotTemplate[]>();
@@ -373,7 +585,9 @@ export function PackageBuilderSlotLimitsPanel({
       }
       return out;
     });
-    if (expandedSlotId === id) setExpandedSlotId(null);
+    if (selectedSlotId === id) {
+      setSelectedSlotId(remaining[0]?.id ?? null);
+    }
   };
 
   const save = async () => {
@@ -475,6 +689,9 @@ export function PackageBuilderSlotLimitsPanel({
           hour_ceiling: parseOptionalCeiling(s.hour_ceiling),
           price_ceiling: parseOptionalCeiling(s.price_ceiling),
           solution_tier_limit: parseOptionalTierLimit(s.solution_tier_limit),
+          hour_discount_pct: parseOptionalHourDiscountPct(s.hour_discount_pct),
+          preselected_tiers: normalizePreselectedTiers(s.preselected_tiers),
+          buckets: normalizeSlotBuckets(s.buckets),
           ...slotNarrativePayload(s),
         };
       });
@@ -530,6 +747,7 @@ export function PackageBuilderSlotLimitsPanel({
           hour_ceiling: s.hour_ceiling,
           price_ceiling: s.price_ceiling,
           solution_tier_limit: s.solution_tier_limit,
+          hour_discount_pct: s.hour_discount_pct,
           ...slotRiskPresetPayload(s),
           ...narrative,
           updated_at: nowIso,
@@ -555,7 +773,8 @@ export function PackageBuilderSlotLimitsPanel({
             hour_ceiling: s.hour_ceiling,
             price_ceiling: s.price_ceiling,
             solution_tier_limit: s.solution_tier_limit,
-            ...slotRiskPresetPayload(s),
+            hour_discount_pct: s.hour_discount_pct,
+              ...slotRiskPresetPayload(s),
             ...slotNarrativePayload(s),
           })
           .select("id")
@@ -570,17 +789,14 @@ export function PackageBuilderSlotLimitsPanel({
       for (const s of orderedSlots) {
         const persistedSlotId = slotIdMap.get(s.id) ?? s.id;
         if (!isPersistedPackageBuilderId(persistedSlotId)) continue;
-        await client.from("package_builder_slot_allowed_tiers").delete().eq("slot_id", persistedSlotId);
-        if (s.allowed_solution_tier_ids.length > 0) {
-          const rows = s.allowed_solution_tier_ids.map((solution_tier_id) => ({
-            slot_id: persistedSlotId,
-            solution_tier_id,
-          }));
-          const { error: insAllowErr } = await client.from("package_builder_slot_allowed_tiers").insert(rows);
-          if (insAllowErr) {
-            setOpErr(friendlyMutationMessage(insAllowErr.message));
-            return;
-          }
+        const childErr = await replaceSlotSelectionChildren(client, persistedSlotId, {
+          allowed_solution_tier_ids: s.allowed_solution_tier_ids,
+          preselected_tiers: normalizePreselectedTiers(s.preselected_tiers),
+          buckets: normalizeSlotBuckets(s.buckets),
+        });
+        if (childErr) {
+          setOpErr(friendlyMutationMessage(childErr));
+          return;
         }
       }
 
@@ -593,17 +809,25 @@ export function PackageBuilderSlotLimitsPanel({
     }
   };
 
-
   const selectedTypeName =
     types.find((t) => t.id === selectedTypeId)?.name?.trim() || "Template";
+
+  const layoutClass = selectedSlot
+    ? "admin-pkg-builder__layout admin-pkg-builder__layout--tier-focus"
+    : "admin-pkg-builder__layout";
+
+  const sortedBuckets = selectedSlot
+    ? [...selectedSlot.buckets].sort((a, b) => a.sort_order - b.sort_order)
+    : [];
 
   return (
     <div className="admin-pkg-builder">
       <header className="admin-pkg-builder__hero">
         <h2 className="admin-pkg-builder__title">Configurable Package</h2>
         <p className="admin-pkg-builder__lead" style={muted}>
-          Templates group your configurable packages. Each template has tiers with optional hour, price, and solution component limits.
-          Leave limits blank for no cap; leave the component allow-list empty to permit any solution.
+          Templates group your configurable packages. Select a template, then a tier, to set limits,
+          always-included components, choice buckets, and package content. Leave the allow-list empty
+          to permit any vault solution for additional picks.
         </p>
         <div className="admin-pkg-builder__stats" aria-label="Configuration summary">
           <span className="admin-pkg-builder__stat">
@@ -619,13 +843,14 @@ export function PackageBuilderSlotLimitsPanel({
         <p className="admin-pkg-builder__alert" role="status">
           Could not load full configuration ({loadNote}). Run{" "}
           <code>package_builder_types_and_slots_v2.sql</code>,{" "}
-          <code>package_builder_slot_narrative_fields.sql</code>, and{" "}
-          <code>package_builder_type_taxonomy_tags.sql</code> in Supabase if tables or columns are
+          <code>package_builder_slot_narrative_fields.sql</code>,{" "}
+          <code>package_builder_type_taxonomy_tags.sql</code>, and{" "}
+          <code>package_builder_slot_selection_rules.sql</code>, and <code>package_builder_slot_hour_discount.sql</code> in Supabase if tables or columns are
           missing.
         </p>
       ) : null}
 
-      <div className="admin-pkg-builder__layout">
+      <div className={layoutClass}>
         <aside className="admin-pkg-builder__types" aria-label="Templates">
           <div className="admin-pkg-builder__panel-head">
             <h3 className="admin-pkg-builder__panel-title">Templates</h3>
@@ -713,18 +938,20 @@ export function PackageBuilderSlotLimitsPanel({
           )}
         </aside>
 
-        <main className="admin-pkg-builder__main" aria-label="Package tiers">
-          {!selectedTypeId ? (
+        {!selectedTypeId ? (
+          <main className="admin-pkg-builder__main" aria-label="Package tiers">
             <p className="admin-pkg-builder__empty" style={muted}>
               Select a template to configure its tiers.
             </p>
-          ) : (
-            <>
+          </main>
+        ) : (
+          <>
+            <div className="admin-pkg-builder__tiers-pane" aria-label="Template tiers">
               <div className="admin-pkg-builder__main-head">
                 <div>
                   <h3 className="admin-pkg-builder__main-title">{selectedTypeName}</h3>
                   <p className="admin-pkg-builder__main-hint" style={muted}>
-                    Configure limits and content for each package tier in this family.
+                    Select a tier to edit limits, components, tags, and package content.
                   </p>
                 </div>
                 <div className="admin-pkg-builder__main-actions">
@@ -750,17 +977,6 @@ export function PackageBuilderSlotLimitsPanel({
               </div>
 
               {selectedType ? (
-                <PackageTypeTaxonomyTagsEditor
-                  phaseTags={selectedType.phase_tags}
-                  categoryTags={selectedType.category_tags}
-                  tacticTags={selectedType.tactic_tags}
-                  options={taxonomyOptions}
-                  disabled={busy}
-                  onChange={(patch) => setType(selectedType.id, patch)}
-                />
-              ) : null}
-
-              {selectedType ? (
                 <label className="admin-pkg-builder__card-desc">
                   <span className="admin-pkg-builder__field-caption">Package Card Description</span>
                   <textarea
@@ -778,365 +994,753 @@ export function PackageBuilderSlotLimitsPanel({
                 </label>
               ) : null}
 
-              <section className="admin-pkg-builder__section">
-                <div className="admin-pkg-builder__section-head">
-                  <h4 className="admin-pkg-builder__section-title">Package tiers</h4>
-                  <p className="admin-pkg-builder__section-lead" style={muted}>
-                    Hour, price, and solution component limits apply when agency users build from this template.
-                  </p>
-                </div>
-                <div className="admin-pkg-builder__tier-list">
+              <div className="admin-pkg-builder__tier-list">
                 {typeSlots.map((r) => {
-                  const vaultOpen = expandedSlotId === r.id;
-                  const detailsOpen = expandedDetailsSlotId === r.id;
-                  const hasNarrative = Object.values(slotToDetailsFormValues(r)).some((v) => v.trim());
-                  const vaultLabel =
-                    r.allowed_solution_tier_ids.length === 0
-                      ? "Any solution component"
-                      : `${r.allowed_solution_tier_ids.length} solution component${
-                          r.allowed_solution_tier_ids.length === 1 ? "" : "s"
-                        }`;
+                  const active = selectedSlotId === r.id;
+                  const rulesSummary = selectionRulesSummary(r);
                   return (
-                    <article key={r.id} className="admin-pkg-builder__tier-card">
-                      <div className="admin-pkg-builder__tier-head">
+                    <div
+                      key={r.id}
+                      className={
+                        active
+                          ? "admin-pkg-builder__tier-row is-active"
+                          : "admin-pkg-builder__tier-row"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="admin-pkg-builder__tier-row-main"
+                        disabled={busy}
+                        onClick={() => {
+                          setSelectedSlotId(r.id);
+                          setEditorTab("limits");
+                        }}
+                      >
                         <span className="admin-pkg-builder__tier-order">{r.sort_order}</span>
-                        <div className="admin-pkg-builder__tier-label-wrap">
+                        <span className="admin-pkg-builder__tier-row-body">
                           <input
                             className="admin-pkg-builder__tier-label"
                             style={input}
                             value={r.label}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) => setSlot(r.id, { label: e.target.value })}
+                            onFocus={() => setSelectedSlotId(r.id)}
                             aria-label={`Tier ${r.sort_order} label`}
                           />
-                        </div>
-                        <div className="admin-pkg-builder__tier-toolbar">
-                          <select
-                            className="admin-pkg-builder__copy-select"
-                            style={input}
-                            defaultValue=""
-                            disabled={busy || typeSlots.length <= 1}
-                            aria-label={`Copy settings into ${r.label}`}
-                            onChange={(e) => {
-                              const sourceId = e.target.value;
-                              if (sourceId) copySettingsFromTier(r.id, sourceId);
-                              e.target.value = "";
-                            }}
-                          >
-                            <option value="">Copy from…</option>
-                            {typeSlots
-                              .filter((s) => s.id !== r.id)
-                              .map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.label.trim() || `Tier ${s.sort_order}`}
-                                </option>
-                              ))}
-                          </select>
-                          <button
-                            type="button"
-                            style={btnSm}
-                            disabled={busy}
-                            title="Duplicate tier with same limits and allow-list"
-                            onClick={() => duplicateSlot(r.id)}
-                          >
-                            Duplicate
-                          </button>
-                          <button
-                            type="button"
-                            style={btnDangerSm}
-                            disabled={busy || typeSlots.length <= 1}
-                            onClick={() => removeSlot(r.id)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="admin-pkg-builder__tier-body">
-                        <div className="admin-pkg-builder__limits-panel">
-                          <p className="admin-pkg-builder__limits-label">Tier limits</p>
-                          <div className="admin-pkg-builder__limits">
-                          <label className="admin-pkg-builder__field">
-                            <span className="admin-pkg-builder__field-caption">Hour ceiling</span>
-                            <input
-                              style={input}
-                              type="number"
-                              min={0}
-                              step={1}
-                              placeholder="No limit"
-                              value={r.hour_ceiling ?? ""}
-                              onChange={(e) =>
-                                setSlot(r.id, {
-                                  hour_ceiling: e.target.value === "" ? null : Number(e.target.value),
-                                })
-                              }
-                              aria-label={`Tier ${r.sort_order} hour ceiling`}
-                            />
-                          </label>
-                          <label className="admin-pkg-builder__field">
-                            <span className="admin-pkg-builder__field-caption">Price ceiling (USD)</span>
-                            <input
-                              style={input}
-                              type="number"
-                              min={0}
-                              step={1000}
-                              placeholder="No limit"
-                              value={r.price_ceiling ?? ""}
-                              onChange={(e) =>
-                                setSlot(r.id, {
-                                  price_ceiling: e.target.value === "" ? null : Number(e.target.value),
-                                })
-                              }
-                              aria-label={`Tier ${r.sort_order} price ceiling`}
-                            />
-                          </label>
-                          <label className="admin-pkg-builder__field">
-                            <span className="admin-pkg-builder__field-caption">Solution component limit</span>
-                            <input
-                              style={input}
-                              type="number"
-                              min={1}
-                              step={1}
-                              placeholder="No limit"
-                              value={r.solution_tier_limit ?? ""}
-                              onChange={(e) =>
-                                setSlot(r.id, {
-                                  solution_tier_limit:
-                                    e.target.value === "" ? null : Number(e.target.value),
-                                })
-                              }
-                              aria-label={`Tier ${r.sort_order} solution tier limit`}
-                            />
-                          </label>
-                        </div>
-                        </div>
-
-                        <div className="admin-pkg-builder__limits-panel">
-                          <p className="admin-pkg-builder__limits-label">Preset risk &amp; strategic scores</p>
-                          <p className="admin-pkg-builder__limits-hint">
-                            Applied at package level when someone finishes building from this tier.
-                          </p>
-                          <div className="admin-pkg-builder__limits admin-pkg-builder__limits--scores">
-                            <label className="admin-pkg-builder__field">
-                              <span className="admin-pkg-builder__field-caption">Scope risk</span>
-                              <select
-                                className="admin-pkg-builder__score-select"
-                                style={input}
-                                title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
-                                value={String(clampScore012(r.scope_risk))}
-                                onChange={(e) =>
-                                  setSlot(r.id, { scope_risk: clampScore012(Number(e.target.value)) })
-                                }
-                                aria-label={`Tier ${r.sort_order} scope risk`}
-                              >
-                                {SCOPE_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="admin-pkg-builder__field">
-                              <span className="admin-pkg-builder__field-caption">Internal coordination</span>
-                              <select
-                                className="admin-pkg-builder__score-select"
-                                style={input}
-                                title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
-                                value={String(clampScore012(r.internal_coordination))}
-                                onChange={(e) =>
-                                  setSlot(r.id, {
-                                    internal_coordination: clampScore012(Number(e.target.value)),
-                                  })
-                                }
-                                aria-label={`Tier ${r.sort_order} internal coordination`}
-                              >
-                                {INTERNAL_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="admin-pkg-builder__field">
-                              <span className="admin-pkg-builder__field-caption">Client revision risk</span>
-                              <select
-                                className="admin-pkg-builder__score-select"
-                                style={input}
-                                title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
-                                value={String(clampScore012(r.client_revision_risk))}
-                                onChange={(e) =>
-                                  setSlot(r.id, {
-                                    client_revision_risk: clampScore012(Number(e.target.value)),
-                                  })
-                                }
-                                aria-label={`Tier ${r.sort_order} client revision risk`}
-                              >
-                                {CLIENT_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="admin-pkg-builder__field">
-                              <span className="admin-pkg-builder__field-caption">Strategic value</span>
-                              <select
-                                className="admin-pkg-builder__score-select"
-                                style={input}
-                                title={strategicValueScoreSelectTitle()}
-                                value={String(clampScore012(r.strategic_value_score))}
-                                onChange={(e) =>
-                                  setSlot(r.id, {
-                                    strategic_value_score: clampScore012(Number(e.target.value)),
-                                  })
-                                }
-                                aria-label={`Tier ${r.sort_order} strategic value`}
-                              >
-                                {STRATEGIC_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        </div>
-
-                        <label className="admin-pkg-builder__field admin-pkg-builder__field--full">
-                          <span className="admin-pkg-builder__field-caption">
-                            Tier disclaimer note
+                          <span className="admin-pkg-builder__tier-row-meta" style={muted}>
+                            {slotLimitSummary(r)}
+                            {rulesSummary ? ` · ${rulesSummary}` : ""}
                           </span>
-                          <textarea
-                            className="admin-pkg-builder__notes-input"
-                            style={input}
-                            rows={3}
-                            value={r.tier_notes ?? ""}
-                            onChange={(e) =>
-                              setSlot(r.id, {
-                                tier_notes: e.target.value.length > 0 ? e.target.value : null,
-                              })
-                            }
-                            placeholder="Shown when users select this package tier in Build a Package (optional)."
-                            aria-label={`Tier ${r.sort_order} disclaimer note`}
-                          />
-                        </label>
-
-                        <div className="admin-pkg-builder__vault-row">
-                          <span className="admin-pkg-builder__vault-label">Package content</span>
-                          <button
-                            type="button"
-                            className={
-                              detailsOpen
-                                ? "admin-pkg-builder__vault-badge admin-pkg-builder__vault-badge--open"
-                                : "admin-pkg-builder__vault-badge"
-                            }
-                            style={btnSm}
-                            onClick={() =>
-                              setExpandedDetailsSlotId((prev) => (prev === r.id ? null : r.id))
-                            }
-                          >
-                            {detailsOpen ? "Hide details" : hasNarrative ? "Edit details" : "Add details"}
-                          </button>
-                        </div>
-
-                        {detailsOpen ? (
-                          <div className="admin-pkg-builder__details-panel">
-                            <div className="admin-pkg-builder__details-head">
-                              <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
-                                Overview, scope, process, and resources copied to packages built from this
-                                tier. Package category is set from the template name.
-                              </p>
-                              <select
-                                className="admin-pkg-builder__copy-select admin-pkg-builder__copy-select--details"
-                                style={input}
-                                defaultValue=""
-                                disabled={busy || typeSlots.length <= 1}
-                                aria-label={`Copy package details into ${r.label}`}
-                                onChange={(e) => {
-                                  const sourceId = e.target.value;
-                                  if (sourceId) copyDetailsFromTier(r.id, sourceId);
-                                  e.target.value = "";
-                                }}
-                              >
-                                <option value="">Copy details from…</option>
-                                {typeSlots
-                                  .filter((s) => s.id !== r.id)
-                                  .map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.label.trim() || `Tier ${s.sort_order}`}
-                                    </option>
-                                  ))}
-                              </select>
-                            </div>
-                            <PackageDetailsFormBlock
-                              hideCategory
-                              values={slotToDetailsFormValues(r)}
-                              onChange={(key, value) =>
-                                setSlot(r.id, detailsFormPatchToSlot(key, value))
-                              }
-                              styles={packageFormStyles}
-                            />
-                          </div>
-                        ) : null}
-
-                        <div className="admin-pkg-builder__vault-row">
-                          <span className="admin-pkg-builder__vault-label">Allowed solution components</span>
-                          <button
-                            type="button"
-                            className={
-                              vaultOpen
-                                ? "admin-pkg-builder__vault-badge admin-pkg-builder__vault-badge--open"
-                                : "admin-pkg-builder__vault-badge"
-                            }
-                            style={btnSm}
-                            onClick={() => setExpandedSlotId((prev) => (prev === r.id ? null : r.id))}
-                          >
-                            {vaultLabel}
-                          </button>
-                        </div>
-
-                        {vaultOpen ? (
-                          <div className="admin-pkg-builder__vault-panel">
-                            <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
-                              Leave all unchecked to allow any solution component from the directory.
-                            </p>
-                            <input
-                              className="admin-pkg-builder__vault-search"
-                              style={input}
-                              type="search"
-                              placeholder="Filter solution components…"
-                              value={tierFilter}
-                              onChange={(e) => setTierFilter(e.target.value)}
-                            />
-                            <div className="admin-pkg-builder__vault-grid">
-                              {filteredVaultTiers.map((vt) => {
-                                const checked = r.allowed_solution_tier_ids.includes(
-                                  vt.solution_tier_id
-                                );
-                                return (
-                                  <label key={vt.solution_tier_id} className="admin-pkg-builder__vault-check">
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={(e) =>
-                                        toggleAllowedTier(r.id, vt.solution_tier_id, e.target.checked)
-                                      }
-                                    />
-                                    <span>{vt.label}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
+                        </span>
+                      </button>
+                      <div className="admin-pkg-builder__tier-toolbar">
+                        <select
+                          className="admin-pkg-builder__copy-select"
+                          style={input}
+                          defaultValue=""
+                          disabled={busy || typeSlots.length <= 1}
+                          aria-label={`Copy settings into ${r.label}`}
+                          onChange={(e) => {
+                            const sourceId = e.target.value;
+                            if (sourceId) copySettingsFromTier(r.id, sourceId);
+                            e.target.value = "";
+                          }}
+                        >
+                          <option value="">Copy from…</option>
+                          {typeSlots
+                            .filter((s) => s.id !== r.id)
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.label.trim() || `Tier ${s.sort_order}`}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          style={btnSm}
+                          disabled={busy}
+                          title="Duplicate tier with same limits and selection rules"
+                          onClick={() => duplicateSlot(r.id)}
+                        >
+                          Duplicate
+                        </button>
+                        <button
+                          type="button"
+                          style={btnDangerSm}
+                          disabled={busy || typeSlots.length <= 1}
+                          onClick={() => removeSlot(r.id)}
+                        >
+                          Remove
+                        </button>
                       </div>
-                    </article>
+                    </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {selectedSlot ? (
+              <div className="admin-pkg-builder__tier-editor" aria-label="Tier editor">
+                <header className="admin-pkg-builder__editor-head">
+                  <div className="admin-pkg-builder__editor-head-text">
+                    <p className="admin-pkg-builder__editor-kicker">Editing tier</p>
+                    <h3 className="admin-pkg-builder__editor-title">
+                      {selectedSlot.label.trim() || `Tier ${selectedSlot.sort_order}`}
+                    </h3>
+                    <p className="admin-pkg-builder__editor-meta">
+                      {slotLimitSummary(selectedSlot)}
+                    </p>
+                  </div>
+                </header>
+                <div className="admin-pkg-builder__editor-tabs" role="tablist">
+                  {(
+                    [
+                      ["limits", "Limits & risk"],
+                      ["components", "Solution components"],
+                      ["tags", "Playbook tags"],
+                      ["content", "Package content"],
+                      ["discount", "Discount"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={editorTab === id}
+                      className={
+                        editorTab === id
+                          ? "admin-pkg-builder__editor-tab is-active"
+                          : "admin-pkg-builder__editor-tab"
+                      }
+                      disabled={busy}
+                      onClick={() => setEditorTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-              </section>
-            </>
-          )}
-        </main>
+
+                {editorTab === "limits" ? (
+                  <div className="admin-pkg-builder__editor-panel">
+                    <div className="admin-pkg-builder__limits-panel">
+                      <p className="admin-pkg-builder__limits-label">Tier limits</p>
+                      <div className="admin-pkg-builder__limits">
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Hour ceiling</span>
+                          <input
+                            style={input}
+                            type="number"
+                            min={0}
+                            step={1}
+                            placeholder="No limit"
+                            value={selectedSlot.hour_ceiling ?? ""}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                hour_ceiling: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} hour ceiling`}
+                          />
+                        </label>
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Price ceiling (USD)</span>
+                          <input
+                            style={input}
+                            type="number"
+                            min={0}
+                            step={1000}
+                            placeholder="No limit"
+                            value={selectedSlot.price_ceiling ?? ""}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                price_ceiling: e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} price ceiling`}
+                          />
+                        </label>
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Solution component limit</span>
+                          <input
+                            style={input}
+                            type="number"
+                            min={1}
+                            step={1}
+                            placeholder="No limit"
+                            value={selectedSlot.solution_tier_limit ?? ""}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                solution_tier_limit:
+                                  e.target.value === "" ? null : Number(e.target.value),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} solution tier limit`}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="admin-pkg-builder__limits-panel">
+                      <p className="admin-pkg-builder__limits-label">Preset risk &amp; strategic scores</p>
+                      <p className="admin-pkg-builder__limits-hint">
+                        Applied at package level when someone finishes building from this tier.
+                      </p>
+                      <div className="admin-pkg-builder__limits admin-pkg-builder__limits--scores">
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Scope risk</span>
+                          <select
+                            className="admin-pkg-builder__score-select"
+                            style={input}
+                            title={riskScore012SelectTitle(SCOPE_RISK_SCORE_HINTS)}
+                            value={String(clampScore012(selectedSlot.scope_risk))}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                scope_risk: clampScore012(Number(e.target.value)),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} scope risk`}
+                          >
+                            {SCOPE_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Internal coordination</span>
+                          <select
+                            className="admin-pkg-builder__score-select"
+                            style={input}
+                            title={riskScore012SelectTitle(INTERNAL_COORDINATION_SCORE_HINTS)}
+                            value={String(clampScore012(selectedSlot.internal_coordination))}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                internal_coordination: clampScore012(Number(e.target.value)),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} internal coordination`}
+                          >
+                            {INTERNAL_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Client revision risk</span>
+                          <select
+                            className="admin-pkg-builder__score-select"
+                            style={input}
+                            title={riskScore012SelectTitle(CLIENT_REVISION_RISK_SCORE_HINTS)}
+                            value={String(clampScore012(selectedSlot.client_revision_risk))}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                client_revision_risk: clampScore012(Number(e.target.value)),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} client revision risk`}
+                          >
+                            {CLIENT_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Strategic value</span>
+                          <select
+                            className="admin-pkg-builder__score-select"
+                            style={input}
+                            title={strategicValueScoreSelectTitle()}
+                            value={String(clampScore012(selectedSlot.strategic_value_score))}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                strategic_value_score: clampScore012(Number(e.target.value)),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} strategic value`}
+                          >
+                            {STRATEGIC_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    <label className="admin-pkg-builder__field admin-pkg-builder__field--full">
+                      <span className="admin-pkg-builder__field-caption">Tier disclaimer note</span>
+                      <textarea
+                        className="admin-pkg-builder__notes-input"
+                        style={input}
+                        rows={3}
+                        value={selectedSlot.tier_notes ?? ""}
+                        onChange={(e) =>
+                          setSlot(selectedSlot.id, {
+                            tier_notes: e.target.value.length > 0 ? e.target.value : null,
+                          })
+                        }
+                        placeholder="Shown when users select this package tier in Build a Package (optional)."
+                        aria-label={`Tier ${selectedSlot.sort_order} disclaimer note`}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {editorTab === "components" ? (
+                  <div className="admin-pkg-builder__editor-panel">
+                    <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
+                      <div className="admin-pkg-builder__section-head">
+                        <div className="admin-pkg-builder__section-copy">
+                          <h4 className="admin-pkg-builder__section-title">
+                            Allowed list
+                            <span className="admin-pkg-builder__section-count">
+                              {selectedSlot.allowed_solution_tier_ids.length === 0
+                                ? "Any"
+                                : selectedSlot.allowed_solution_tier_ids.length}
+                            </span>
+                          </h4>
+                          <p className="admin-pkg-builder__section-lead" style={muted}>
+                            Leave all unchecked to allow any solution component from the directory.
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        className="admin-pkg-builder__vault-search"
+                        style={input}
+                        type="search"
+                        placeholder="Filter solution components…"
+                        value={allowFilter}
+                        onChange={(e) => setAllowFilter(e.target.value)}
+                      />
+                      <div className="admin-pkg-builder__vault-grid">
+                        {allowedVaultTiers.map((vt) => {
+                          const checked = selectedSlot.allowed_solution_tier_ids.includes(
+                            vt.solution_tier_id
+                          );
+                          return (
+                            <label
+                              key={vt.solution_tier_id}
+                              className={
+                                checked
+                                  ? "admin-pkg-builder__vault-check is-checked"
+                                  : "admin-pkg-builder__vault-check"
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) =>
+                                  toggleAllowedTier(
+                                    selectedSlot.id,
+                                    vt.solution_tier_id,
+                                    e.target.checked
+                                  )
+                                }
+                              />
+                              <span>{vt.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
+                      <div className="admin-pkg-builder__section-head">
+                        <div className="admin-pkg-builder__section-copy">
+                          <h4 className="admin-pkg-builder__section-title">
+                            Always included
+                            <span className="admin-pkg-builder__section-count">
+                              {selectedSlot.preselected_tiers.length}
+                            </span>
+                          </h4>
+                          <p className="admin-pkg-builder__section-lead" style={muted}>
+                            Locked vault tiers added automatically with a default quantity.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="admin-pkg-builder__locked-list">
+                        {selectedSlot.preselected_tiers.length === 0 ? (
+                          <p className="admin-pkg-builder__empty-inline" style={muted}>
+                            None yet — add components below.
+                          </p>
+                        ) : (
+                          selectedSlot.preselected_tiers.map((p) => (
+                            <div key={p.solution_tier_id} className="admin-pkg-builder__locked-chip">
+                              <span className="admin-pkg-builder__locked-chip-badge">Locked</span>
+                              <span className="admin-pkg-builder__locked-chip-label">
+                                {vaultLabelById.get(p.solution_tier_id) ?? p.solution_tier_id}
+                              </span>
+                              <label className="admin-pkg-builder__locked-chip-qty">
+                                <span>Qty</span>
+                                <input
+                                  style={input}
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={p.default_qty}
+                                  disabled={busy}
+                                  onChange={(e) =>
+                                    updatePreselectedQty(
+                                      selectedSlot.id,
+                                      p.solution_tier_id,
+                                      Number(e.target.value)
+                                    )
+                                  }
+                                  aria-label={`Default qty for ${p.solution_tier_id}`}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="admin-pkg-builder__ghost-danger"
+                                disabled={busy}
+                                onClick={() =>
+                                  removePreselectedTier(selectedSlot.id, p.solution_tier_id)
+                                }
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <div className="admin-pkg-builder__add-row">
+                        <input
+                          className="admin-pkg-builder__vault-search"
+                          style={input}
+                          type="search"
+                          placeholder="Search to add always-included…"
+                          value={preFilter}
+                          onChange={(e) => setPreFilter(e.target.value)}
+                        />
+                        <select
+                          className="admin-pkg-builder__add-select"
+                          style={input}
+                          defaultValue=""
+                          disabled={busy || preselectAddCandidates.length === 0}
+                          aria-label="Add always-included solution component"
+                          onChange={(e) => {
+                            const tierId = e.target.value;
+                            if (tierId) addPreselectedTier(selectedSlot.id, tierId);
+                            e.target.value = "";
+                          }}
+                        >
+                          <option value="">Add component…</option>
+                          {preselectAddCandidates.map((vt) => (
+                            <option key={vt.solution_tier_id} value={vt.solution_tier_id}>
+                              {vt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </section>
+
+                    <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
+                      <div className="admin-pkg-builder__section-head admin-pkg-builder__section-head--row">
+                        <div className="admin-pkg-builder__section-copy">
+                          <h4 className="admin-pkg-builder__section-title">
+                            Choice buckets
+                            <span className="admin-pkg-builder__section-count">
+                              {sortedBuckets.length}
+                            </span>
+                          </h4>
+                          <p className="admin-pkg-builder__section-lead" style={muted}>
+                            Users pick exactly N distinct members from each bucket.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="admin-pkg-builder__btn-quiet"
+                          style={btnSm}
+                          disabled={busy}
+                          onClick={() => addBucket(selectedSlot.id)}
+                        >
+                          Add bucket
+                        </button>
+                      </div>
+                      <input
+                        className="admin-pkg-builder__vault-search"
+                        style={input}
+                        type="search"
+                        placeholder="Filter bucket members…"
+                        value={bucketMemberFilter}
+                        onChange={(e) => setBucketMemberFilter(e.target.value)}
+                      />
+                      {sortedBuckets.length === 0 ? (
+                        <p className="admin-pkg-builder__empty-inline" style={muted}>
+                          No choice groups yet. Add a bucket to let builders pick from a set.
+                        </p>
+                      ) : null}
+                      {sortedBuckets.map((b, idx) => (
+                        <article key={b.id} className="admin-pkg-builder__bucket-card">
+                          <div className="admin-pkg-builder__bucket-head">
+                            <label className="admin-pkg-builder__field">
+                              <span className="admin-pkg-builder__field-caption">Name</span>
+                              <input
+                                style={input}
+                                value={b.name}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  updateBucket(selectedSlot.id, b.id, { name: e.target.value })
+                                }
+                                aria-label={`Bucket ${idx + 1} name`}
+                              />
+                            </label>
+                            <label className="admin-pkg-builder__field admin-pkg-builder__field--pick">
+                              <span className="admin-pkg-builder__field-caption">Pick N</span>
+                              <input
+                                style={input}
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={b.pick_count}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  updateBucket(selectedSlot.id, b.id, {
+                                    pick_count: Math.max(1, Math.floor(Number(e.target.value)) || 1),
+                                  })
+                                }
+                                aria-label={`Bucket ${idx + 1} pick count`}
+                              />
+                            </label>
+                            <div className="admin-pkg-builder__bucket-actions">
+                              <button
+                                type="button"
+                                className="admin-pkg-builder__icon-btn"
+                                style={btnSm}
+                                disabled={busy || idx === 0}
+                                aria-label="Move bucket up"
+                                onClick={() => moveBucket(selectedSlot.id, b.id, -1)}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-pkg-builder__icon-btn"
+                                style={btnSm}
+                                disabled={busy || idx >= sortedBuckets.length - 1}
+                                aria-label="Move bucket down"
+                                onClick={() => moveBucket(selectedSlot.id, b.id, 1)}
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-pkg-builder__ghost-danger"
+                                disabled={busy}
+                                onClick={() => removeBucket(selectedSlot.id, b.id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                          <p className="admin-pkg-builder__bucket-members-label">
+                            Members · {b.member_tier_ids.length} selected
+                          </p>
+                          <div className="admin-pkg-builder__vault-grid admin-pkg-builder__vault-grid--bucket">
+                            {bucketMemberCandidates.map((vt) => {
+                              const checked = b.member_tier_ids.includes(vt.solution_tier_id);
+                              return (
+                                <label
+                                  key={vt.solution_tier_id}
+                                  className={
+                                    checked
+                                      ? "admin-pkg-builder__vault-check is-checked"
+                                      : "admin-pkg-builder__vault-check"
+                                  }
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      toggleBucketMember(
+                                        selectedSlot.id,
+                                        b.id,
+                                        vt.solution_tier_id,
+                                        e.target.checked
+                                      )
+                                    }
+                                  />
+                                  <span>{vt.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </article>
+                      ))}
+                    </section>
+                  </div>
+                ) : null}
+
+                {editorTab === "tags" && selectedType ? (
+                  <div className="admin-pkg-builder__editor-panel admin-pkg-builder__editor-panel--tags">
+                    <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
+                      These tags apply to the whole template ({selectedTypeName}), not just this tier.
+                    </p>
+                    <PackageTypeTaxonomyTagsEditor
+                      phaseTags={selectedType.phase_tags}
+                      categoryTags={selectedType.category_tags}
+                      tacticTags={selectedType.tactic_tags}
+                      options={taxonomyOptions}
+                      disabled={busy}
+                      onChange={(patch) => setType(selectedType.id, patch)}
+                    />
+                  </div>
+                ) : null}
+
+                {editorTab === "content" ? (
+                  <div className="admin-pkg-builder__editor-panel">
+                    <div className="admin-pkg-builder__details-head">
+                      <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
+                        Overview, scope, process, and resources copied to packages built from this
+                        tier. Package category is set from the template name.
+                      </p>
+                      <select
+                        className="admin-pkg-builder__copy-select admin-pkg-builder__copy-select--details"
+                        style={input}
+                        defaultValue=""
+                        disabled={busy || typeSlots.length <= 1}
+                        aria-label={`Copy package details into ${selectedSlot.label}`}
+                        onChange={(e) => {
+                          const sourceId = e.target.value;
+                          if (sourceId) copyDetailsFromTier(selectedSlot.id, sourceId);
+                          e.target.value = "";
+                        }}
+                      >
+                        <option value="">Copy details from…</option>
+                        {typeSlots
+                          .filter((s) => s.id !== selectedSlot.id)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.label.trim() || `Tier ${s.sort_order}`}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <PackageDetailsFormBlock
+                      hideCategory
+                      values={slotToDetailsFormValues(selectedSlot)}
+                      onChange={(key, value) =>
+                        setSlot(selectedSlot.id, detailsFormPatchToSlot(key, value))
+                      }
+                      styles={packageFormStyles}
+                    />
+                  </div>
+                ) : null}
+
+                {editorTab === "discount" ? (
+                  <div className="admin-pkg-builder__editor-panel">
+                    <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
+                      <div className="admin-pkg-builder__section-head">
+                        <div className="admin-pkg-builder__section-copy">
+                          <h4 className="admin-pkg-builder__section-title">Package hour discount</h4>
+                          <p className="admin-pkg-builder__section-lead" style={muted}>
+                            Applied when someone finishes Build a Package from this tier. Use a preset
+                            or enter any custom percent (0–100). Leave blank to use the label default
+                            (Basic 20%, Standard 25%, Advanced 30%).
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="admin-pkg-builder__limits">
+                        <label className="admin-pkg-builder__field">
+                          <span className="admin-pkg-builder__field-caption">Hour discount %</span>
+                          <input
+                            style={input}
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            placeholder={
+                              suggestedHourDiscountPctForLabel(
+                                selectedSlot.label,
+                                selectedTypeName
+                              ) != null
+                                ? `Label default ${suggestedHourDiscountPctForLabel(
+                                    selectedSlot.label,
+                                    selectedTypeName
+                                  )}`
+                                : "Custom (e.g. 15)"
+                            }
+                            value={selectedSlot.hour_discount_pct ?? ""}
+                            disabled={busy}
+                            onChange={(e) =>
+                              setSlot(selectedSlot.id, {
+                                hour_discount_pct:
+                                  e.target.value === ""
+                                    ? null
+                                    : parseOptionalHourDiscountPct(Number(e.target.value)),
+                              })
+                            }
+                            aria-label={`Tier ${selectedSlot.sort_order} hour discount percent`}
+                          />
+                        </label>
+                      </div>
+
+                      <p className="admin-pkg-builder__limits-hint" style={muted}>
+                        {selectedSlot.hour_discount_pct != null
+                          ? `Configured: ${selectedSlot.hour_discount_pct}% hour discount on packages built from this tier.`
+                          : (() => {
+                              const suggested = suggestedHourDiscountPctForLabel(
+                                selectedSlot.label,
+                                selectedTypeName
+                              );
+                              return suggested != null
+                                ? `Using label default for now: ${suggested}% (from “${selectedSlot.label.trim() || "Tier"}”).`
+                                : "No discount configured and no Basic/Standard/Advanced label match — packages will use 0%.";
+                            })()}
+                      </p>
+
+                      <div className="admin-pkg-builder__discount-presets">
+                        {(
+                          [
+                            [20, "Basic"],
+                            [25, "Standard"],
+                            [30, "Advanced"],
+                            [0, "None"],
+                          ] as const
+                        ).map(([pct, label]) => (
+                          <button
+                            key={`${label}-${pct}`}
+                            type="button"
+                            className={
+                              selectedSlot.hour_discount_pct === pct
+                                ? "admin-pkg-builder__btn-quiet is-active"
+                                : "admin-pkg-builder__btn-quiet"
+                            }
+                            style={btnSm}
+                            disabled={busy}
+                            onClick={() =>
+                              setSlot(selectedSlot.id, {
+                                hour_discount_pct: pct,
+                              })
+                            }
+                          >
+                            {label} ({pct}%)
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="admin-pkg-builder__ghost-danger"
+                          disabled={busy || selectedSlot.hour_discount_pct == null}
+                          onClick={() => setSlot(selectedSlot.id, { hour_discount_pct: null })}
+                        >
+                          Clear (use label default)
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <footer className="admin-pkg-builder__footer admin-actions-row">

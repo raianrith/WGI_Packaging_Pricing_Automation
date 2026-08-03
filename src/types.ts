@@ -52,6 +52,21 @@ export type PackageBuilderPackageType = {
   updated_at?: string | null;
 };
 
+/** Always-included vault tier for a Build-a-Package slot (locked min qty). */
+export type PackageBuilderSlotPreselectedTier = {
+  solution_tier_id: string;
+  default_qty: number;
+};
+
+/** Pick-N choice bucket under a Build-a-Package slot. */
+export type PackageBuilderSlotBucket = {
+  id: string;
+  name: string;
+  pick_count: number;
+  sort_order: number;
+  member_tier_ids: string[];
+};
+
 /** Tier slot under a package type — optional hour/price ceilings and/or solution tier count limit. */
 export type PackageBuilderSlotTemplate = {
   id: string;
@@ -64,8 +79,17 @@ export type PackageBuilderSlotTemplate = {
   price_ceiling: number | null;
   /** When set, at most this many solution tiers may be selected. */
   solution_tier_limit: number | null;
+  /**
+   * Hour discount % (0–100) applied when creating a package from this slot.
+   * Null = fall back to label-based Basic/Standard/Advanced defaults.
+   */
+  hour_discount_pct: number | null;
   /** Empty = any vault tier allowed; otherwise only listed solution_tier_id values. */
   allowed_solution_tier_ids: string[];
+  /** Always included when building from this slot (cannot go below default_qty). */
+  preselected_tiers: PackageBuilderSlotPreselectedTier[];
+  /** Choice buckets: pick exactly pick_count distinct members. */
+  buckets: PackageBuilderSlotBucket[];
   /** Shown as a disclaimer when this tier is selected in Build a Package. */
   tier_notes: string | null;
   /**

@@ -33,7 +33,7 @@ import {
   tierCopySourceLabelFromNotes,
 } from "../lib/tierTaskCopy";
 import { nextAutoSolutionId, nextAutoTierId } from "../lib/entityIdSequences";
-import { nextAutoTaskId } from "../lib/taskIds";
+import { fetchAllTaskIdRows, nextAutoTaskId } from "../lib/taskIds";
 import { persistTaskSortOrdersForTier } from "../lib/persistTaskSortOrdersForTier";
 import { compareTasksByOrder, tierMaxSortOrder } from "../lib/taskOrder";
 import {
@@ -612,12 +612,12 @@ export function SolutionsBuilderPanel({
     }
 
     const today = todayISODate();
-    const [solRes, tierRes, taskRes] = await Promise.all([
+    const [solRes, tierRes] = await Promise.all([
       client.from("solutions").select("solution_id"),
       client.from("solution_tiers").select("solution_tier_id"),
-      client.from("tasks").select("task_id"),
     ]);
-    const prefetchErr = solRes.error ?? tierRes.error ?? taskRes.error;
+    const taskPrefetch = await fetchAllTaskIdRows(client);
+    const prefetchErr = solRes.error ?? tierRes.error ?? (taskPrefetch.error ? { message: taskPrefetch.error } : null);
     if (prefetchErr) {
       setOpErr(friendlyMutationMessage(prefetchErr.message));
       return;
@@ -692,7 +692,7 @@ export function SolutionsBuilderPanel({
       after: rowJson(tierRow),
     });
 
-    let localTasks: Pick<TaskRow, "task_id">[] = [...(taskRes.data ?? [])];
+    let localTasks: Pick<TaskRow, "task_id">[] = [...taskPrefetch.rows];
     for (let i = 0; i < rowsToSave.length; i++) {
       const rowDraft = rowsToSave[i]!;
       const taskId = nextAutoTaskId(localTasks);
@@ -894,12 +894,12 @@ export function SolutionsBuilderPanel({
         return;
       }
       const today = todayISODate();
-      const { data: tierOnlyTaskSeed, error: tierOnlyTaskPrefetchErr } = await client.from("tasks").select("task_id");
+      const { rows: tierOnlyTaskSeed, error: tierOnlyTaskPrefetchErr } = await fetchAllTaskIdRows(client);
       if (tierOnlyTaskPrefetchErr) {
-        setOpErr(friendlyMutationMessage(tierOnlyTaskPrefetchErr.message));
+        setOpErr(friendlyMutationMessage(tierOnlyTaskPrefetchErr));
         return;
       }
-      let localTasks: Pick<TaskRow, "task_id">[] = [...(tierOnlyTaskSeed ?? [])];
+      let localTasks: Pick<TaskRow, "task_id">[] = [...tierOnlyTaskSeed];
       const baseMaxSort = tierMaxSortOrder(tasks, tierId);
       for (let i = 0; i < rowsToSave.length; i++) {
         const d = rowsToSave[i]!;
@@ -1856,12 +1856,12 @@ export function SolutionsBuilderPanel({
       return;
     }
     const today = todayISODate();
-    const { data: updTaskSeedRows, error: updTaskPrefetchErr } = await client.from("tasks").select("task_id");
+    const { rows: updTaskSeedRows, error: updTaskPrefetchErr } = await fetchAllTaskIdRows(client);
     if (updTaskPrefetchErr) {
-      setOpErr(friendlyMutationMessage(updTaskPrefetchErr.message));
+      setOpErr(friendlyMutationMessage(updTaskPrefetchErr));
       return;
     }
-    let localTasks: Pick<TaskRow, "task_id">[] = [...(updTaskSeedRows ?? [])];
+    let localTasks: Pick<TaskRow, "task_id">[] = [...updTaskSeedRows];
     const baseMaxSort = tierMaxSortOrder(tasks, updTierFocus);
     for (let i = 0; i < rowsToSave.length; i++) {
       const d = rowsToSave[i]!;

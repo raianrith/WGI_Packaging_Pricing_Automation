@@ -3,7 +3,7 @@ import { insertAuditLog } from "./audit";
 import { todayISODate } from "./dates";
 import { getSupabase } from "./supabase";
 import { friendlyMutationMessage } from "./supabaseErrors";
-import { nextAutoTaskId } from "./taskIds";
+import { fetchAllTaskIdRows, nextAutoTaskId } from "./taskIds";
 import { resolveTemplateLineToTaskFields } from "./taskGroupTemplateTaskFields";
 import type { TaskGroupLineRow, TaskRow } from "../types";
 import { tierMaxSortOrder } from "./taskOrder";
@@ -53,7 +53,13 @@ export async function applyTaskGroupToTier(params: {
   }
 
   const today = todayISODate();
-  let localTasks = [...params.allTasks];
+  const { rows: seedTaskIds, error: seedErr } = await fetchAllTaskIdRows(client);
+  if (seedErr) {
+    await client.from("solution_tier_task_group_applied").delete().eq("id", applicationId);
+    return { ok: false, message: friendlyMutationMessage(seedErr) };
+  }
+  let knownTaskIds: Pick<TaskRow, "task_id">[] = [...seedTaskIds];
+  const catalogTasks = params.allTasks;
   const insertedTaskIds: string[] = [];
   let baseSort = tierMaxSortOrder(params.allTasks, params.solution_tier_id);
 
@@ -68,8 +74,8 @@ export async function applyTaskGroupToTier(params: {
     for (let lineIdx = 0; lineIdx < sorted.length; lineIdx++) {
       const line = sorted[lineIdx]!;
       baseSort += 1;
-      const id = nextAutoTaskId(localTasks);
-      const resolved = resolveTemplateLineToTaskFields(line, localTasks);
+      const id = nextAutoTaskId(knownTaskIds);
+      const resolved = resolveTemplateLineToTaskFields(line, catalogTasks);
       if ("error" in resolved) {
         await rollbackPartial();
         return { ok: false, message: resolved.error };
@@ -116,7 +122,7 @@ export async function applyTaskGroupToTier(params: {
         after: rowJson(row),
       });
       insertedTaskIds.push(id);
-      localTasks.push(row);
+      knownTaskIds.push({ task_id: id });
     }
 
     await params.logAudit(client, {

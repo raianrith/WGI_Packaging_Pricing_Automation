@@ -4,7 +4,7 @@ import { insertAuditLog } from "./audit";
 import { todayISODate } from "./dates";
 import { getSupabase } from "./supabase";
 import { friendlyMutationMessage } from "./supabaseErrors";
-import { nextAutoTaskId } from "./taskIds";
+import { fetchAllTaskIdRows, nextAutoTaskId } from "./taskIds";
 import { compareTasksByOrder, tierMaxSortOrder } from "./taskOrder";
 
 function rowJson(row: object): Record<string, unknown> {
@@ -105,7 +105,9 @@ export async function insertCopiedVaultTasksFromTier(params: {
   }
 
   const today = todayISODate();
-  let localTasks = [...params.allTasks];
+  const { rows: seedTaskIds, error: seedErr } = await fetchAllTaskIdRows(client);
+  if (seedErr) return { ok: false, message: friendlyMutationMessage(seedErr) };
+  let localTasks = [...seedTaskIds];
   const baseMax = tierMaxSortOrder(params.allTasks, params.targetTierId);
 
   try {

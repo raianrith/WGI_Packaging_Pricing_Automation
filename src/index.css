@@ -21329,14 +21329,52 @@ html[data-theme="dark"] .admin-example-editor__date-input::-webkit-calendar-pick
   border-color: rgba(160, 110, 30, 0.2);
 }
 
-.proposal-organize-line__title {
+.proposal-organize-line__title,
+.proposal-organize-line__title-wrap {
   flex: 1 1 10rem;
   min-width: 0;
   margin: 0;
+}
+
+.proposal-organize-line__title {
   font-size: 0.92rem;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.01em;
+}
+
+.proposal-organize-line__title-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.proposal-organize-line__title-input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.proposal-organize-line__title-input:hover {
+  border-color: rgba(13, 92, 77, 0.18);
+  background: rgba(248, 246, 242, 0.65);
+}
+
+.proposal-organize-line__title-input:focus {
+  outline: none;
+  border-color: rgba(13, 92, 77, 0.45);
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(13, 92, 77, 0.12);
 }
 
 .proposal-organize-line__applied {

@@ -110,7 +110,22 @@ export function ProposalOrganizeLineCard({
             {kindShort(card.kind)}
           </span>
 
-          <h4 className="proposal-organize-line__title">{card.headline.trim() || "(untitled)"}</h4>
+          <label className="proposal-organize-line__title-wrap">
+            <span className="visually-hidden">
+              Rename {kindShort(card.kind).toLowerCase()} label
+            </span>
+            <input
+              type="text"
+              className="proposal-organize-line__title-input"
+              value={card.headline}
+              placeholder="Untitled"
+              title="Click to rename"
+              onChange={(e) => onPatch(card.key, { headline: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+            />
+          </label>
           {appliedToLabel && !isTravelVariableTierRefId(card.refId) ? (
             <p className="proposal-organize-line__applied">
               Applied to{" "}

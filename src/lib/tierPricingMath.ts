@@ -7,7 +7,7 @@
  */
 
 /** Automatic account-management add-on applied to total resource hours before × hourly rate. */
-export const ACCOUNT_MGMT_HOURS_ADDON_RATE = 0.15;
+export const ACCOUNT_MGMT_HOURS_ADDON_RATE = 0.18;
 
 /** Automatic continuous-improvement add-on applied to total resource hours before × hourly rate. */
 export const CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE = 0.01;
@@ -24,7 +24,7 @@ export function computeResourceHourAddons(resourceHours: number): {
   return { accountMgmtAddonHours, continuousImprovementAddonHours, billableHours };
 }
 
-/** Combined add-on rate for billable hours (e.g. 0.16 for 15% + 1%). */
+/** Combined add-on rate for billable hours (e.g. 0.19 for 18% + 1%). */
 export function totalResourceHourAddonRate(): number {
   return ACCOUNT_MGMT_HOURS_ADDON_RATE + CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE;
 }

@@ -1,6 +1,6 @@
 /**
  * Recompute all solution_tier_pricing rows in Supabase using current tier pricing math
- * (includes 15% account mgmt + 1% continuous improvement on resource hours).
+ * (includes 18% account mgmt + 1% continuous improvement on resource hours).
  *
  * Usage (from repo root):
  *   npx tsx scripts/recompute-all-tier-pricing.ts

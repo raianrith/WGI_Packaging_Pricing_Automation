@@ -907,7 +907,8 @@ export function ProposalCatalogPanel({
                 <div className="proposal-travel-modal__rate-tiers">
                   <span>≤ $2k → $400</span>
                   <span>≤ $10k → $270</span>
-                  <span>&gt; $10k → $200</span>
+                  <span>&lt; $40k → $200</span>
+                  <span>≥ $40k → $175</span>
                 </div>
               </div>
 

@@ -82,12 +82,14 @@ export function computePaidAdsOptimizationUsd(spendUsd: number): number | null {
   if (!Number.isFinite(spendUsd) || spendUsd <= 0) return null;
   if (spendUsd <= 2000) return (spendUsd / 1000) * 400;
   if (spendUsd <= 10_000) return (spendUsd / 1000) * 270;
-  return (spendUsd / 1000) * 200;
+  if (spendUsd < 40_000) return (spendUsd / 1000) * 200;
+  return (spendUsd / 1000) * 175;
 }
 
 export function paidAdsOptimizationFormulaLabel(spendUsd: number): string | null {
   if (!Number.isFinite(spendUsd) || spendUsd <= 0) return null;
-  const perK = spendUsd <= 2000 ? 400 : spendUsd <= 10_000 ? 270 : 200;
+  const perK =
+    spendUsd <= 2000 ? 400 : spendUsd <= 10_000 ? 270 : spendUsd < 40_000 ? 200 : 175;
   const spendLabel = formatUsd(spendUsd);
   return `${spendLabel} ÷ $1k × $${perK}`;
 }

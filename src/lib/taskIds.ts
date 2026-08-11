@@ -39,24 +39,42 @@ export async function fetchAllTaskIdRows(
 /**
  * Fetch every task row (paginated). Plain `.select("*")` is capped by Supabase (~1000 rows),
  * so later tiers (e.g. Copy XL) can appear to have zero tasks in the UI.
+ *
+ * Pages after the first are fetched in parallel so catalog loads stay fast as the vault grows.
  */
 export async function fetchAllTaskRows(
   client: SupabaseClient
 ): Promise<{ rows: TaskRow[]; error: string | null }> {
   const pageSize = 1000;
-  const rows: TaskRow[] = [];
-  let from = 0;
-  for (;;) {
-    const { data, error } = await client
-      .from("tasks")
-      .select("*")
-      .order("task_id")
-      .range(from, from + pageSize - 1);
-    if (error) return { rows, error: error.message };
-    const batch = (data ?? []) as TaskRow[];
-    rows.push(...batch);
-    if (batch.length < pageSize) break;
-    from += pageSize;
+  const first = await client
+    .from("tasks")
+    .select("*", { count: "exact" })
+    .order("task_id")
+    .range(0, pageSize - 1);
+  if (first.error) return { rows: [], error: first.error.message };
+
+  const firstBatch = (first.data ?? []) as TaskRow[];
+  const total = first.count ?? firstBatch.length;
+  if (total <= pageSize || firstBatch.length < pageSize) {
+    return { rows: firstBatch, error: null };
+  }
+
+  const pageCount = Math.ceil(total / pageSize);
+  const rest = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, i) => {
+      const from = (i + 1) * pageSize;
+      return client
+        .from("tasks")
+        .select("*")
+        .order("task_id")
+        .range(from, from + pageSize - 1);
+    })
+  );
+
+  const rows = [...firstBatch];
+  for (const res of rest) {
+    if (res.error) return { rows, error: res.error.message };
+    rows.push(...((res.data ?? []) as TaskRow[]));
   }
   return { rows, error: null };
 }

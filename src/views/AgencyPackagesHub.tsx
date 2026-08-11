@@ -9,6 +9,7 @@ import {
 import { insertAuditLog } from "../lib/audit";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import { compareTasksByOrder } from "../lib/taskOrder";
+import { fetchAllTaskRows } from "../lib/taskIds";
 import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
 import {
   loadTierPricingMathConfigFromStorage,
@@ -349,11 +350,11 @@ export function AgencyPackagesHub() {
     setLoading(true);
     setLoadErr(null);
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, implRes, auditRes, slotPack] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, prRes, ptRes, implRes, auditRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
-      client.from("tasks").select("*").order("task_id"),
+      fetchAllTaskRows(client),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
@@ -368,8 +369,8 @@ export function AgencyPackagesHub() {
     ]);
 
     const err =
-      pRes.error || sRes.error || tRes.error || kRes.error || prRes.error || ptRes.error
-        ? [pRes.error, sRes.error, tRes.error, kRes.error, prRes.error, ptRes.error].find(Boolean)
+      pRes.error || sRes.error || tRes.error || tasksPack.error || prRes.error || ptRes.error
+        ? [pRes.error, sRes.error, tRes.error, tasksPack.error ? { message: tasksPack.error } : null, prRes.error, ptRes.error].find(Boolean)
         : null;
 
     if (err) {
@@ -381,7 +382,7 @@ export function AgencyPackagesHub() {
     const nextPackages = (pRes.data ?? []) as Package[];
     const nextSolutions = (sRes.data ?? []) as Solution[];
     const nextTiers = (tRes.data ?? []) as SolutionTier[];
-    const nextTasks = (kRes.data ?? []) as TaskRow[];
+    const nextTasks = tasksPack.rows;
     const nextPricing = prRes.error ? ([] as SolutionTierPricing[]) : ((prRes.data ?? []) as SolutionTierPricing[]);
     const nextPackageTiers = (ptRes.data ?? []) as PackageSolutionTier[];
 

@@ -11,6 +11,7 @@ import {
   fetchPackageBuilderCatalog,
 } from "../lib/packageBuilderSlots";
 import { compareTasksByOrder } from "../lib/taskOrder";
+import { fetchAllTaskRows } from "../lib/taskIds";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -91,18 +92,18 @@ export function AgencyPackageBuilderView() {
     setLoading(true);
     setLoadErr(null);
 
-    const [pRes, sRes, tRes, kRes, prRes, slotPack] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, prRes, slotPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
-      client.from("tasks").select("*").order("task_id"),
+      fetchAllTaskRows(client),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       fetchPackageBuilderCatalog(client),
     ]);
 
     const err =
-      pRes.error || sRes.error || tRes.error || kRes.error
-        ? [pRes.error, sRes.error, tRes.error, kRes.error].find(Boolean)
+      pRes.error || sRes.error || tRes.error || tasksPack.error
+        ? [pRes.error, sRes.error, tRes.error, tasksPack.error ? { message: tasksPack.error } : null].find(Boolean)
         : null;
 
     if (err) {
@@ -114,7 +115,7 @@ export function AgencyPackageBuilderView() {
     const nextPackages = (pRes.data ?? []) as Package[];
     const nextSolutions = (sRes.data ?? []) as Solution[];
     const nextTiers = (tRes.data ?? []) as SolutionTier[];
-    const nextTasks = (kRes.data ?? []) as TaskRow[];
+    const nextTasks = tasksPack.rows;
     const nextPricing = prRes.error ? ([] as SolutionTierPricing[]) : ((prRes.data ?? []) as SolutionTierPricing[]);
 
     nextPackages.sort((a, b) => sortId(a.package_id, b.package_id));

@@ -35,3 +35,28 @@ export async function fetchAllTaskIdRows(
   }
   return { rows, error: null };
 }
+
+/**
+ * Fetch every task row (paginated). Plain `.select("*")` is capped by Supabase (~1000 rows),
+ * so later tiers (e.g. Copy XL) can appear to have zero tasks in the UI.
+ */
+export async function fetchAllTaskRows(
+  client: SupabaseClient
+): Promise<{ rows: TaskRow[]; error: string | null }> {
+  const pageSize = 1000;
+  const rows: TaskRow[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await client
+      .from("tasks")
+      .select("*")
+      .order("task_id")
+      .range(from, from + pageSize - 1);
+    if (error) return { rows, error: error.message };
+    const batch = (data ?? []) as TaskRow[];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return { rows, error: null };
+}

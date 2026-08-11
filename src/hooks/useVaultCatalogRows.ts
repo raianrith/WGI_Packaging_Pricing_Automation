@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { buildCatalogTierTableRows } from "../lib/buildCatalogTierTableRows";
 import { compareTasksByOrder } from "../lib/taskOrder";
+import { fetchAllTaskRows } from "../lib/taskIds";
 import { filterPresetPackages } from "../lib/presetPackages";
 import type { PackageMigrationRow } from "../lib/packageMigrations";
 import {
@@ -74,11 +75,11 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
 
     setState({ status: "loading" });
 
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, migRes, builderPack] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, prRes, ptRes, migRes, builderPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
-      client.from("tasks").select("*").order("task_id"),
+      fetchAllTaskRows(client),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("package_migrations").select("*").order("former_package_id"),
@@ -86,8 +87,8 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
     ]);
 
     const err =
-      pRes.error || sRes.error || tRes.error || kRes.error || prRes.error || ptRes.error
-        ? [pRes.error, sRes.error, tRes.error, kRes.error, prRes.error, ptRes.error].find(Boolean)
+      pRes.error || sRes.error || tRes.error || tasksPack.error || prRes.error || ptRes.error
+        ? [pRes.error, sRes.error, tRes.error, tasksPack.error ? { message: tasksPack.error } : null, prRes.error, ptRes.error].find(Boolean)
         : null;
 
     if (err) {
@@ -109,7 +110,7 @@ export function useVaultCatalogRows(): VaultCatalogLoadState & { reload: () => v
     const solutions = (sRes.data ?? []) as Solution[];
     const tiers = (tRes.data ?? []) as SolutionTier[];
     const packageTiers = (ptRes.data ?? []) as PackageSolutionTier[];
-    const tasks = (kRes.data ?? []) as TaskRow[];
+    const tasks = tasksPack.rows;
     const pricing = prRes.error
       ? ([] as SolutionTierPricing[])
       : ((prRes.data ?? []) as SolutionTierPricing[]);

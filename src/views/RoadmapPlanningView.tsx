@@ -79,6 +79,7 @@ import { ProposalSaveReminderBanner } from "../components/proposal-builder/Propo
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import { fetchAllTaskRows } from "../lib/taskIds";
 import { filterConfigurablePackages } from "../lib/presetPackages";
 import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
 import {
@@ -835,11 +836,11 @@ export function RoadmapPlanningView() {
     }
     if (preserveCurrentProposal) setCatalogReloading(true);
     else setState({ status: "loading" });
-    const [pRes, sRes, tRes, kRes, ptRes, tgRes, prRes, tglRes, implRes, builderPack] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, ptRes, tgRes, prRes, tglRes, implRes, builderPack] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
-      client.from("tasks").select("*").order("task_id"),
+      fetchAllTaskRows(client),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("task_groups").select("*").order("name"),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
@@ -851,14 +852,21 @@ export function RoadmapPlanningView() {
       pRes.error ||
       sRes.error ||
       tRes.error ||
-      kRes.error ||
+      tasksPack.error ||
       ptRes.error ||
       tgRes.error ||
       prRes.error ||
       tglRes.error
-        ? [pRes.error, sRes.error, tRes.error, kRes.error, ptRes.error, tgRes.error, prRes.error, tglRes.error].find(
-            Boolean
-          )
+        ? [
+            pRes.error,
+            sRes.error,
+            tRes.error,
+            tasksPack.error ? { message: tasksPack.error } : null,
+            ptRes.error,
+            tgRes.error,
+            prRes.error,
+            tglRes.error,
+          ].find(Boolean)
         : null;
     if (err) {
       if (preserveCurrentProposal) {
@@ -872,7 +880,7 @@ export function RoadmapPlanningView() {
     const packages = (pRes.data ?? []) as Package[];
     const solutions = (sRes.data ?? []) as Solution[];
     const tiers = (tRes.data ?? []) as SolutionTier[];
-    const tasks = (kRes.data ?? []) as TaskRow[];
+    const tasks = tasksPack.rows;
     const packageTiers = (ptRes.data ?? []) as PackageSolutionTier[];
     const taskGroups = (tgRes.data ?? []) as TaskGroupRow[];
     const tierPricing = (prRes.data ?? []) as SolutionTierPricing[];

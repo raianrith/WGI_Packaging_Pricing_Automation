@@ -24,6 +24,7 @@ import {
 } from "../lib/tierPricingMath";
 import { recomputeAllSavedTierPricing } from "../lib/recomputeAllSavedTierPricing";
 import { compareTasksByOrder } from "../lib/taskOrder";
+import { fetchAllTaskRows } from "../lib/taskIds";
 import {
   normalizeTierPhase,
   normalizeTierTactic,
@@ -149,19 +150,19 @@ export function AdminView() {
     if (!silent) {
       setLoading(true);
     }
-    const [pRes, sRes, tRes, kRes, prRes, ptRes, aRes] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, prRes, ptRes, aRes] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
-      client.from("tasks").select("*").order("task_id"),
+      fetchAllTaskRows(client),
       client.from("solution_tier_pricing").select("*").order("solution_tier_id"),
       client.from("package_solution_tiers").select("*").order("package_id"),
       client.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500),
     ]);
 
-    const err = pRes.error || sRes.error || tRes.error || kRes.error || ptRes.error;
+    const err = pRes.error || sRes.error || tRes.error || tasksPack.error || ptRes.error;
     if (err) {
-      setLoadErr(err.message);
+      setLoadErr(typeof err === "string" ? err : err.message);
       setLoading(false);
       return;
     }
@@ -169,7 +170,7 @@ export function AdminView() {
     const pkgs = (pRes.data ?? []) as Package[];
     const sols = (sRes.data ?? []) as Solution[];
     const trs = (tRes.data ?? []) as SolutionTier[];
-    const tks = (kRes.data ?? []) as TaskRow[];
+    const tks = tasksPack.rows;
     pkgs.sort((a, b) => sortId(a.package_id, b.package_id));
     sols.sort((a, b) => sortId(a.solution_id, b.solution_id));
     trs.sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));

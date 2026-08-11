@@ -18,7 +18,6 @@ import type {
   Solution,
   SolutionTier,
   SolutionTierPricing,
-  TaskRow,
 } from "../types";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 

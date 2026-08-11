@@ -8,11 +8,13 @@ import {
   type RoadmapPhase,
   type RoadmapScenario,
 } from "../../lib/roadmapModel";
+import { computeProposalAccountMgmtRollup } from "../../lib/proposalAccountMgmt";
 import { proposalDateRangeLabel } from "../../lib/proposalDates";
 import {
   isTravelVariableTierRefId,
   variableTierAppliedToLabel,
 } from "../../lib/proposalVariableTiers";
+import { ProposalOrganizeAccountMgmtCard } from "./ProposalOrganizeAccountMgmtCard";
 
 function descPreview(text: string, max = 140): string {
   const t = text.replace(/\s+/g, " ").trim();
@@ -94,8 +96,17 @@ export function ProposalExportPreviewTables({
   formatHoursShort,
   ariaLabel = "Proposal export tables",
 }: Props) {
+  const accountMgmt = computeProposalAccountMgmtRollup(cards, ctx);
+
   return (
     <div className="roadmap-export-table-wrap" aria-label={ariaLabel}>
+      {accountMgmt.includedLineCount > 0 ? (
+        <ProposalOrganizeAccountMgmtCard
+          accountMgmtHours={accountMgmt.accountMgmtHours}
+          resourceHours={accountMgmt.resourceHours}
+          formatHoursShort={formatHoursShort}
+        />
+      ) : null}
       {scenarios.map((scenario) => {
         const scenCards = cards.filter((c) => c.scenarioId === scenario.id);
         const phaseOrder = sortedPhasesForScenario(phases, scenario.id);

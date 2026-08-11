@@ -1,15 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { useToast } from "../../context/ToastContext";
+import { useEffect, useMemo, useState } from "react";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { budgetVsScenarioStatus, cardHoursForScenarioRollup, cardPriceUsdForRollup, sortedPhasesForScenario } from "../../lib/roadmapModel";
-import {
-  PROPOSAL_PRICING_EDITOR_DENIED_MESSAGE,
-  canEditProposalPricing,
-} from "../../lib/proposalPricingAccess";
+import { computeProposalAccountMgmtRollup } from "../../lib/proposalAccountMgmt";
 import { TaskSortableList } from "../TaskTableSortable";
+import { ProposalOrganizeAccountMgmtCard } from "./ProposalOrganizeAccountMgmtCard";
 import { ProposalOrganizeLineCard } from "./ProposalOrganizeLineCard";
-import { ProposalOrganizePricingModal } from "./ProposalOrganizePricingModal";
 import type { ScenarioBudgetBarRow } from "./ProposalScenarioBudgetBars";
 import { ProposalScenarioBudgetBars } from "./ProposalScenarioBudgetBars";
 
@@ -64,24 +59,7 @@ export function ProposalOrganizePanel({
   onClearScenarioItems,
   onUpdateScenarioNarrative,
 }: Props) {
-  const { user } = useAuth();
-  const { toastNote } = useToast();
-  const canEditPricing = canEditProposalPricing(user);
   const [viewScenarioId, setViewScenarioId] = useState(initialScenarioId);
-  const [pricingCardKey, setPricingCardKey] = useState<string | null>(null);
-  const pricingCard =
-    canEditPricing && pricingCardKey ? cards.find((c) => c.key === pricingCardKey) ?? null : null;
-
-  const handleEditPricing = useCallback(
-    (card: RoadmapCard) => {
-      if (!canEditProposalPricing(user)) {
-        toastNote(PROPOSAL_PRICING_EDITOR_DENIED_MESSAGE);
-        return;
-      }
-      setPricingCardKey(card.key);
-    },
-    [toastNote, user]
-  );
 
   useEffect(() => {
     if (scenarios.some((s) => s.id === viewScenarioId)) return;
@@ -119,6 +97,11 @@ export function ProposalOrganizePanel({
         isActive: s.id === viewScenarioId,
       })),
     [scenarios, scenarioRollups, viewScenarioId]
+  );
+
+  const accountMgmtRollup = useMemo(
+    () => computeProposalAccountMgmtRollup(cards, ctx),
+    [cards, ctx]
   );
 
   const sub = rollup.priceSubtotal;
@@ -229,6 +212,14 @@ export function ProposalOrganizePanel({
         </div>
       </section>
 
+      {accountMgmtRollup.includedLineCount > 0 ? (
+        <ProposalOrganizeAccountMgmtCard
+          accountMgmtHours={accountMgmtRollup.accountMgmtHours}
+          resourceHours={accountMgmtRollup.resourceHours}
+          formatHoursShort={formatHoursShort}
+        />
+      ) : null}
+
       <details className="proposal-organize__narrative">
         <summary>Client-Facing Narrative</summary>
         <textarea
@@ -296,7 +287,6 @@ export function ProposalOrganizePanel({
                           onPatch={onPatchCard}
                           onRemove={onRemoveCard}
                           onDetails={onOpenDetails}
-                          onEditPricing={handleEditPricing}
                         />
                       ))}
                     </TaskSortableList>
@@ -307,17 +297,6 @@ export function ProposalOrganizePanel({
           })}
         </div>
       )}
-
-      {pricingCard ? (
-        <ProposalOrganizePricingModal
-          card={pricingCard}
-          ctx={ctx}
-          computeScratchSellPrice={computeScratchSellPrice}
-          formatHoursShort={formatHoursShort}
-          onClose={() => setPricingCardKey(null)}
-          onSave={(key, patch) => onPatchCard(key, patch)}
-        />
-      ) : null}
     </div>
   );
 }

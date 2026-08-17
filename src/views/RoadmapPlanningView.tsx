@@ -1574,6 +1574,7 @@ export function RoadmapPlanningView() {
           pname,
           tierName: tier.solution_tier_name,
           solutionName: solution?.solution_name ?? tier.solution_id,
+          solutionType: solution?.solution_type ?? null,
           phaseRaw: tier.solution_tier_phase?.trim() ?? "",
           categoryRaw: displayTierCategoryLabel(tier.solution_tier_category ?? ""),
           tacticRaw: tier.solution_tier_tactic?.trim() ?? "",

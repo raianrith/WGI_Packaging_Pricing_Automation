@@ -1,5 +1,5 @@
 import { useCallback, useId, useMemo, useState } from "react";
-import type { Package, SolutionTier } from "../../types";
+import type { Package, Solution, SolutionTier } from "../../types";
 import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
@@ -13,7 +13,8 @@ import {
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
-import { buildSolutionDirectoryRowsFromTier, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
+import { buildSolutionDirectoryRowsFromTier, catalogSolutionKind, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
+import { ProposalAddOnsModal } from "./ProposalAddOnsModal";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
@@ -40,6 +41,7 @@ export const BROWSE_SHOW_ALL = "__show_all__";
 type CatalogCtxLike = {
   packages: Package[];
   tiers: SolutionTier[];
+  solutions?: Solution[];
 };
 
 type CatalogPanelVariant =
@@ -153,7 +155,7 @@ export function ProposalCatalogPanel({
   const [expandedSolutionIds, setExpandedSolutionIds] = useState<Set<string>>(() => new Set());
 
   type PendingOfferingAdd =
-    | { kind: "tier"; tier: SolutionTier; clientFacingLabel: string }
+    | { kind: "tier"; tier: SolutionTier; clientFacingLabel: string; addonTiers?: SolutionTier[] }
     | { kind: "package"; pkg: Package }
     | { kind: "scratch" }
     | { kind: "variable"; tier: SolutionTier; opts: AddVariableTierOpts };
@@ -163,6 +165,13 @@ export function ProposalCatalogPanel({
     tier: SolutionTier;
     solutionName: string;
     draft: string;
+    addOnsAllowed: boolean;
+  } | null>(null);
+  const [addOnsPrompt, setAddOnsPrompt] = useState<{
+    tier: SolutionTier;
+    solutionName: string;
+    clientFacingLabel: string;
+    selectedIds: Set<string>;
   } | null>(null);
 
   const targetPhases = useMemo(
@@ -183,6 +192,31 @@ export function ProposalCatalogPanel({
       ),
     [catalogTierTableRows]
   );
+
+  const moduleAddOnGroups = useMemo(() => {
+    const bySol = new Map<string, { solutionId: string; name: string; tiers: CatalogTierTableRow[] }>();
+    for (const row of catalogTierTableRows) {
+      const kind = catalogSolutionKind(row.solutionName, row.solutionType);
+      if (kind.type !== "solution_module") continue;
+      const prev = bySol.get(row.solutionId);
+      if (prev) prev.tiers.push(row);
+      else {
+        bySol.set(row.solutionId, {
+          solutionId: row.solutionId,
+          name: row.solutionName.trim() || row.solutionId,
+          tiers: [row],
+        });
+      }
+    }
+    return [...bySol.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+      .map((g) => ({
+        ...g,
+        tiers: [...g.tiers].sort((a, b) =>
+          a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" })
+        ),
+      }));
+  }, [catalogTierTableRows]);
 
   const toggleExpandedSolution = useCallback((solutionId: string) => {
     setExpandedSolutionIds((prev) => {
@@ -347,6 +381,9 @@ export function ProposalCatalogPanel({
     switch (pending.kind) {
       case "tier":
         onAddTier(pending.tier, dates, pending.clientFacingLabel);
+        for (const addon of pending.addonTiers ?? []) {
+          onAddTier(addon, dates, addon.solution_tier_name.trim() || addon.solution_tier_id);
+        }
         justAdded = `tier:${pending.tier.solution_tier_id}`;
         break;
       case "package":
@@ -373,7 +410,11 @@ export function ProposalCatalogPanel({
   const datesModalItemLabel = useMemo(() => {
     const pending = datesModalPending;
     if (!pending) return undefined;
-    if (pending.kind === "tier") return pending.clientFacingLabel || pending.tier.solution_tier_name;
+    if (pending.kind === "tier") {
+      const extra = pending.addonTiers?.length ?? 0;
+      const base = pending.clientFacingLabel || pending.tier.solution_tier_name;
+      return extra > 0 ? `${base} + ${extra} add-on${extra === 1 ? "" : "s"}` : base;
+    }
     if (pending.kind === "variable") return pending.tier.solution_tier_name;
     if (pending.kind === "package") return pending.pkg.package_name;
     return "Scratch tier";
@@ -390,10 +431,22 @@ export function ProposalCatalogPanel({
       row?.solutionName?.trim() ||
       tier.solution_tier_name.trim() ||
       tier.solution_tier_id;
+    const parentSol = (ctx.solutions ?? []).find((s) => s.solution_id === parent.solutionId);
+    const addOnsAllowed = Boolean(parentSol?.add_ons_allowed) && moduleAddOnGroups.length > 0;
     setLabelPrompt({
       tier,
       solutionName,
       draft: solutionName,
+      addOnsAllowed,
+    });
+  };
+
+  const openDatesForTier = (tier: SolutionTier, clientFacingLabel: string, addonTiers?: SolutionTier[]) => {
+    setDatesModalPending({
+      kind: "tier",
+      tier,
+      clientFacingLabel,
+      addonTiers: addonTiers && addonTiers.length > 0 ? addonTiers : undefined,
     });
   };
 
@@ -404,15 +457,42 @@ export function ProposalCatalogPanel({
       labelPrompt.solutionName.trim() ||
       labelPrompt.tier.solution_tier_name.trim() ||
       labelPrompt.tier.solution_tier_id;
-    setDatesModalPending({
-      kind: "tier",
-      tier: labelPrompt.tier,
-      clientFacingLabel: label,
-    });
+    if (labelPrompt.addOnsAllowed) {
+      setAddOnsPrompt({
+        tier: labelPrompt.tier,
+        solutionName: labelPrompt.solutionName,
+        clientFacingLabel: label,
+        selectedIds: new Set(),
+      });
+      setLabelPrompt(null);
+      return;
+    }
+    openDatesForTier(labelPrompt.tier, label);
     setLabelPrompt(null);
   };
 
   const cancelLabelPrompt = () => setLabelPrompt(null);
+
+  const cancelAddOnsPrompt = () => setAddOnsPrompt(null);
+
+  const toggleAddOnTier = (tierId: string) => {
+    setAddOnsPrompt((prev) => {
+      if (!prev) return prev;
+      const next = new Set(prev.selectedIds);
+      if (next.has(tierId)) next.delete(tierId);
+      else next.add(tierId);
+      return { ...prev, selectedIds: next };
+    });
+  };
+
+  const confirmAddOnsPrompt = () => {
+    if (!addOnsPrompt || !canAdd) return;
+    const addonTiers = [...addOnsPrompt.selectedIds]
+      .map((id) => tierById.get(id))
+      .filter((t): t is SolutionTier => t != null);
+    openDatesForTier(addOnsPrompt.tier, addOnsPrompt.clientFacingLabel, addonTiers);
+    setAddOnsPrompt(null);
+  };
 
   const handleAddPackage = (packageId: string) => {
     const pkg = ctx.packages.find((p) => p.package_id === packageId);
@@ -1206,6 +1286,17 @@ export function ProposalCatalogPanel({
           </div>
         </div>
       ) : null}
+
+      <ProposalAddOnsModal
+        open={addOnsPrompt != null}
+        solutionName={addOnsPrompt?.solutionName ?? ""}
+        tierName={addOnsPrompt?.tier.solution_tier_name ?? ""}
+        groups={moduleAddOnGroups}
+        selectedTierIds={addOnsPrompt?.selectedIds ?? new Set()}
+        onToggleTier={toggleAddOnTier}
+        onCancel={cancelAddOnsPrompt}
+        onContinue={confirmAddOnsPrompt}
+      />
     </div>
   );
 }

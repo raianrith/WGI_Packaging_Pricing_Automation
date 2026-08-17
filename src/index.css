@@ -13038,6 +13038,12 @@ button {
   color: var(--accent);
 }
 
+.agency-catalog-directory__type-pill--module {
+  border: 1px solid rgba(91, 33, 182, 0.22);
+  background: rgba(91, 33, 182, 0.09);
+  color: #5b21b6;
+}
+
 .agency-catalog-directory__type-pill--preset {
   border: 1px solid rgba(180, 83, 9, 0.22);
   background: rgba(180, 83, 9, 0.09);
@@ -13176,6 +13182,12 @@ button {
   border-color: rgba(13, 92, 77, 0.2);
   background: linear-gradient(180deg, rgba(13, 92, 77, 0.11) 0%, rgba(13, 92, 77, 0.06) 100%);
   color: rgba(13, 92, 77, 0.95);
+}
+
+.agency-directory-stat--module {
+  border-color: rgba(91, 33, 182, 0.2);
+  background: linear-gradient(180deg, rgba(91, 33, 182, 0.11) 0%, rgba(91, 33, 182, 0.06) 100%);
+  color: #5b21b6;
 }
 
 .agency-directory-stat--preset {
@@ -13341,6 +13353,10 @@ button {
 
 .agency-playbook-browser--directory .agency-catalog-directory__type-pill--solution {
   background: linear-gradient(180deg, rgba(13, 92, 77, 0.14) 0%, rgba(13, 92, 77, 0.08) 100%);
+}
+
+.agency-playbook-browser--directory .agency-catalog-directory__type-pill--module {
+  background: linear-gradient(180deg, rgba(91, 33, 182, 0.14) 0%, rgba(91, 33, 182, 0.08) 100%);
 }
 
 .agency-playbook-browser--directory .agency-catalog-directory__type-pill--preset {
@@ -16986,6 +17002,12 @@ html[data-theme="dark"] .agency-directory-stat--solution {
   border-color: rgba(167, 139, 250, 0.25);
   background: linear-gradient(180deg, rgba(167, 139, 250, 0.16) 0%, rgba(167, 139, 250, 0.08) 100%);
   color: #ddd6fe;
+}
+
+html[data-theme="dark"] .agency-directory-stat--module {
+  border-color: rgba(196, 181, 253, 0.28);
+  background: linear-gradient(180deg, rgba(196, 181, 253, 0.18) 0%, rgba(167, 139, 250, 0.08) 100%);
+  color: #ede9fe;
 }
 
 html[data-theme="dark"] .agency-directory-stat--preset {

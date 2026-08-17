@@ -64,9 +64,9 @@ export function routePresenceLabel(pathname: string | null | undefined): string 
   const path = (pathname ?? "").trim();
   if (!path) return "Unknown";
   if (path === "/") return "Guided Directory";
-  if (path === "/solutions") return "All Solutions";
+  if (path === "/solutions") return "All Solutions & Packages";
   if (path === "/directory-details") return "Solution Overviews";
-  if (path === "/package-builder") return "Custom Package Builder";
+  if (path === "/package-builder") return "Package Builder";
   if (path === "/packages") return "Packages";
   if (path.startsWith("/package/")) return "Package Workspace";
   if (path === "/roadmap") return "Proposal Builder";

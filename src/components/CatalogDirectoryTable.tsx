@@ -1,5 +1,5 @@
 import type { CatalogTierSortCol } from "./CatalogTierTable";
-import type { CatalogDirectoryRow, CatalogDirectoryItemType } from "../lib/buildCatalogDirectoryRows";
+import { isCatalogSolutionType, type CatalogDirectoryRow, type CatalogDirectoryItemType } from "../lib/buildCatalogDirectoryRows";
 
 export type CatalogDirectorySortCol = CatalogTierSortCol | "type" | "name";
 
@@ -22,9 +22,10 @@ type Props = {
 };
 
 const TYPE_SORT_RANK: Record<CatalogDirectoryItemType, number> = {
-  solution: 0,
-  preset_package: 1,
-  configurable_package: 2,
+  solution_module: 0,
+  configured_solution: 1,
+  preset_package: 2,
+  configurable_package: 3,
 };
 
 function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
@@ -49,7 +50,12 @@ function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
 }
 
 function typePillClass(type: CatalogDirectoryItemType): string {
-  if (type === "solution") return "agency-catalog-directory__type-pill agency-catalog-directory__type-pill--solution";
+  if (type === "solution_module") {
+    return "agency-catalog-directory__type-pill agency-catalog-directory__type-pill--module";
+  }
+  if (type === "configured_solution") {
+    return "agency-catalog-directory__type-pill agency-catalog-directory__type-pill--solution";
+  }
   if (type === "preset_package") return "agency-catalog-directory__type-pill agency-catalog-directory__type-pill--preset";
   return "agency-catalog-directory__type-pill agency-catalog-directory__type-pill--configurable";
 }
@@ -157,7 +163,7 @@ export function CatalogDirectoryTable({
   );
 
   const handleParentActivate = (row: CatalogDirectoryRow) => {
-    if (row.type === "solution" && row.solutionId) onToggleSolution(row.solutionId);
+    if (isCatalogSolutionType(row.type) && row.solutionId) onToggleSolution(row.solutionId);
     else if (row.type === "preset_package" && row.packageId) onOpenPresetPackage(row.packageId);
     else if (row.type === "configurable_package" && row.packageBuilderTypeId) {
       onOpenConfigurablePackage(row.packageBuilderTypeId);
@@ -204,7 +210,7 @@ export function CatalogDirectoryTable({
             </tr>
           ) : (
             rows.flatMap((row) => {
-              const isSolution = row.type === "solution";
+              const isSolution = isCatalogSolutionType(row.type);
               const expanded = isSolution && row.solutionId != null && expandedSolutionIds.has(row.solutionId);
               const parentRow = (
                 <tr

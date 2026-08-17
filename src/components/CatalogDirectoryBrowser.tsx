@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo } from "react";
 import { filterCatalogTierRows, PLAYBOOK_UNSET, type PlaybookFilterValue } from "./CatalogPlaybookBrowser";
 import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
 import { compareTierCategoryLabels } from "../lib/tierCategories";
-import type { CatalogDirectoryRow, CatalogDirectoryItemType } from "../lib/buildCatalogDirectoryRows";
+import { isCatalogSolutionType, type CatalogDirectoryRow, type CatalogDirectoryItemType } from "../lib/buildCatalogDirectoryRows";
 import {
   CatalogDirectoryTable,
   TYPE_SORT_RANK,
@@ -15,17 +15,24 @@ export type CatalogDirectoryTypeFilter = CatalogDirectoryItemType | null;
 
 type TypeFilterOption = { value: CatalogDirectoryTypeFilter; label: string; count: number };
 
-const TYPE_FILTER_ORDER: CatalogDirectoryItemType[] = ["solution", "preset_package", "configurable_package"];
+const TYPE_FILTER_ORDER: CatalogDirectoryItemType[] = [
+  "solution_module",
+  "configured_solution",
+  "preset_package",
+  "configurable_package",
+];
 
 const TYPE_FILTER_LABELS: Record<CatalogDirectoryItemType, string> = {
-  solution: "Solution",
+  solution_module: "Solution Modules",
+  configured_solution: "Configured Solutions",
   preset_package: "Custom Package",
   configurable_package: "Configurable Package",
 };
 
 function buildTypeFilterOptions(rows: CatalogDirectoryRow[]): TypeFilterOption[] {
   const counts: Record<CatalogDirectoryItemType, number> = {
-    solution: 0,
+    solution_module: 0,
+    configured_solution: 0,
     preset_package: 0,
     configurable_package: 0,
   };
@@ -46,7 +53,14 @@ function typeFilterToSelectString(value: CatalogDirectoryTypeFilter): string {
 
 function selectStringToTypeFilter(raw: string): CatalogDirectoryTypeFilter {
   if (raw === "") return null;
-  if (raw === "solution" || raw === "preset_package" || raw === "configurable_package") return raw;
+  if (
+    raw === "solution_module" ||
+    raw === "configured_solution" ||
+    raw === "preset_package" ||
+    raw === "configurable_package"
+  ) {
+    return raw;
+  }
   return null;
 }
 
@@ -182,14 +196,19 @@ export function filterCatalogDirectoryRows(
   phase: PlaybookFilterValue,
   category: PlaybookFilterValue,
   tactic: PlaybookFilterValue,
-  tableSearch: string
+  tableSearch: string,
+  solutionsOnly = false
 ): CatalogDirectoryRow[] {
   const q = tableSearch.trim().toLowerCase();
   const hasTaxonomy = phase !== null || category !== null || tactic !== null;
   const out: CatalogDirectoryRow[] = [];
 
   for (const row of rows) {
-    if (itemType !== null && row.type !== itemType) continue;
+    if (solutionsOnly) {
+      if (!isCatalogSolutionType(row.type)) continue;
+    } else if (itemType !== null && row.type !== itemType) {
+      continue;
+    }
 
     if (row.type === "configurable_package") {
       const rowBlob = `${row.name} ${row.meta} ${row.typeLabel}`.toLowerCase().replace(/\$/g, "");
@@ -208,7 +227,7 @@ export function filterCatalogDirectoryRows(
     if (q && !rowMatchesSearch && filteredTiers.length === 0) continue;
 
     const tierRows =
-      row.type === "solution" && q && rowMatchesSearch && filteredTiers.length === 0
+      isCatalogSolutionType(row.type) && q && rowMatchesSearch && filteredTiers.length === 0
         ? row.tierRows
         : hasTaxonomy || q
           ? filteredTiers
@@ -284,12 +303,11 @@ export function CatalogDirectoryBrowser({
   const tacticId = useId();
   const searchId = useId();
 
-  const effectiveItemType = hideTypeFilter ? "solution" : itemType;
-
   const rowsForTypeScope = useMemo(() => {
-    if (effectiveItemType === null) return allRows;
-    return allRows.filter((r) => r.type === effectiveItemType);
-  }, [allRows, effectiveItemType]);
+    if (hideTypeFilter) return allRows.filter((r) => isCatalogSolutionType(r.type));
+    if (itemType === null) return allRows;
+    return allRows.filter((r) => r.type === itemType);
+  }, [allRows, hideTypeFilter, itemType]);
 
   const allTierRows = useMemo(() => rowsForTypeScope.flatMap((r) => r.tierRows), [rowsForTypeScope]);
 
@@ -304,8 +322,8 @@ export function CatalogDirectoryBrowser({
   }, [rowsAfterPhase, category]);
 
   const filteredRows = useMemo(
-    () => filterCatalogDirectoryRows(allRows, effectiveItemType, phase, category, tactic, tableSearch),
-    [allRows, effectiveItemType, phase, category, tactic, tableSearch]
+    () => filterCatalogDirectoryRows(allRows, itemType, phase, category, tactic, tableSearch, hideTypeFilter),
+    [allRows, itemType, phase, category, tactic, tableSearch, hideTypeFilter]
   );
 
   const typeOptions = useMemo(() => buildTypeFilterOptions(allRows), [allRows]);
@@ -390,7 +408,8 @@ export function CatalogDirectoryBrowser({
 
   const hasFilters =
     (!hideTypeFilter && itemType !== null) || phase !== null || category !== null || tactic !== null;
-  const solutionCount = allRows.filter((r) => r.type === "solution").length;
+  const moduleCount = allRows.filter((r) => r.type === "solution_module").length;
+  const configuredCount = allRows.filter((r) => r.type === "configured_solution").length;
   const presetCount = allRows.filter((r) => r.type === "preset_package").length;
   const configurableCount = allRows.filter((r) => r.type === "configurable_package").length;
 
@@ -490,7 +509,10 @@ export function CatalogDirectoryBrowser({
               <strong>{sortedRows.length}</strong>
               <span className="agency-tier-filters__count-of"> of {allRows.length}</span>
             </span>
-            <span className="agency-directory-stat agency-directory-stat--solution">{solutionCount} solutions</span>
+            <span className="agency-directory-stat agency-directory-stat--module">{moduleCount} solution modules</span>
+            <span className="agency-directory-stat agency-directory-stat--solution">
+              {configuredCount} configured solutions
+            </span>
             {hidePackageStats ? null : (
               <>
                 <span className="agency-directory-stat agency-directory-stat--preset">{presetCount} custom packages</span>

@@ -141,7 +141,7 @@ export function ProposalCatalogPanel({
   const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
   const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
 
-  const [dirItemType, setDirItemType] = useState<CatalogDirectoryTypeFilter>("solution");
+  const [dirItemType, setDirItemType] = useState<CatalogDirectoryTypeFilter>(null);
   const [dirPhase, setDirPhase] = useState<PlaybookFilterValue>(null);
   const [dirCategory, setDirCategory] = useState<PlaybookFilterValue>(null);
   const [dirTactic, setDirTactic] = useState<PlaybookFilterValue>(null);

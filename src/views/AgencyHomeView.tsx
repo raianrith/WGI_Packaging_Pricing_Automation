@@ -82,7 +82,7 @@ export function AgencyHomeView() {
         <p className="agency-hub__lede">
           {AGENCY_HOME_DESCRIPTION} Or browse the full{" "}
           <Link className="agency-hub__link" to="/solutions">
-            All Solutions
+            All Solutions & Packages
           </Link>{" "}
           and{" "}
           <Link className="agency-hub__link" to="/packages">

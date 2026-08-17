@@ -13,7 +13,33 @@ import type {
 } from "../types";
 import type { TierPricingMathConfig } from "./tierPricingMath";
 
-export type CatalogDirectoryItemType = "solution" | "preset_package" | "configurable_package";
+export type CatalogDirectoryItemType =
+  | "solution_module"
+  | "configured_solution"
+  | "preset_package"
+  | "configurable_package";
+
+const SOLUTION_MODULE_NAMES = new Set(["copy", "design", "dev"]);
+
+export function isSolutionModuleName(name: string): boolean {
+  return SOLUTION_MODULE_NAMES.has(name.trim().toLowerCase());
+}
+
+export function catalogSolutionKind(name: string): {
+  type: "solution_module" | "configured_solution";
+  typeLabel: string;
+} {
+  if (isSolutionModuleName(name)) {
+    return { type: "solution_module", typeLabel: "Solution Modules" };
+  }
+  return { type: "configured_solution", typeLabel: "Configured Solutions" };
+}
+
+export function isCatalogSolutionType(
+  type: CatalogDirectoryItemType
+): type is "solution_module" | "configured_solution" {
+  return type === "solution_module" || type === "configured_solution";
+}
 
 export type CatalogDirectoryRow = {
   id: string;
@@ -48,11 +74,35 @@ function sortId(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
+const TIER_SIZE_RANK: { re: RegExp; rank: number }[] = [
+  { re: /\bextra\s+extra\s+small\b|\bxxs\b/i, rank: 0 },
+  { re: /\bextra\s+small\b|\bxs\b/i, rank: 1 },
+  { re: /\bsmall\b|\bs\b/i, rank: 2 },
+  { re: /\bmedium\b|\bm\b/i, rank: 3 },
+  { re: /\blarge\b|\bl\b/i, rank: 4 },
+  { re: /\bextra\s+large\b|\bxl\b/i, rank: 5 },
+];
+
+function tierSizeRank(name: string): number | null {
+  const suffix = name.includes(" - ") ? name.slice(name.lastIndexOf(" - ") + 3).trim() : name.trim();
+  const token = suffix.split(/\s+/)[0] ?? suffix;
+  for (const { re, rank } of TIER_SIZE_RANK) {
+    if (re.test(suffix) || re.test(token)) return rank;
+  }
+  return null;
+}
+
 function compareTierName(a: CatalogTierTableRow, b: CatalogTierTableRow): number {
-  return (
-    (a.tierName || "").localeCompare(b.tierName || "", undefined, { sensitivity: "base" }) ||
-    sortId(a.tierId, b.tierId)
-  );
+  const an = a.tierName || "";
+  const bn = b.tierName || "";
+  const aPrefix = an.includes(" - ") ? an.slice(0, an.lastIndexOf(" - ")) : an;
+  const bPrefix = bn.includes(" - ") ? bn.slice(0, bn.lastIndexOf(" - ")) : bn;
+  const prefixCmp = aPrefix.localeCompare(bPrefix, undefined, { sensitivity: "base" });
+  if (prefixCmp !== 0) return prefixCmp;
+  const ar = tierSizeRank(an);
+  const br = tierSizeRank(bn);
+  if (ar != null && br != null && ar !== br) return ar - br;
+  return an.localeCompare(bn, undefined, { sensitivity: "base" }) || sortId(a.tierId, b.tierId);
 }
 
 function formatKpiNumber(n: number): string {
@@ -137,10 +187,11 @@ export function buildSolutionDirectoryRowsFromTier(
       const rollup = sumTierRollup(sorted);
       const tierCount = sorted.length;
       const name = sorted[0]?.solutionName?.trim() || solutionId;
+      const kind = catalogSolutionKind(name);
       return {
         id: `solution:${solutionId}`,
-        type: "solution" as const,
-        typeLabel: "Solution",
+        type: kind.type,
+        typeLabel: kind.typeLabel,
         name,
         meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
         phaseRaw: "",
@@ -194,11 +245,13 @@ export function buildCatalogDirectoryRows(
       const tierRows = [...(tiersBySolutionId.get(solution.solution_id) ?? [])].sort(compareTierName);
       const rollup = sumTierRollup(tierRows);
       const tierCount = tierRows.length;
+      const name = solution.solution_name?.trim() || solution.solution_id;
+      const kind = catalogSolutionKind(name);
       return {
         id: `solution:${solution.solution_id}`,
-        type: "solution" as const,
-        typeLabel: "Solution",
-        name: solution.solution_name?.trim() || solution.solution_id,
+        type: kind.type,
+        typeLabel: kind.typeLabel,
+        name,
         meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
         phaseRaw: "",
         categoryRaw: "",

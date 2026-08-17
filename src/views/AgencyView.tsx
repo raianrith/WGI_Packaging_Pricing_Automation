@@ -1455,7 +1455,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             </>
           ) : (
             <>
-              Use the <Link className="agency-hub__link" to="/solutions">All Solutions</Link> tab to search
+              Use the <Link className="agency-hub__link" to="/solutions">All Solutions & Packages</Link> tab to search
               tiers across the Solutions Directory.
             </>
           )}
@@ -1722,7 +1722,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/solutions">
-                  ← All Solutions
+                  ← All Solutions & Packages
                 </Link>
                 {selectedPackageOverview && (
                   <span className="agency-package-workspace-bar__context">

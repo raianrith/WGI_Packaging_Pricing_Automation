@@ -30,7 +30,7 @@ export function AgencyTabsShell() {
                   `agency-tab${directoryTabActive ? " agency-tab--active" : ""}`
                 }
               >
-                All Solutions
+                All Solutions & Packages
               </NavLink>
             </li>
             <li>

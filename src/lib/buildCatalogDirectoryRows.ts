@@ -22,7 +22,9 @@ export type CatalogDirectoryItemType =
 const SOLUTION_MODULE_NAMES = new Set(["copy", "design", "dev"]);
 
 export function isSolutionModuleName(name: string): boolean {
-  return SOLUTION_MODULE_NAMES.has(name.trim().toLowerCase());
+  const n = name.trim().toLowerCase();
+  if (SOLUTION_MODULE_NAMES.has(n)) return true;
+  return n === "video" || n.startsWith("video -");
 }
 
 export function catalogSolutionKind(name: string): {

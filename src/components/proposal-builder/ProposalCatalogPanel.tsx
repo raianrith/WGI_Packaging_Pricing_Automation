@@ -13,7 +13,7 @@ import {
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
-import { buildSolutionDirectoryRowsFromTier } from "../../lib/buildCatalogDirectoryRows";
+import { buildSolutionDirectoryRowsFromTier, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
@@ -177,7 +177,10 @@ export function ProposalCatalogPanel({
   }, [ctx.tiers]);
 
   const solutionDirectoryRows = useMemo(
-    () => buildSolutionDirectoryRowsFromTier(catalogTierTableRows),
+    () =>
+      buildSolutionDirectoryRowsFromTier(catalogTierTableRows).filter(
+        (r) => r.type === "configured_solution"
+      ),
     [catalogTierTableRows]
   );
 
@@ -379,8 +382,11 @@ export function ProposalCatalogPanel({
   const handleAddTier = (tierId: string) => {
     const tier = tierById.get(tierId);
     if (!tier || !canAdd) return;
+    const parent = solutionDirectoryRows.find((r) => r.tierRows.some((t) => t.tierId === tierId));
+    if (!parent || parent.type === "solution_module" || isSolutionModuleName(parent.name)) return;
     const row = catalogTierTableRows.find((r) => r.tierId === tierId);
     const solutionName =
+      parent.name.trim() ||
       row?.solutionName?.trim() ||
       tier.solution_tier_name.trim() ||
       tier.solution_tier_id;

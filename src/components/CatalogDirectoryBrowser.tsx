@@ -205,7 +205,7 @@ export function filterCatalogDirectoryRows(
 
   for (const row of rows) {
     if (solutionsOnly) {
-      if (!isCatalogSolutionType(row.type)) continue;
+      if (row.type !== "configured_solution") continue;
     } else if (itemType !== null && row.type !== itemType) {
       continue;
     }
@@ -304,7 +304,7 @@ export function CatalogDirectoryBrowser({
   const searchId = useId();
 
   const rowsForTypeScope = useMemo(() => {
-    if (hideTypeFilter) return allRows.filter((r) => isCatalogSolutionType(r.type));
+    if (hideTypeFilter) return allRows.filter((r) => r.type === "configured_solution");
     if (itemType === null) return allRows;
     return allRows.filter((r) => r.type === itemType);
   }, [allRows, hideTypeFilter, itemType]);
@@ -509,7 +509,9 @@ export function CatalogDirectoryBrowser({
               <strong>{sortedRows.length}</strong>
               <span className="agency-tier-filters__count-of"> of {allRows.length}</span>
             </span>
-            <span className="agency-directory-stat agency-directory-stat--module">{moduleCount} solution modules</span>
+            {hideTypeFilter ? null : (
+              <span className="agency-directory-stat agency-directory-stat--module">{moduleCount} solution modules</span>
+            )}
             <span className="agency-directory-stat agency-directory-stat--solution">
               {configuredCount} configured solutions
             </span>

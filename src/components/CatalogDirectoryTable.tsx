@@ -282,7 +282,7 @@ export function CatalogDirectoryTable({
                 const justAdded = justAddedTierId === tier.tierId;
                 const selectTier = () => {
                   if (addMode) {
-                    if (!canAdd || !onAddTier) return;
+                    if (!canAdd || !onAddTier || row.type === "solution_module") return;
                     onAddTier(tier.solutionId, tier.tierId);
                     return;
                   }
@@ -333,7 +333,7 @@ export function CatalogDirectoryTable({
                         <button
                           type="button"
                           className={`agency-catalog-directory__add-btn${justAdded ? " is-done" : ""}${onProposal && !justAdded ? " is-again" : ""}`}
-                          disabled={!canAdd}
+                          disabled={!canAdd || row.type === "solution_module"}
                           onClick={(e) => {
                             e.stopPropagation();
                             selectTier();

@@ -19,6 +19,7 @@ import type {
   Solution,
   SolutionTier,
   SolutionTierPricing,
+  SolutionType,
   TaskGroupLineRow,
   TaskGroupRow,
   TaskRow,
@@ -452,6 +453,8 @@ export function SolutionsBuilderPanel({
   const [tierOnlySolId, setTierOnlySolId] = useState("");
 
   const [solNameDraft, setSolNameDraft] = useState("");
+  const [solTypeDraft, setSolTypeDraft] = useState<SolutionType>("configured_solution");
+  const [solAddOnsAllowed, setSolAddOnsAllowed] = useState(false);
 
   const [tName, setTName] = useState("");
   const [tPhase, setTPhase] = useState("");
@@ -487,6 +490,8 @@ export function SolutionsBuilderPanel({
     setCtxTierId("");
     setTierOnlySolId("");
     setSolNameDraft("");
+    setSolTypeDraft("configured_solution");
+    setSolAddOnsAllowed(false);
     setTName("");
     setTCategory("");
     setTOwner("");
@@ -635,6 +640,8 @@ export function SolutionsBuilderPanel({
       solution_name: solName,
       solution_created_date: today,
       solution_modified_date: today,
+      solution_type: solTypeDraft,
+      add_ons_allowed: solAddOnsAllowed,
     };
     const { error: solErr } = await client.from("solutions").insert(solRow);
     if (solErr) {
@@ -2766,6 +2773,33 @@ export function SolutionsBuilderPanel({
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Solution name</AdminFieldCaption>
                     <input style={input} value={solNameDraft} onChange={(e) => setSolNameDraft(e.target.value)} />
+                  </label>
+                  <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                    <AdminFieldCaption>Solution type</AdminFieldCaption>
+                    <select
+                      style={input}
+                      value={solTypeDraft}
+                      onChange={(e) => setSolTypeDraft(e.target.value as SolutionType)}
+                    >
+                      <option value="configured_solution">Configured Solution</option>
+                      <option value="solution_module">Solution Module</option>
+                    </select>
+                  </label>
+                  <label
+                    style={{
+                      ...lbl,
+                      gridColumn: "1 / -1",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={solAddOnsAllowed}
+                      onChange={(e) => setSolAddOnsAllowed(e.target.checked)}
+                    />
+                    Add Ons Allowed?
                   </label>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
                     <AdminFieldCaption>Tier name</AdminFieldCaption>

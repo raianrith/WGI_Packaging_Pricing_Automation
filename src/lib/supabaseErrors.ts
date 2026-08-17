@@ -12,5 +12,11 @@ export function friendlyMutationMessage(message: string): string {
   ) {
     return `${message} Package links live on public.package_solution_tiers (package_id + solution_tier_id), not on solutions. Ensure the migration supabase/package_solution_tiers.sql has been applied.`;
   }
+  if (
+    /solution_type|add_ons_allowed/i.test(message) &&
+    /column|schema cache|could not find/i.test(message)
+  ) {
+    return `${message} Run supabase/solutions_type_and_add_ons.sql in Supabase → SQL Editor, then retry.`;
+  }
   return message;
 }

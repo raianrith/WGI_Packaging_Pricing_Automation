@@ -6,6 +6,7 @@ export type CatalogTierTableRow = {
   pname: string;
   tierName: string;
   solutionName: string;
+  solutionType?: string | null;
   phaseRaw: string;
   categoryRaw: string;
   tacticRaw: string;

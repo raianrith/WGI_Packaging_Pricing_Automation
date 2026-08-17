@@ -120,11 +120,15 @@ export type PackageBuilderSlotTemplate = {
   updated_at?: string | null;
 };
 
+export type SolutionType = "solution_module" | "configured_solution";
+
 export type Solution = {
   solution_id: string;
   solution_name: string;
   solution_created_date: string;
   solution_modified_date: string;
+  solution_type?: SolutionType | null;
+  add_ons_allowed?: boolean | null;
 };
 
 /** One dated example pair for structured tier resources (`solution_tier_resource_examples`). */

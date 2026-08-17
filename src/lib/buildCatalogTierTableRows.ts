@@ -101,6 +101,7 @@ export function buildCatalogTierTableRows(data: VaultCatalogData): CatalogTierTa
         pname,
         tierName,
         solutionName,
+        solutionType: solution?.solution_type ?? null,
         phaseRaw,
         categoryRaw,
         tacticRaw,

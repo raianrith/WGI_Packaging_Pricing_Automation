@@ -27,10 +27,26 @@ export function isSolutionModuleName(name: string): boolean {
   return n === "video" || n.startsWith("video -");
 }
 
-export function catalogSolutionKind(name: string): {
+export function parseSolutionType(raw: string | null | undefined): "solution_module" | "configured_solution" | null {
+  const n = (raw ?? "").trim().toLowerCase();
+  if (n === "solution_module" || n === "configured_solution") return n;
+  return null;
+}
+
+export function catalogSolutionKind(
+  name: string,
+  storedType?: string | null
+): {
   type: "solution_module" | "configured_solution";
   typeLabel: string;
 } {
+  const stored = parseSolutionType(storedType);
+  if (stored === "solution_module") {
+    return { type: "solution_module", typeLabel: "Solution Modules" };
+  }
+  if (stored === "configured_solution") {
+    return { type: "configured_solution", typeLabel: "Configured Solutions" };
+  }
   if (isSolutionModuleName(name)) {
     return { type: "solution_module", typeLabel: "Solution Modules" };
   }
@@ -189,7 +205,7 @@ export function buildSolutionDirectoryRowsFromTier(
       const rollup = sumTierRollup(sorted);
       const tierCount = sorted.length;
       const name = sorted[0]?.solutionName?.trim() || solutionId;
-      const kind = catalogSolutionKind(name);
+      const kind = catalogSolutionKind(name, sorted[0]?.solutionType);
       return {
         id: `solution:${solutionId}`,
         type: kind.type,
@@ -248,7 +264,7 @@ export function buildCatalogDirectoryRows(
       const rollup = sumTierRollup(tierRows);
       const tierCount = tierRows.length;
       const name = solution.solution_name?.trim() || solution.solution_id;
-      const kind = catalogSolutionKind(name);
+      const kind = catalogSolutionKind(name, solution.solution_type);
       return {
         id: `solution:${solution.solution_id}`,
         type: kind.type,

@@ -66,6 +66,9 @@ function CsrCard({
   effectivePriceForCard,
   onPatchCard,
   tone,
+  isAddon,
+  parentHeadline,
+  addonCount,
 }: {
   card: RoadmapCard;
   phases: RoadmapPhase[];
@@ -75,14 +78,33 @@ function CsrCard({
   effectivePriceForCard: (card: RoadmapCard) => string;
   onPatchCard: (key: string, next: RoadmapCard) => void;
   tone: "package" | "solution";
+  isAddon?: boolean;
+  parentHeadline?: string | null;
+  addonCount?: number;
 }) {
   const taskRows = resolveProposalCardTasks(card, ctx);
   const metrics = proposalLineCompareMetrics(card, ctx, effectivePriceForCard(card));
   const changed = metrics.hoursChanged || metrics.priceChanged;
+  const kindClass = isAddon ? "addon" : tone;
+  const kindLabel = isAddon
+    ? "Add-on"
+    : tone === "package"
+      ? "Package"
+      : card.kind === "custom_tier"
+        ? "Custom"
+        : "Solution";
+  const metaBits = [
+    isAddon && parentHeadline ? `Add-on of ${parentHeadline.trim() || "parent solution"}` : null,
+    phaseTitle(phases, card.phaseId),
+    `${taskRows.length} task${taskRows.length === 1 ? "" : "s"}`,
+    !isAddon && addonCount && addonCount > 0
+      ? `${addonCount} add-on${addonCount === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean);
 
   return (
-    <li
-      className={`proposal-csr-card proposal-csr-card--${tone}${expanded ? " is-expanded" : ""}${
+    <article
+      className={`proposal-csr-card proposal-csr-card--${kindClass}${expanded ? " is-expanded" : ""}${
         changed ? " is-changed" : ""
       }`}
     >
@@ -97,16 +119,13 @@ function CsrCard({
         </span>
         <span className="proposal-csr-card__main">
           <span className="proposal-csr-card__title-row">
-            <span className={`proposal-csr-card__kind proposal-csr-card__kind--${tone}`}>
-              {tone === "package" ? "Package" : card.kind === "custom_tier" ? "Custom" : "Solution"}
+            <span className={`proposal-csr-card__kind proposal-csr-card__kind--${kindClass}`}>
+              {kindLabel}
             </span>
             <span className="proposal-csr-card__title">{card.headline.trim() || "Untitled"}</span>
             {changed ? <span className="proposal-csr-card__changed-pill">Updated</span> : null}
           </span>
-          <span className="proposal-csr-card__meta">
-            {phaseTitle(phases, card.phaseId)} · {taskRows.length} task
-            {taskRows.length === 1 ? "" : "s"}
-          </span>
+          <span className="proposal-csr-card__meta">{metaBits.join(" · ")}</span>
           <div className="proposal-csr-metrics" aria-label="Hours and price comparison">
             <MetricCell
               label="Original hours"
@@ -292,7 +311,7 @@ function CsrCard({
           </div>
         </div>
       ) : null}
-    </li>
+    </article>
   );
 }
 
@@ -300,12 +319,14 @@ function Section({
   title,
   hint,
   count,
+  extraCount,
   tone,
   children,
 }: {
   title: string;
   hint: string;
   count: number;
+  extraCount?: string;
   tone: "package" | "solution";
   children: ReactNode;
 }) {
@@ -343,6 +364,7 @@ function Section({
         </div>
         <span className={`proposal-csr-section__count proposal-csr-section__count--${tone}`}>
           {count} item{count === 1 ? "" : "s"}
+          {extraCount ? ` · ${extraCount}` : ""}
         </span>
       </header>
       <ul className="proposal-csr__list">{children}</ul>
@@ -392,6 +414,25 @@ export function ProposalClientServiceReviewPanel({
   const solutionCards = useMemo(
     () => scenarioCards.filter((c) => c.kind === "tier" || c.kind === "custom_tier"),
     [scenarioCards]
+  );
+  const solutionGroups = useMemo(() => {
+    const keySet = new Set(solutionCards.map((c) => c.key));
+    const addonsByParent = new Map<string, RoadmapCard[]>();
+    for (const c of solutionCards) {
+      if (!c.addonOfCardKey || !keySet.has(c.addonOfCardKey)) continue;
+      const list = addonsByParent.get(c.addonOfCardKey) ?? [];
+      list.push(c);
+      addonsByParent.set(c.addonOfCardKey, list);
+    }
+    const parents = solutionCards.filter((c) => !c.addonOfCardKey || !keySet.has(c.addonOfCardKey));
+    return parents.map((card) => ({
+      card,
+      addons: addonsByParent.get(card.key) ?? [],
+    }));
+  }, [solutionCards]);
+  const nestedAddonCount = useMemo(
+    () => solutionGroups.reduce((n, g) => n + g.addons.length, 0),
+    [solutionGroups]
   );
 
   const proposalTotals = useMemo(() => {
@@ -452,20 +493,25 @@ export function ProposalClientServiceReviewPanel({
     });
   };
 
-  const renderCards = (list: RoadmapCard[], tone: "package" | "solution") =>
-    list.map((card) => (
-      <CsrCard
-        key={card.key}
-        card={card}
-        phases={phases}
-        ctx={ctx}
-        expanded={expandedKeys.has(card.key)}
-        onToggle={() => toggleExpanded(card.key)}
-        effectivePriceForCard={effectivePriceForCard}
-        onPatchCard={onPatchCard}
-        tone={tone}
-      />
-    ));
+  const renderCard = (
+    card: RoadmapCard,
+    tone: "package" | "solution",
+    extra?: { isAddon?: boolean; parentHeadline?: string | null; addonCount?: number }
+  ) => (
+    <CsrCard
+      card={card}
+      phases={phases}
+      ctx={ctx}
+      expanded={expandedKeys.has(card.key)}
+      onToggle={() => toggleExpanded(card.key)}
+      effectivePriceForCard={effectivePriceForCard}
+      onPatchCard={onPatchCard}
+      tone={tone}
+      isAddon={extra?.isAddon}
+      parentHeadline={extra?.parentHeadline}
+      addonCount={extra?.addonCount}
+    />
+  );
 
   return (
     <div className="proposal-step-panel proposal-csr">
@@ -555,15 +601,38 @@ export function ProposalClientServiceReviewPanel({
             count={packageCards.length}
             tone="package"
           >
-            {renderCards(packageCards, "package")}
+            {packageCards.map((card) => (
+              <li key={card.key}>{renderCard(card, "package")}</li>
+            ))}
           </Section>
           <Section
             title="Solutions"
-            hint="Individual solution tiers and custom tiers"
-            count={solutionCards.length}
+            hint="Solution tiers with add-ons nested underneath"
+            count={solutionGroups.length}
+            extraCount={
+              nestedAddonCount > 0
+                ? `${nestedAddonCount} add-on${nestedAddonCount === 1 ? "" : "s"}`
+                : undefined
+            }
             tone="solution"
           >
-            {renderCards(solutionCards, "solution")}
+            {solutionGroups.map(({ card, addons }) => (
+              <li key={card.key} className="proposal-csr-group">
+                {renderCard(card, "solution", { addonCount: addons.length })}
+                {addons.length > 0 ? (
+                  <ul className="proposal-csr-group__nested">
+                    {addons.map((addon) => (
+                      <li key={addon.key}>
+                        {renderCard(addon, "solution", {
+                          isAddon: true,
+                          parentHeadline: card.headline,
+                        })}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
           </Section>
         </div>
       )}

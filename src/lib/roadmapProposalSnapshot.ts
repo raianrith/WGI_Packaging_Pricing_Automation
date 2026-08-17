@@ -104,11 +104,19 @@ export function cloneProposalStructure(
     };
   });
 
-  const cards = snapshot.cards.map((c) => ({
+  const cardKeyMap = new Map<string, string>();
+  const cards = snapshot.cards.map((c) => {
+    const key = newStructureId();
+    cardKeyMap.set(c.key, key);
+    return {
+      ...c,
+      key,
+      scenarioId: scenarioIdMap.get(c.scenarioId) ?? c.scenarioId,
+      phaseId: phaseIdMap.get(c.phaseId) ?? c.phaseId,
+    };
+  }).map((c) => ({
     ...c,
-    key: newStructureId(),
-    scenarioId: scenarioIdMap.get(c.scenarioId) ?? c.scenarioId,
-    phaseId: phaseIdMap.get(c.phaseId) ?? c.phaseId,
+    addonOfCardKey: c.addonOfCardKey ? cardKeyMap.get(c.addonOfCardKey) ?? null : c.addonOfCardKey,
   }));
 
   return { scenarios, phases, cards };

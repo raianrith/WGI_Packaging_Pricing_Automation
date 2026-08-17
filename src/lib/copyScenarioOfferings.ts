@@ -59,23 +59,45 @@ export function copyScenarioOfferings(args: {
 
   const cards: RoadmapCard[] = [];
   let skippedDuplicates = 0;
+  const oldToNewKey = new Map<string, string>();
+  const skippedSourceKeys = new Set<string>();
 
-  for (const c of sourceCards) {
+  const parents = sourceCards.filter((c) => !c.addonOfCardKey);
+  const addons = sourceCards.filter((c) => c.addonOfCardKey);
+
+  const copyOne = (c: RoadmapCard, addonOfCardKey: string | null | undefined) => {
     if (shouldDedupeOnCopy(c.kind)) {
       const key = dedupeKey(c);
       if (existing.has(key)) {
         skippedDuplicates += 1;
-        continue;
+        skippedSourceKeys.add(c.key);
+        return;
       }
       existing.add(key);
     }
 
+    const newKey = args.newKey();
+    oldToNewKey.set(c.key, newKey);
     cards.push({
       ...c,
-      key: args.newKey(),
+      key: newKey,
       scenarioId: args.targetScenarioId,
       phaseId: phaseMap.get(c.phaseId) ?? args.targetPhaseId,
+      addonOfCardKey: addonOfCardKey ?? null,
     });
+  };
+
+  for (const c of parents) copyOne(c, null);
+
+  for (const c of addons) {
+    const parentOld = c.addonOfCardKey;
+    if (parentOld && skippedSourceKeys.has(parentOld)) {
+      skippedDuplicates += 1;
+      skippedSourceKeys.add(c.key);
+      continue;
+    }
+    const parentNew = parentOld ? oldToNewKey.get(parentOld) ?? null : null;
+    copyOne(c, parentNew);
   }
 
   return { cards, skippedDuplicates };

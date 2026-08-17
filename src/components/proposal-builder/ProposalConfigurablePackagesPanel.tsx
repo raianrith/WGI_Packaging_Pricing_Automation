@@ -17,6 +17,7 @@ import { PackageBuildWizard } from "../PackageBuildWizard";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
 import type { ScenarioCopySource } from "./ProposalCopyScenarioOfferings";
+import type { ModuleAddOnGroup } from "../../lib/buildCatalogDirectoryRows";
 import {
   ProposalScenarioBudgetBars,
   type ScenarioBudgetBarRow,
@@ -51,6 +52,8 @@ type Props = {
   formatUsd: (n: number | null | undefined) => string;
   addedLines: ProposalAddedLine[];
   onRemoveAdded: (key: string) => void;
+  onAddAddOns?: (parentKey: string, tierIds: string[]) => void;
+  addonGroups?: ModuleAddOnGroup[];
   copyFromScenarios?: ScenarioCopySource[];
   onCopyFromScenario?: (sourceScenarioId: string) => void;
 };
@@ -82,6 +85,8 @@ export function ProposalConfigurablePackagesPanel({
   formatUsd,
   addedLines,
   onRemoveAdded,
+  onAddAddOns,
+  addonGroups,
   copyFromScenarios,
   onCopyFromScenario,
 }: Props) {
@@ -219,6 +224,8 @@ export function ProposalConfigurablePackagesPanel({
           onRemove={onRemoveAdded}
           copyFromScenarios={copyFromScenarios}
           onCopyFromScenario={onCopyFromScenario}
+          addonGroups={addonGroups}
+          onAddAddOns={onAddAddOns}
         />
       </div>
 

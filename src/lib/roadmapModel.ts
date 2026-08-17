@@ -48,6 +48,8 @@ export type RoadmapCard = {
   variablePaidAdsSpendUsd?: number | null;
   /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
   variableLinkedTierRefId?: string | null;
+  /** When set, this card is an add-on nested under the parent solution tier with this `key`. */
+  addonOfCardKey?: string | null;
   /**
    * Proposal-only task edits for Client Service Review.
    * Does not mutate vault `tasks` or package link rows — sparse overlay on catalog tasks.

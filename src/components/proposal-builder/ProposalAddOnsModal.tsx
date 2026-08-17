@@ -1,17 +1,12 @@
 import { useMemo, useState } from "react";
-import type { CatalogTierTableRow } from "../CatalogTierTable";
-
-type ModuleGroup = {
-  solutionId: string;
-  name: string;
-  tiers: CatalogTierTableRow[];
-};
+import type { ModuleAddOnGroup } from "../../lib/buildCatalogDirectoryRows";
 
 type Props = {
   open: boolean;
+  variant?: "initial" | "append";
   solutionName: string;
   tierName: string;
-  groups: ModuleGroup[];
+  groups: ModuleAddOnGroup[];
   selectedTierIds: ReadonlySet<string>;
   onToggleTier: (tierId: string) => void;
   onCancel: () => void;
@@ -20,6 +15,7 @@ type Props = {
 
 export function ProposalAddOnsModal({
   open,
+  variant = "initial",
   solutionName,
   tierName,
   groups,
@@ -76,7 +72,7 @@ export function ProposalAddOnsModal({
           <div className="agency-pkg-label-modal__head-copy">
             <p className="agency-pkg-label-modal__eyebrow">Add-ons</p>
             <h3 id="proposal-addons-title" className="agency-pkg-label-modal__title">
-              Add any add-ons?
+              {variant === "append" ? "Add more add-ons?" : "Add any add-ons?"}
             </h3>
             <p className="agency-pkg-label-modal__sub">
               {solutionName}
@@ -95,8 +91,9 @@ export function ProposalAddOnsModal({
 
         <div className="agency-pkg-label-modal__body proposal-addons-modal__body">
           <p className="agency-pkg-label-modal__hint proposal-addons-modal__lead">
-            Optional. Pick any number of Solution Module tiers (Copy, Design, Dev, Video) to add with
-            this solution.
+            {variant === "append"
+              ? "Pick any number of Solution Module tiers (Copy, Design, Dev, Video) to attach to this solution."
+              : "Optional. Pick any number of Solution Module tiers (Copy, Design, Dev, Video) to add with this solution."}
           </p>
           <label className="agency-pkg-label-modal__field">
             <span className="agency-pkg-label-modal__field-label">Search modules</span>
@@ -116,13 +113,19 @@ export function ProposalAddOnsModal({
             </p>
           ) : (
             <p className="proposal-addons-modal__selected proposal-addons-modal__selected--empty">
-              None selected — you can continue without add-ons.
+              {variant === "append"
+                ? "None selected."
+                : "None selected — you can continue without add-ons."}
             </p>
           )}
 
           <div className="proposal-addons-modal__groups">
             {filteredGroups.length === 0 ? (
-              <p className="proposal-addons-modal__empty">No solution module tiers match.</p>
+              <p className="proposal-addons-modal__empty">
+                {groups.length === 0
+                  ? "All available add-ons are already on this solution."
+                  : "No solution module tiers match."}
+              </p>
             ) : (
               filteredGroups.map((g) => (
                 <section key={g.solutionId} className="proposal-addons-group">
@@ -167,8 +170,19 @@ export function ProposalAddOnsModal({
           <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={onContinue}>
-            {selectedCount > 0 ? `Continue with ${selectedCount} add-on${selectedCount === 1 ? "" : "s"}` : "Continue without add-ons"}
+          <button
+            type="button"
+            className="roadmap-btn roadmap-btn--primary"
+            onClick={onContinue}
+            disabled={variant === "append" && selectedCount === 0}
+          >
+            {variant === "append"
+              ? selectedCount > 0
+                ? `Add ${selectedCount} add-on${selectedCount === 1 ? "" : "s"}`
+                : "Add add-ons"
+              : selectedCount > 0
+                ? `Continue with ${selectedCount} add-on${selectedCount === 1 ? "" : "s"}`
+                : "Continue without add-ons"}
           </button>
         </footer>
       </div>

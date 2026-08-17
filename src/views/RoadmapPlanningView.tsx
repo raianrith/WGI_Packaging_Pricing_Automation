@@ -24,6 +24,7 @@ import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav"
 import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOrganizePanel";
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
+import type { ProposalAddedLine } from "../components/proposal-builder/ProposalAddedItemsPanel";
 import { ProposalClientServiceReviewPanel } from "../components/proposal-builder/ProposalClientServiceReviewPanel";
 import { ProposalClientReadyPanel } from "../components/proposal-builder/ProposalClientReadyPanel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
@@ -76,6 +77,7 @@ import {
 } from "../lib/roadmapProposalSnapshot";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
 import { ProposalSaveReminderBanner } from "../components/proposal-builder/ProposalSaveReminderBanner";
+import { catalogSolutionKind, buildModuleAddOnGroups } from "../lib/buildCatalogDirectoryRows";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
@@ -396,6 +398,40 @@ function cardForPackage(
       ? `Package includes ${tierNames.length} solution tier(s): ${tierNames.join(", ")}.`
       : "No tiers linked to this package yet.";
   return makeCard("package", p.package_id, scenarioId, phaseId, p.package_name, desc, hours, price, undefined, dates);
+}
+
+function cardAllowsAddOns(card: RoadmapCard, ctx: CatalogCtx): boolean {
+  if (card.kind !== "tier" || card.addonOfCardKey) return false;
+  if (isVariableTierRefId(card.refId)) return false;
+  const tier = ctx.tiers.find((t) => t.solution_tier_id === card.refId);
+  if (!tier) return false;
+  const sol = ctx.solutions.find((s) => s.solution_id === tier.solution_id);
+  if (!sol?.add_ons_allowed) return false;
+  return catalogSolutionKind(sol.solution_name, sol.solution_type).type === "configured_solution";
+}
+
+/** Link module tiers added before parent/child keys existed to the preceding add-ons-enabled solution. */
+function attachOrphanModuleAddOns(cards: RoadmapCard[], ctx: CatalogCtx): RoadmapCard[] {
+  const lastParentByBucket = new Map<string, string>();
+  let changed = false;
+  const next = cards.map((c) => {
+    const bucket = `${c.scenarioId}:${c.phaseId}`;
+    if (c.kind === "tier" && !c.addonOfCardKey && cardAllowsAddOns(c, ctx)) {
+      lastParentByBucket.set(bucket, c.key);
+      return c;
+    }
+    if (c.kind !== "tier" || c.addonOfCardKey) return c;
+    const tier = ctx.tiers.find((t) => t.solution_tier_id === c.refId);
+    const sol = tier ? ctx.solutions.find((s) => s.solution_id === tier.solution_id) : undefined;
+    if (!sol || catalogSolutionKind(sol.solution_name, sol.solution_type).type !== "solution_module") {
+      return c;
+    }
+    const parentKey = lastParentByBucket.get(bucket);
+    if (!parentKey) return c;
+    changed = true;
+    return { ...c, addonOfCardKey: parentKey };
+  });
+  return changed ? next : cards;
 }
 
 function cardForTier(
@@ -1421,7 +1457,7 @@ export function RoadmapPlanningView() {
 
   useEffect(() => {
     if (!catalogCtx) return;
-    setCards((prev) => applyVariablePricing(prev));
+    setCards((prev) => applyVariablePricing(attachOrphanModuleAddOns(prev, catalogCtx)));
   }, [catalogCtx, applyVariablePricing]);
 
   const addCard = useCallback(
@@ -1433,7 +1469,7 @@ export function RoadmapPlanningView() {
 
   const removeCard = useCallback(
     (key: string) => {
-      setCardsSynced((prev) => prev.filter((x) => x.key !== key));
+      setCardsSynced((prev) => prev.filter((x) => x.key !== key && x.addonOfCardKey !== key));
     },
     [setCardsSynced]
   );
@@ -1644,23 +1680,82 @@ export function RoadmapPlanningView() {
   const catalogAddedLines = useMemo(() => {
     if (!catalogCtx) return [];
     const phaseTitleById = new Map(phases.map((p) => [p.id, p.title.trim() || "Phase"]));
-    return cards
-      .filter((c) => c.scenarioId === targetScenarioId)
-      .map((c) => ({
-        key: c.key,
-        headline: c.headline,
-        phaseTitle: phaseTitleById.get(c.phaseId) ?? "Phase",
-        priceDisplay: effectivePriceStr(c, catalogCtx, computeScratchSellPrice) || "—",
-        scope: c.scope,
-        isTargetPhase: c.phaseId === targetPhaseId,
-        kind: c.kind,
-        appliedToLabel: variableTierAppliedToLabel(c, cards),
-      }))
-      .sort((a, b) => {
-        if (a.isTargetPhase !== b.isTargetPhase) return a.isTargetPhase ? -1 : 1;
-        return a.headline.localeCompare(b.headline, undefined, { sensitivity: "base" });
-      });
+    const scenarioCards = cards.filter((c) => c.scenarioId === targetScenarioId);
+    const keySet = new Set(scenarioCards.map((c) => c.key));
+    const childrenByParent = new Map<string, typeof scenarioCards>();
+    for (const c of scenarioCards) {
+      if (!c.addonOfCardKey || !keySet.has(c.addonOfCardKey)) continue;
+      const list = childrenByParent.get(c.addonOfCardKey) ?? [];
+      list.push(c);
+      childrenByParent.set(c.addonOfCardKey, list);
+    }
+
+    const toLine = (c: RoadmapCard, addons?: ProposalAddedLine[]): ProposalAddedLine => ({
+      key: c.key,
+      refId: c.refId,
+      headline: c.headline,
+      phaseTitle: phaseTitleById.get(c.phaseId) ?? "Phase",
+      priceDisplay: effectivePriceStr(c, catalogCtx, computeScratchSellPrice) || "—",
+      scope: c.scope,
+      isTargetPhase: c.phaseId === targetPhaseId,
+      kind: c.kind,
+      appliedToLabel: variableTierAppliedToLabel(c, cards),
+      isAddon: Boolean(c.addonOfCardKey && keySet.has(c.addonOfCardKey)),
+      canAddAddOns: cardAllowsAddOns(c, catalogCtx),
+      addons,
+    });
+
+    const sortLines = (a: ProposalAddedLine, b: ProposalAddedLine) => {
+      if (a.isTargetPhase !== b.isTargetPhase) return a.isTargetPhase ? -1 : 1;
+      return a.headline.localeCompare(b.headline, undefined, { sensitivity: "base" });
+    };
+
+    return scenarioCards
+      .filter((c) => !c.addonOfCardKey || !keySet.has(c.addonOfCardKey))
+      .map((c) => {
+        const kids = (childrenByParent.get(c.key) ?? [])
+          .map((child) => toLine(child))
+          .sort((a, b) => a.headline.localeCompare(b.headline, undefined, { sensitivity: "base" }));
+        return toLine(c, kids.length > 0 ? kids : undefined);
+      })
+      .sort(sortLines);
   }, [cards, catalogCtx, phases, targetScenarioId, targetPhaseId]);
+
+  const moduleAddOnGroups = useMemo(
+    () => buildModuleAddOnGroups(playbookCatalogTierTableRows),
+    [playbookCatalogTierTableRows]
+  );
+
+  const addAddOnsToParent = useCallback(
+    (parentKey: string, tierIds: string[]) => {
+      if (!catalogCtx || tierIds.length === 0) return;
+      const parent = cards.find((c) => c.key === parentKey);
+      if (!parent) return;
+      const dates: ProposalOfferingDates = {
+        startDate: parent.startDate ?? "",
+        endDate: parent.endDate ?? "",
+      };
+      const extras: RoadmapCard[] = [];
+      for (const id of tierIds) {
+        const t = catalogCtx.tiers.find((x) => x.solution_tier_id === id);
+        if (!t) continue;
+        extras.push({
+          ...cardForTier(
+            t,
+            catalogCtx,
+            parent.scenarioId,
+            parent.phaseId,
+            dates,
+            t.solution_tier_name.trim() || t.solution_tier_id
+          ),
+          addonOfCardKey: parent.key,
+        });
+      }
+      if (extras.length === 0) return;
+      setCardsSynced((prev) => [...prev, ...extras]);
+    },
+    [catalogCtx, cards, setCardsSynced]
+  );
 
   const addedTierRefIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2071,6 +2166,8 @@ export function RoadmapPlanningView() {
       formatUsd={formatUsd}
       addedLines={catalogAddedLines}
       onRemoveAdded={removeCard}
+      onAddAddOns={addAddOnsToParent}
+      addonGroups={moduleAddOnGroups}
       copyFromScenarios={copyFromScenarios}
       onCopyFromScenario={copyOfferingsFromScenario}
     />
@@ -2105,9 +2202,21 @@ export function RoadmapPlanningView() {
           setPackageSwitchPromptPath(packageAddPath);
         }
       }}
-      onAddTier={(t, dates, clientFacingLabel) => {
+      onAddTier={(t, dates, clientFacingLabel, addonTiers) => {
         if (!canAddToTarget) return;
-        addCard(cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates, clientFacingLabel));
+        const parent = cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates, clientFacingLabel);
+        const extras = (addonTiers ?? []).map((a) => ({
+          ...cardForTier(
+            a,
+            ctx,
+            targetScenarioId,
+            targetPhaseId,
+            dates,
+            a.solution_tier_name.trim() || a.solution_tier_id
+          ),
+          addonOfCardKey: parent.key,
+        }));
+        setCardsSynced((prev) => [...prev, parent, ...extras]);
       }}
       onAddVariableTier={(t, dates, opts) => {
         if (!canAddToTarget) return;
@@ -2132,6 +2241,7 @@ export function RoadmapPlanningView() {
       }))}
       addedLines={catalogAddedLines}
       onRemoveAdded={removeCard}
+      onAddAddOns={addAddOnsToParent}
       addedTierRefIds={addedTierRefIds}
       addedPackageRefIds={addedPackageRefIds}
       copyFromScenarios={copyFromScenarios}

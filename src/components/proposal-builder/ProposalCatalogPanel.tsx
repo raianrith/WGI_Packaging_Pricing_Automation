@@ -13,7 +13,7 @@ import {
   type AddVariableTierOpts,
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
-import { buildSolutionDirectoryRowsFromTier, catalogSolutionKind, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
+import { buildSolutionDirectoryRowsFromTier, buildModuleAddOnGroups, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
 import { ProposalAddOnsModal } from "./ProposalAddOnsModal";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
@@ -68,7 +68,12 @@ type Props = {
   proposalStartDate: string;
   proposalEndDate: string;
   onAddPackage: (p: Package, dates: ProposalOfferingDates) => void;
-  onAddTier: (t: SolutionTier, dates: ProposalOfferingDates, clientFacingLabel?: string) => void;
+  onAddTier: (
+    t: SolutionTier,
+    dates: ProposalOfferingDates,
+    clientFacingLabel?: string,
+    addonTiers?: SolutionTier[]
+  ) => void;
   onAddVariableTier: (t: SolutionTier, dates: ProposalOfferingDates, opts?: AddVariableTierOpts) => void;
   previewVariableTierPriceUsd: (refId: string, opts?: AddVariableTierOpts) => number | null;
   variableTierLinkTargets: VariableTierLinkTarget[];
@@ -81,6 +86,7 @@ type Props = {
   formatUsd: (n: number | null | undefined) => string;
   addedLines: ProposalAddedLine[];
   onRemoveAdded: (key: string) => void;
+  onAddAddOns?: (parentKey: string, tierIds: string[]) => void;
   addedTierRefIds: Set<string>;
   addedPackageRefIds: Set<string>;
   copyFromScenarios?: ScenarioCopySource[];
@@ -118,6 +124,7 @@ export function ProposalCatalogPanel({
   formatUsd,
   addedLines,
   onRemoveAdded,
+  onAddAddOns,
   addedTierRefIds,
   addedPackageRefIds,
   copyFromScenarios,
@@ -193,30 +200,10 @@ export function ProposalCatalogPanel({
     [catalogTierTableRows]
   );
 
-  const moduleAddOnGroups = useMemo(() => {
-    const bySol = new Map<string, { solutionId: string; name: string; tiers: CatalogTierTableRow[] }>();
-    for (const row of catalogTierTableRows) {
-      const kind = catalogSolutionKind(row.solutionName, row.solutionType);
-      if (kind.type !== "solution_module") continue;
-      const prev = bySol.get(row.solutionId);
-      if (prev) prev.tiers.push(row);
-      else {
-        bySol.set(row.solutionId, {
-          solutionId: row.solutionId,
-          name: row.solutionName.trim() || row.solutionId,
-          tiers: [row],
-        });
-      }
-    }
-    return [...bySol.values()]
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-      .map((g) => ({
-        ...g,
-        tiers: [...g.tiers].sort((a, b) =>
-          a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" })
-        ),
-      }));
-  }, [catalogTierTableRows]);
+  const moduleAddOnGroups = useMemo(
+    () => buildModuleAddOnGroups(catalogTierTableRows),
+    [catalogTierTableRows]
+  );
 
   const toggleExpandedSolution = useCallback((solutionId: string) => {
     setExpandedSolutionIds((prev) => {
@@ -380,10 +367,7 @@ export function ProposalCatalogPanel({
     let justAdded: string | null = null;
     switch (pending.kind) {
       case "tier":
-        onAddTier(pending.tier, dates, pending.clientFacingLabel);
-        for (const addon of pending.addonTiers ?? []) {
-          onAddTier(addon, dates, addon.solution_tier_name.trim() || addon.solution_tier_id);
-        }
+        onAddTier(pending.tier, dates, pending.clientFacingLabel, pending.addonTiers);
         justAdded = `tier:${pending.tier.solution_tier_id}`;
         break;
       case "package":
@@ -582,6 +566,8 @@ export function ProposalCatalogPanel({
           onRemove={onRemoveAdded}
           copyFromScenarios={copyFromScenarios}
           onCopyFromScenario={onCopyFromScenario}
+          addonGroups={moduleAddOnGroups}
+          onAddAddOns={onAddAddOns}
         />
       </div>
 

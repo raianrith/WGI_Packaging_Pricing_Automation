@@ -18,8 +18,9 @@ const SCOPES: { id: RoadmapLineScope; label: string }[] = [
   { id: "deferred", label: "Deferred" },
 ];
 
-function kindShort(kind: RoadmapCard["kind"]): string {
-  switch (kind) {
+function kindShort(card: RoadmapCard): string {
+  if (card.addonOfCardKey) return "Add-on";
+  switch (card.kind) {
     case "tier":
       return "Tier";
     case "custom_tier":
@@ -68,12 +69,17 @@ export function ProposalOrganizeLineCard({
   const appliedToLabel = isVariableTierRefId(card.refId)
     ? variableTierAppliedToLabel(card, scenarioCards)
     : null;
+  const addonParentHeadline = card.addonOfCardKey
+    ? scenarioCards.find((c) => c.key === card.addonOfCardKey)?.headline.trim() || "parent solution"
+    : null;
 
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className={`proposal-organize-line proposal-organize-line--${card.scope}${isDragging ? " proposal-organize-line--dragging" : ""}`}
+      className={`proposal-organize-line proposal-organize-line--${card.scope}${
+        card.addonOfCardKey ? " proposal-organize-line--addon" : ""
+      }${isDragging ? " proposal-organize-line--dragging" : ""}`}
     >
       <div className="proposal-organize-line__reorder">
         <button
@@ -95,12 +101,12 @@ export function ProposalOrganizeLineCard({
       <div className="proposal-organize-line__body">
         <div className="proposal-organize-line__top">
           <div className="proposal-organize-line__identity">
-            <span className={`proposal-organize-line__kind proposal-organize-line__kind--${card.kind}`}>
-              {kindShort(card.kind)}
+            <span className={`proposal-organize-line__kind proposal-organize-line__kind--${card.addonOfCardKey ? "addon" : card.kind}`}>
+              {kindShort(card)}
             </span>
             <label className="proposal-organize-line__title-wrap">
               <span className="visually-hidden">
-                Rename {kindShort(card.kind).toLowerCase()} label
+                Rename {kindShort(card).toLowerCase()} label
               </span>
               <input
                 type="text"
@@ -141,6 +147,11 @@ export function ProposalOrganizeLineCard({
           </div>
         </div>
 
+        {addonParentHeadline ? (
+          <p className="proposal-organize-line__applied">
+            Add-on of <strong>{addonParentHeadline}</strong>
+          </p>
+        ) : null}
         {appliedToLabel && !isTravelVariableTierRefId(card.refId) ? (
           <p className="proposal-organize-line__applied">
             Applied to <strong>{appliedToLabel}</strong>

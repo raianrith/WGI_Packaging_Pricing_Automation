@@ -33,6 +33,38 @@ export function parseSolutionType(raw: string | null | undefined): "solution_mod
   return null;
 }
 
+export type ModuleAddOnGroup = {
+  solutionId: string;
+  name: string;
+  tiers: CatalogTierTableRow[];
+};
+
+/** Solution module tiers (Copy, Design, Dev, Video) grouped for the proposal add-ons picker. */
+export function buildModuleAddOnGroups(rows: CatalogTierTableRow[]): ModuleAddOnGroup[] {
+  const bySol = new Map<string, ModuleAddOnGroup>();
+  for (const row of rows) {
+    const kind = catalogSolutionKind(row.solutionName, row.solutionType);
+    if (kind.type !== "solution_module") continue;
+    const prev = bySol.get(row.solutionId);
+    if (prev) prev.tiers.push(row);
+    else {
+      bySol.set(row.solutionId, {
+        solutionId: row.solutionId,
+        name: row.solutionName.trim() || row.solutionId,
+        tiers: [row],
+      });
+    }
+  }
+  return [...bySol.values()]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+    .map((g) => ({
+      ...g,
+      tiers: [...g.tiers].sort((a, b) =>
+        a.tierName.localeCompare(b.tierName, undefined, { sensitivity: "base" })
+      ),
+    }));
+}
+
 export function catalogSolutionKind(
   name: string,
   storedType?: string | null

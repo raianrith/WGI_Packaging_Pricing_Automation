@@ -48,6 +48,13 @@ function sortId(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
+function compareTierName(a: CatalogTierTableRow, b: CatalogTierTableRow): number {
+  return (
+    (a.tierName || "").localeCompare(b.tierName || "", undefined, { sensitivity: "base" }) ||
+    sortId(a.tierId, b.tierId)
+  );
+}
+
 function formatKpiNumber(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -126,7 +133,7 @@ export function buildSolutionDirectoryRowsFromTier(
   return [...tiersBySolutionId.entries()]
     .sort(([a], [b]) => sortId(a, b))
     .map(([solutionId, rows]) => {
-      const sorted = [...rows].sort((a, b) => sortId(a.tierId, b.tierId));
+      const sorted = [...rows].sort(compareTierName);
       const rollup = sumTierRollup(sorted);
       const tierCount = sorted.length;
       const name = sorted[0]?.solutionName?.trim() || solutionId;
@@ -184,9 +191,7 @@ export function buildCatalogDirectoryRows(
   const solutionRows: CatalogDirectoryRow[] = [...data.solutions]
     .sort((a, b) => sortId(a.solution_id, b.solution_id))
     .map((solution) => {
-      const tierRows = [...(tiersBySolutionId.get(solution.solution_id) ?? [])].sort((a, b) =>
-        sortId(a.tierId, b.tierId)
-      );
+      const tierRows = [...(tiersBySolutionId.get(solution.solution_id) ?? [])].sort(compareTierName);
       const rollup = sumTierRollup(tierRows);
       const tierCount = tierRows.length;
       return {

@@ -26,6 +26,7 @@ import type {
   TierResourceExampleRow,
 } from "../types";
 import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
+import { isSolutionModuleName, parseSolutionType } from "../lib/buildCatalogDirectoryRows";
 import { SolutionTierInlineRiskPricing } from "./SolutionTierInlineRiskPricing";
 import {
   draftFieldsFromTierVaultTasks,
@@ -61,6 +62,13 @@ import {
   tierTaxonomyOptionsFromRows,
 } from "../lib/tierTaxonomy";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
+
+function solutionTypeForEdit(sol: Solution): SolutionType {
+  return (
+    parseSolutionType(sol.solution_type) ??
+    (isSolutionModuleName(sol.solution_name) ? "solution_module" : "configured_solution")
+  );
+}
 
 export { nextAutoSolutionId, nextAutoTierId, nextAutoTaskId };
 
@@ -1076,6 +1084,9 @@ export function SolutionsBuilderPanel({
   const [updResTpl, setUpdResTpl] = useState("");
   const [updResTools, setUpdResTools] = useState("");
   const [updResExamples, setUpdResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
+  const [updSolName, setUpdSolName] = useState("");
+  const [updSolType, setUpdSolType] = useState<SolutionType>("configured_solution");
+  const [updSolAddOnsAllowed, setUpdSolAddOnsAllowed] = useState(false);
   /** When set, tier save uses legacy fields (overview, link, direction) from this source. */
   const [updAutofillFrom, setUpdAutofillFrom] = useState<SolutionTier | null>(null);
 
@@ -1458,6 +1469,16 @@ export function SolutionsBuilderPanel({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  const startEditSolution = (sol: Solution) => {
+    cancelSolutionRename();
+    cancelTierRename();
+    setUpdSolutionId(sol.solution_id);
+    setUpdSolName(sol.solution_name);
+    setUpdSolType(solutionTypeForEdit(sol));
+    setUpdSolAddOnsAllowed(Boolean(sol.add_ons_allowed));
+    setShowUpdateDetails(true);
+  };
+
   const startEditTier = (t: SolutionTier) => {
     cancelTierRename();
     setUpdTierFocus(t.solution_tier_id);
@@ -1483,6 +1504,48 @@ export function SolutionsBuilderPanel({
       setUpdResExamples(h.examples);
     }
     setUpdAutofillFrom(null);
+    const parent = solutions.find((s) => s.solution_id === t.solution_id);
+    if (parent) {
+      setUpdSolName(parent.solution_name);
+      setUpdSolType(solutionTypeForEdit(parent));
+      setUpdSolAddOnsAllowed(Boolean(parent.add_ons_allowed));
+    }
+  };
+
+  const saveUpdateSolution = async () => {
+    const client = getSupabase();
+    if (!client || !updSolutionId) return;
+    const name = updSolName.trim();
+    if (!name) {
+      setOpErr("Solution name is required.");
+      return;
+    }
+    const prev = solutions.find((x) => x.solution_id === updSolutionId);
+    if (!prev) return;
+    setOpErr(null);
+    setOpOk(null);
+    const today = todayISODate();
+    const patch = {
+      solution_name: name,
+      solution_type: updSolType,
+      add_ons_allowed: updSolAddOnsAllowed,
+      solution_modified_date: today,
+    };
+    const { error } = await client.from("solutions").update(patch).eq("solution_id", updSolutionId);
+    if (error) {
+      setOpErr(friendlyMutationMessage(error.message));
+      return;
+    }
+    const next: Solution = { ...prev, ...patch };
+    await logAudit(client, {
+      entityType: "solutions",
+      entityId: updSolutionId,
+      action: "update",
+      before: rowJson(prev),
+      after: rowJson(next),
+    });
+    setOpOk(`Solution "${name}" updated.`);
+    await onSaved();
   };
 
   const saveSolutionRename = async () => {
@@ -3628,11 +3691,14 @@ export function SolutionsBuilderPanel({
               </div>
               {showUpdateDetails ? (
                 <nav className="admin-sb-quicknav" aria-label="Jump to update section">
+                  <a href="#sb-update-section-solution" className="admin-sb-quicknav__link">
+                    1. Solution
+                  </a>
                   <a href="#sb-update-section-tiers" className="admin-sb-quicknav__link">
-                    1. Tiers
+                    2. Tiers
                   </a>
                   <a href="#sb-update-section-tasks-pricing" className="admin-sb-quicknav__link">
-                    2. Tasks &amp; pricing
+                    3. Tasks &amp; pricing
                   </a>
                 </nav>
               ) : null}
@@ -3706,6 +3772,16 @@ export function SolutionsBuilderPanel({
                               </>
                             ) : (
                               <>
+                                <button
+                                  type="button"
+                                  style={btnSm}
+                                  onClick={() => {
+                                    startEditSolution(sol);
+                                    window.setTimeout(() => jumpTo("sb-update-section-solution"), 0);
+                                  }}
+                                >
+                                  Update
+                                </button>
                                 <button
                                   type="button"
                                   style={btnSm}
@@ -3919,11 +3995,68 @@ export function SolutionsBuilderPanel({
 
             {showUpdateDetails ? (
               <>
+                <div id="sb-update-section-solution" className="admin-sb-block">
+                  <UpdateSectionHead
+                    badge="1"
+                    title="Solution"
+                    hint="Name, type (Solution Module or Configured Solution), and whether add-ons are allowed."
+                    muted={muted}
+                  />
+                  <div style={{ ...formSectionBox, marginTop: 12 }}>
+                    <h4 style={formSectionHeading}>
+                      {updSolutionId ? `Edit solution ${updSolutionId}` : "Edit solution"}
+                    </h4>
+                    <div className="admin-form-stack" style={formGrid}>
+                      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                        <AdminFieldCaption>Solution name</AdminFieldCaption>
+                        <input style={input} value={updSolName} onChange={(e) => setUpdSolName(e.target.value)} />
+                      </label>
+                      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+                        <AdminFieldCaption>Solution type</AdminFieldCaption>
+                        <select
+                          style={input}
+                          value={updSolType}
+                          onChange={(e) => setUpdSolType(e.target.value as SolutionType)}
+                        >
+                          <option value="configured_solution">Configured Solution</option>
+                          <option value="solution_module">Solution Module</option>
+                        </select>
+                      </label>
+                      <label
+                        style={{
+                          ...lbl,
+                          gridColumn: "1 / -1",
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={updSolAddOnsAllowed}
+                          onChange={(e) => setUpdSolAddOnsAllowed(e.target.checked)}
+                        />
+                        Add Ons Allowed?
+                      </label>
+                    </div>
+                    <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                      <button
+                        type="button"
+                        className="admin-btn-primary"
+                        style={btnPrimary}
+                        onClick={() => void saveUpdateSolution()}
+                      >
+                        Save solution changes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div id="sb-update-section-tiers" className="admin-sb-block">
               <UpdateSectionHead
-                badge="1"
+                badge="2"
                 title="Tiers"
-                hint="List every tier, add a new one, or edit. To bulk-add tasks from a template, use the Tasks & pricing section (step 3) after a tier exists."
+                hint="List every tier, add a new one, or edit. To bulk-add tasks from a template, use the Tasks & pricing section after a tier exists."
                 muted={muted}
               />
               <div className="admin-table-scroll">
@@ -4029,7 +4162,7 @@ export function SolutionsBuilderPanel({
 
                 <div id="sb-update-section-tasks-pricing" className="admin-sb-block">
               <UpdateSectionHead
-                badge="2"
+                badge="3"
                 title="Tasks & pricing for a tier"
                 hint="Select a tier, then add tasks manually, from a task-group template, or by copying vault tasks from another tier. Templates live in Admin → Task-Group templates."
                 muted={muted}

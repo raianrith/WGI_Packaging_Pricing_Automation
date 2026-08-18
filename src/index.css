@@ -10387,9 +10387,9 @@ button {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 14.5rem;
+  height: auto;
   min-height: 14.5rem;
-  max-height: 14.5rem;
+  max-height: none;
   padding: 0;
   border: 1px solid rgba(var(--card-accent-rgb), 0.14);
   border-radius: 18px;
@@ -10468,38 +10468,6 @@ button {
   background: rgba(var(--card-accent-rgb), 0.78);
 }
 
-.pkg-builder-page .agency-pkg-build-start__card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  margin-bottom: 0.15rem;
-}
-
-.pkg-builder-page .agency-pkg-build-start__card-arrow {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: rgb(var(--card-accent-rgb));
-  opacity: 0;
-  transform: translateX(-6px);
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-}
-
-.pkg-builder-page .agency-pkg-build-start__card--page:hover .agency-pkg-build-start__card-arrow {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.pkg-builder-page .agency-pkg-build-start__card--page .agency-pkg-build-start__card-num {
-  width: 2rem;
-  height: 2rem;
-  font-size: 0.72rem;
-  background: rgba(var(--card-accent-rgb), 0.1);
-  color: rgb(var(--card-accent-rgb));
-}
-
 .pkg-builder-page .agency-pkg-build-start__card--page .agency-pkg-build-start__card-meta {
   display: inline-flex;
   align-items: center;
@@ -10515,14 +10483,15 @@ button {
 }
 
 .pkg-builder-page .agency-pkg-build-start__card--page .agency-pkg-build-start__card-title {
-  flex: 1;
+  flex: 0 0 auto;
   margin-top: 0;
   font-size: 1rem;
   line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+
+.pkg-builder-page .agency-pkg-build-start__card--page .agency-pkg-build-start__card-desc {
+  flex: 0 1 auto;
+  margin-top: 0.1rem;
 }
 
 .agency-pkg-build-start__card-actions {
@@ -11366,6 +11335,7 @@ button {
 
 .agency-pkg-build-start__card-title,
 .agency-pkg-build-start__card-meta,
+.agency-pkg-build-start__card-desc,
 .agency-pkg-build-start__card-cta {
   position: relative;
   z-index: 1;

@@ -275,16 +275,13 @@ export function ProposalConfigurablePackagesPanel({
                   className="proposal-configurable-packages__card"
                   data-accent-index={String(index % 7)}
                 >
-                  <span className="proposal-configurable-packages__card-num">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
                   <h3 className="proposal-configurable-packages__card-title">{pt.name}</h3>
-                  <p className="proposal-configurable-packages__card-meta">
-                    {tierCount} package tier{tierCount === 1 ? "" : "s"}
-                  </p>
                   {pt.card_description ? (
                     <p className="proposal-configurable-packages__card-desc">{pt.card_description}</p>
                   ) : null}
+                  <p className="proposal-configurable-packages__card-meta">
+                    {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                  </p>
                   <div className="proposal-configurable-packages__card-actions">
                     <button
                       type="button"

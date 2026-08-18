@@ -950,21 +950,13 @@ export function PackageBuildWizard({
                       className="agency-pkg-build-start__card-main"
                       onClick={() => beginPackageBuild(pt)}
                     >
-                      <span className="agency-pkg-build-start__card-top">
-                        <span className="agency-pkg-build-start__card-num">
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                        <span className="agency-pkg-build-start__card-arrow" aria-hidden>
-                          →
-                        </span>
-                      </span>
                       <span className="agency-pkg-build-start__card-title">{pt.name}</span>
-                      <span className="agency-pkg-build-start__card-meta">
-                        {tierCount} tier{tierCount === 1 ? "" : "s"}
-                      </span>
                       {pt.card_description ? (
                         <span className="agency-pkg-build-start__card-desc">{pt.card_description}</span>
                       ) : null}
+                      <span className="agency-pkg-build-start__card-meta">
+                        {tierCount} tier{tierCount === 1 ? "" : "s"}
+                      </span>
                     </button>
                     <div
                       className={

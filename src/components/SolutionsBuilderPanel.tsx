@@ -41,6 +41,7 @@ import { compareTasksByOrder, tierMaxSortOrder } from "../lib/taskOrder";
 import {
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
+import { syncTierPricingFromTasks } from "../lib/syncTierPricingFromTasks";
 import { MarkdownTextarea } from "./MarkdownTextarea";
 import TierResourcesEditor from "./TierResourcesEditor";
 import {
@@ -453,6 +454,22 @@ export function SolutionsBuilderPanel({
     [setOpOk, setOpErr]
   );
 
+  /** Keep solution_tier_pricing hours + sell math aligned with vault tasks. */
+  const syncPricingFromTasks = useCallback(
+    async (tierId: string | string[]) => {
+      const client = getSupabase();
+      if (!client) return { ok: true as const, updated: 0, created: 0 };
+      return syncTierPricingFromTasks({
+        client,
+        tierIds: tierId,
+        mathConfig: tierPricingMathConfig,
+        implementerHourGroups,
+        logAudit,
+      });
+    },
+    [tierPricingMathConfig, implementerHourGroups, logAudit]
+  );
+
   // —— Create wizard ——
   const [createBranch, setCreateBranch] = useState<CreateBranch>(null);
   const [createPhase, setCreatePhase] = useState<CreatePhase>("choose");
@@ -795,8 +812,17 @@ export function SolutionsBuilderPanel({
       after: rowJson(afterPricing),
     });
 
+    const pricingSync = await syncPricingFromTasks(tierId);
+    if (!pricingSync.ok) {
+      setOpErr(
+        `Created solution/tier/tasks, but pricing sync from tasks failed: ${pricingSync.message}`
+      );
+      await onSaved();
+      return;
+    }
+
     setOpOk(
-      `Created solution ${solId}, tier ${tierId}, ${rowsToSave.length} task(s), and pricing (sell $${Math.round(Number(pricingDraft.sell_price ?? 0)).toLocaleString()}).`
+      `Created solution ${solId}, tier ${tierId}, ${rowsToSave.length} task(s), and pricing synced from those tasks.`
     );
     await onSaved();
     resetCreateWizard();
@@ -949,6 +975,12 @@ export function SolutionsBuilderPanel({
       if (rowsToSave.length > 0) {
         setDraftTasks([newDraftTaskRow()]);
         setDraftTaskBulkSelectedKeys(new Set());
+        const pricingSync = await syncPricingFromTasks(tierId);
+        if (!pricingSync.ok) {
+          setOpErr(`Tasks saved, but pricing sync failed: ${pricingSync.message}`);
+          await onSaved();
+          return;
+        }
       }
       setOpOk(
         rowsToSave.length > 0
@@ -1963,6 +1995,12 @@ export function SolutionsBuilderPanel({
       });
       localTasks.push(row);
     }
+    const pricingSync = await syncPricingFromTasks(updTierFocus);
+    if (!pricingSync.ok) {
+      setOpErr(`Tasks created, but pricing sync failed: ${pricingSync.message}`);
+      await onSaved();
+      return;
+    }
     setOpOk(`Created ${rowsToSave.length} task(s) for tier ${updTierFocus}.`);
     setUpdNewTaskDrafts([newDraftTaskRow()]);
     await onSaved();
@@ -2005,6 +2043,12 @@ export function SolutionsBuilderPanel({
       before: rowJson(prev),
       after: rowJson(after),
     });
+    const pricingSync = await syncPricingFromTasks(updTierFocus);
+    if (!pricingSync.ok) {
+      setOpErr(`Task saved, but pricing sync failed: ${pricingSync.message}`);
+      await onSaved();
+      return;
+    }
     setOpOk("Task saved.");
     clearTaskUpdateForm();
     await onSaved();
@@ -2039,6 +2083,12 @@ export function SolutionsBuilderPanel({
       after: null,
     });
     if (updTaskEditId === k.task_id) clearTaskUpdateForm();
+    const pricingSync = await syncPricingFromTasks(k.solution_tier_id);
+    if (!pricingSync.ok) {
+      setOpErr(`Task deleted, but pricing sync failed: ${pricingSync.message}`);
+      await onSaved();
+      return;
+    }
     setOpOk("Task deleted.");
     await onSaved();
   };
@@ -2085,6 +2135,12 @@ export function SolutionsBuilderPanel({
 
       if (updTaskEditId && ids.includes(updTaskEditId)) clearTaskUpdateForm();
       setUpdTaskBulkSelectedIds(new Set());
+      const pricingSync = await syncPricingFromTasks(updTierFocus!);
+      if (!pricingSync.ok) {
+        setOpErr(`Deleted tasks, but pricing sync failed: ${pricingSync.message}`);
+        await onSaved();
+        return;
+      }
       setOpOk(`Deleted ${ids.length} task(s).`);
       await onSaved();
     } finally {
@@ -2094,13 +2150,14 @@ export function SolutionsBuilderPanel({
     clearTaskUpdateForm,
     logAudit,
     onSaved,
-    onSaved,
     rowJson,
     setOpErr,
     setOpOk,
+    syncPricingFromTasks,
     tasksOfFocusTier,
     updTaskBulkSelectedIds,
     updTaskEditId,
+    updTierFocus,
   ]);
 
   const applyFocusTierTaskOrder = useCallback(

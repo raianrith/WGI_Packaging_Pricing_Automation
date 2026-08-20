@@ -3,6 +3,7 @@ import { insertAuditLog } from "./audit";
 import { todayISODate } from "./dates";
 import { getSupabase } from "./supabase";
 import { friendlyMutationMessage } from "./supabaseErrors";
+import { syncTierPricingFromTasks } from "./syncTierPricingFromTasks";
 import { resolveTemplateLineToTaskFields } from "./taskGroupTemplateTaskFields";
 import type { TaskGroupLineRow, TaskRow } from "../types";
 
@@ -110,6 +111,21 @@ export async function syncTaskGroupTemplateToAppliedTiers(params: {
         after: rowJson(after),
       });
       updated += 1;
+    }
+  }
+
+  const tierIds = [...new Set(applicationRows.map((a) => String(a.solution_tier_id)))];
+  if (updated > 0 && tierIds.length > 0) {
+    const pricingSync = await syncTierPricingFromTasks({
+      client,
+      tierIds,
+      logAudit: params.logAudit,
+    });
+    if (!pricingSync.ok) {
+      return {
+        ok: false,
+        message: `Tasks were synced, but pricing could not be updated: ${pricingSync.message}`,
+      };
     }
   }
 

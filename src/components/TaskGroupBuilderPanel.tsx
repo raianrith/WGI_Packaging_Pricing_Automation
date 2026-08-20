@@ -5,9 +5,7 @@ import type { UniqueIdentifier } from "@dnd-kit/core";
 import { insertAuditLog } from "../lib/audit";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { getSupabase } from "../lib/supabase";
-import { normalizeTierPricingMathConfig, type TierPricingMathConfig } from "../lib/tierPricingMath";
-import { buildSolutionTierPricingMathUpdate } from "../lib/recomputeStoredTierPricing";
-import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
+import { type TierPricingMathConfig } from "../lib/tierPricingMath";
 import {
   buildTemplateLinePickerMeta,
   TASK_GROUP_TEMPLATE_LINE_PREFIX,
@@ -221,8 +219,8 @@ export function TaskGroupBuilderPanel({
   tiers,
   solutions,
   implementerHourGroups,
-  tierPricing,
-  tierPricingMathConfig,
+  tierPricing: _tierPricing,
+  tierPricingMathConfig: _tierPricingMathConfig,
   taskGroups,
   taskGroupLines,
   taskGroupApplied,
@@ -328,80 +326,6 @@ export function TaskGroupBuilderPanel({
     }
     return [...seen].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [implementerHourGroups]);
-
-  const implementerToGroup = useMemo(
-    () => buildImplementerToGroupMap(implementerHourGroups),
-    [implementerHourGroups]
-  );
-
-  const recalcPricingForTiers = useCallback(
-    async (tierIds: string[]) => {
-      const client = getSupabase();
-      if (!client) return { ok: false as const, message: "Supabase client not available." };
-      if (tierIds.length === 0) return { ok: true as const, updated: 0, skipped: 0 };
-
-      // Pull fresh tasks after template sync so rollups are accurate.
-      const { data: freshTasks, error: tErr } = await client
-        .from("tasks")
-        .select("*")
-        .in("solution_tier_id", tierIds);
-      if (tErr) return { ok: false as const, message: friendlyMutationMessage(tErr.message) };
-
-      const byTier = new Map<string, TaskRow[]>();
-      for (const raw of freshTasks ?? []) {
-        const t = raw as TaskRow;
-        const arr = byTier.get(t.solution_tier_id) ?? [];
-        arr.push(t);
-        byTier.set(t.solution_tier_id, arr);
-      }
-
-      const math = normalizeTierPricingMathConfig(tierPricingMathConfig);
-      let updated = 0;
-      let skipped = 0;
-
-      for (const tid of tierIds) {
-        const prev = tierPricing.find((p) => p.solution_tier_id === tid) ?? null;
-        if (!prev) {
-          skipped += 1;
-          continue;
-        }
-        const list = byTier.get(tid) ?? [];
-        const roll = rollUpTaskTimesByPricingGroup(list, implementerToGroup);
-        const nextRow: SolutionTierPricing = {
-          ...prev,
-          hours_client_services: roll.client_services,
-          hours_copy: roll.copy,
-          hours_design: roll.design,
-          hours_web_dev: roll.web_dev,
-          hours_video: roll.video,
-          hours_data: roll.data,
-          hours_paid_media: roll.paid_media,
-          hours_hubspot: roll.hubspot,
-          hours_other: roll.other,
-        };
-        const mathUpdate = buildSolutionTierPricingMathUpdate(nextRow, math);
-        const { solution_tier_id: _ignore, ...payload } = {
-          ...nextRow,
-          ...mathUpdate,
-        } as Record<string, unknown>;
-
-        const { error: upErr } = await client.from("solution_tier_pricing").update(payload).eq("solution_tier_id", tid);
-        if (upErr) return { ok: false as const, message: friendlyMutationMessage(upErr.message) };
-
-        await logAudit(client, {
-          entityType: "solution_tier_pricing",
-          entityId: tid,
-          action: "update",
-          before: rowJson(prev),
-          after: rowJson({ ...prev, ...payload }),
-        });
-        updated += 1;
-      }
-
-      return { ok: true as const, updated, skipped };
-    },
-    [implementerToGroup, logAudit, tierPricing, tierPricingMathConfig]
-  );
 
   const filteredForLink = useMemo(() => {
     const q = linkSearch.trim().toLowerCase();
@@ -953,20 +877,9 @@ export function TaskGroupBuilderPanel({
         setOpErr(res.message);
         return;
       }
-      const pr = await recalcPricingForTiers(syncTemplateSelectedTierIds);
-      if (!pr.ok) {
-        setOpErr(`${pr.message} (Tasks were synced; pricing could not be recalculated.)`);
-        return;
-      }
-      let okMsg = `Synced ${res.updated} task row(s) to match the current template.`;
+      let okMsg = `Synced ${res.updated} task row(s) to match the current template and refreshed tier pricing.`;
       if (res.skippedSlots > 0) {
         okMsg += ` Skipped ${res.skippedSlots} template slot(s) with no linked task (often applies from before lineage tracking — run supabase/tasks_task_group_lineage.sql in Supabase, or re-apply the group to those tiers).`;
-      }
-      if (pr.updated > 0) {
-        okMsg += ` Recalculated pricing for ${pr.updated} tier(s).`;
-      }
-      if (pr.skipped > 0) {
-        okMsg += ` Skipped pricing for ${pr.skipped} tier(s) with no pricing row yet.`;
       }
       setOpOk(okMsg);
       setSyncTemplateModalGroup(null);
@@ -981,7 +894,6 @@ export function TaskGroupBuilderPanel({
     linesByGroup,
     tasks,
     logAudit,
-    recalcPricingForTiers,
     onRefresh,
     setOpErr,
     setOpOk,

@@ -4,6 +4,7 @@ import { insertAuditLog } from "./audit";
 import { todayISODate } from "./dates";
 import { getSupabase } from "./supabase";
 import { friendlyMutationMessage } from "./supabaseErrors";
+import { syncTierPricingFromTasks } from "./syncTierPricingFromTasks";
 import { fetchAllTaskIdRows, nextAutoTaskId } from "./taskIds";
 import { compareTasksByOrder, tierMaxSortOrder } from "./taskOrder";
 
@@ -157,6 +158,19 @@ export async function insertCopiedVaultTasksFromTier(params: {
       });
       localTasks.push(row);
     }
+
+    const pricingSync = await syncTierPricingFromTasks({
+      client,
+      tierIds: params.targetTierId,
+      logAudit: params.logAudit,
+    });
+    if (!pricingSync.ok) {
+      return {
+        ok: false,
+        message: `Tasks were copied, but pricing could not be updated: ${pricingSync.message}`,
+      };
+    }
+
     return { ok: true, created: sourceRows.length };
   } catch (e) {
     return { ok: false, message: friendlyMutationMessage(String(e)) };

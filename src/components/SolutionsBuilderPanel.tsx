@@ -3,10 +3,12 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { insertAuditLog } from "../lib/audit";
 import { todayISODate } from "../lib/dates";
@@ -14,6 +16,7 @@ import { getSupabase } from "../lib/supabase";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
 import type {
+  AuditLogRow,
   ImplementerHourGroupRow,
   PackageSolutionTier,
   Solution,
@@ -27,7 +30,6 @@ import type {
 } from "../types";
 import { applyTaskGroupToTier } from "../lib/applyTaskGroupToTier";
 import { isSolutionModuleName, parseSolutionType } from "../lib/buildCatalogDirectoryRows";
-import { SolutionTierInlineRiskPricing } from "./SolutionTierInlineRiskPricing";
 import {
   draftFieldsFromTierVaultTasks,
   insertCopiedVaultTasksFromTier,
@@ -42,6 +44,7 @@ import {
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import { syncTierPricingFromTasks } from "../lib/syncTierPricingFromTasks";
+import { computeVaultTierHealth } from "../lib/vaultTierHealth";
 import { MarkdownTextarea } from "./MarkdownTextarea";
 import TierResourcesEditor from "./TierResourcesEditor";
 import {
@@ -301,6 +304,8 @@ function UpdateSectionHead({ badge, title, hint, muted: m }: UpdateSectionHeadPr
 
 export type SolutionsBuilderSubTab = "create" | "update";
 
+type VaultWorkTab = "overview" | "tasks" | "pricing";
+
 type BuilderStyles = {
   panel: CSSProperties;
   formGrid: CSSProperties;
@@ -400,6 +405,7 @@ export function SolutionsBuilderPanel({
   taskGroups = [],
   taskGroupLines = [],
   packageTiers = [],
+  auditLog = [],
   onSaved,
   setOpErr,
   setOpOk,
@@ -419,6 +425,7 @@ export function SolutionsBuilderPanel({
   implementerHourGroups?: ImplementerHourGroupRow[];
   taskGroups?: TaskGroupRow[];
   taskGroupLines?: TaskGroupLineRow[];
+  auditLog?: AuditLogRow[];
   onSaved: () => Promise<void>;
   setOpErr: (msg: string | null) => void;
   setOpOk: (msg: string | null) => void;
@@ -427,6 +434,8 @@ export function SolutionsBuilderPanel({
   styles: BuilderStyles;
 }) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnSm, btnDangerSm, tbl, th, td, h2, muted } = s;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const vaultSearchRef = useRef<HTMLInputElement | null>(null);
 
   const taxonomy = useMemo(
     () => tierTaxonomyOptionsProp ?? tierTaxonomyOptionsFromRows([]),
@@ -1061,30 +1070,16 @@ export function SolutionsBuilderPanel({
   const [tierRenameDraft, setTierRenameDraft] = useState("");
   /** Keep update page concise until user chooses to edit a solution. */
   const [showUpdateDetails, setShowUpdateDetails] = useState(false);
+  const [vaultWorkTab, setVaultWorkTab] = useState<VaultWorkTab>("overview");
+  const [vaultPickerSearch, setVaultPickerSearch] = useState("");
+  const [solMenuOpenId, setSolMenuOpenId] = useState<string | null>(null);
+  const [tierMenuOpenId, setTierMenuOpenId] = useState<string | null>(null);
   /**
    * Which solution's tiers panel is open in the Solutions table.
    * Separate from `updSolutionId` — that id is also auto-selected for forms and must not
    * force the list row to stay expanded (Hide tiers clears this only).
    */
   const [expandedSolutionId, setExpandedSolutionId] = useState<string | null>(null);
-  /** Tier ids with inline risk/strategic pricing panel open under the solutions list. */
-  const [inlinePricingTierIds, setInlinePricingTierIds] = useState<Set<string>>(() => new Set());
-
-  const openInlinePricing = useCallback((tierId: string) => {
-    setInlinePricingTierIds((prev) => {
-      const next = new Set(prev);
-      next.add(tierId);
-      return next;
-    });
-  }, []);
-
-  const closeInlinePricing = useCallback((tierId: string) => {
-    setInlinePricingTierIds((prev) => {
-      const next = new Set(prev);
-      next.delete(tierId);
-      return next;
-    });
-  }, []);
 
   const [updTierFocus, setUpdTierFocus] = useState("");
   /** Task group template to apply in bulk to `updTierFocus` (update tab). */
@@ -1147,6 +1142,41 @@ export function SolutionsBuilderPanel({
         a.solution_name.localeCompare(b.solution_name, undefined, { sensitivity: "base" })
       ),
     [solutions]
+  );
+
+  const taskCountByTierId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tasks) {
+      m.set(t.solution_tier_id, (m.get(t.solution_tier_id) ?? 0) + 1);
+    }
+    return m;
+  }, [tasks]);
+
+  const filteredSolutionsForPicker = useMemo(() => {
+    const q = vaultPickerSearch.trim().toLowerCase();
+    if (!q) return solutionsAlphabetical;
+    return solutionsAlphabetical.filter((sol) => {
+      if (sol.solution_name.toLowerCase().includes(q) || sol.solution_id.toLowerCase().includes(q)) {
+        return true;
+      }
+      return tiers.some(
+        (t) =>
+          t.solution_id === sol.solution_id &&
+          (t.solution_tier_name.toLowerCase().includes(q) ||
+            t.solution_tier_id.toLowerCase().includes(q))
+      );
+    });
+  }, [solutionsAlphabetical, vaultPickerSearch, tiers]);
+
+  const syncVaultUrl = useCallback(
+    (tierId: string, tab: VaultWorkTab) => {
+      const next = new URLSearchParams(searchParams);
+      if (tierId) next.set("tier", tierId);
+      else next.delete("tier");
+      next.set("tab", tab);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
   );
 
   const tierCountBySolutionId = useMemo(() => {
@@ -1409,7 +1439,6 @@ export function SolutionsBuilderPanel({
     if (solutions.length === 0) {
       setUpdSolutionId("");
       setExpandedSolutionId(null);
-      setInlinePricingTierIds(new Set());
       return;
     }
     if (!updSolutionId || !solutions.some((x) => x.solution_id === updSolutionId)) {
@@ -1420,7 +1449,6 @@ export function SolutionsBuilderPanel({
     }
     if (expandedSolutionId && !solutions.some((x) => x.solution_id === expandedSolutionId)) {
       setExpandedSolutionId(null);
-      setInlinePricingTierIds(new Set());
     }
   }, [subTab, solutions, updSolutionId, expandedSolutionId]);
 
@@ -1501,6 +1529,113 @@ export function SolutionsBuilderPanel({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  // Deep-link: /admin/vault?tier=3-168&tab=pricing
+  useEffect(() => {
+    if (subTab !== "update") return;
+    const tierId = (searchParams.get("tier") ?? "").trim();
+    const tabRaw = (searchParams.get("tab") ?? "").trim();
+    const tab: VaultWorkTab =
+      tabRaw === "tasks" || tabRaw === "pricing" || tabRaw === "overview" ? tabRaw : "overview";
+    if (!tierId) return;
+    const t = tiers.find((x) => x.solution_tier_id === tierId);
+    if (!t) return;
+    if (updTierFocus === tierId && vaultWorkTab === tab && showUpdateDetails) return;
+    startEditTier(t);
+    setUpdSolutionId(t.solution_id);
+    setExpandedSolutionId(t.solution_id);
+    setShowUpdateDetails(true);
+    setVaultWorkTab(tab);
+    window.setTimeout(() => jumpTo("sb-vault-workspace"), 80);
+    // Intentionally omit startEditTier from deps (stable enough per render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subTab, searchParams, tiers]);
+
+  useEffect(() => {
+    if (subTab !== "update") return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      const typing =
+        tag === "input" || tag === "textarea" || tag === "select" || (e.target as HTMLElement)?.isContentEditable;
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        vaultSearchRef.current?.focus();
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!showUpdateDetails) return;
+      if (e.key === "1") {
+        e.preventDefault();
+        setVaultWorkTab("overview");
+        if (updTierFocus) syncVaultUrl(updTierFocus, "overview");
+      } else if (e.key === "2") {
+        e.preventDefault();
+        setVaultWorkTab("tasks");
+        if (updTierFocus) syncVaultUrl(updTierFocus, "tasks");
+      } else if (e.key === "3") {
+        e.preventDefault();
+        setVaultWorkTab("pricing");
+        if (updTierFocus) syncVaultUrl(updTierFocus, "pricing");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [subTab, showUpdateDetails, updTierFocus, syncVaultUrl]);
+
+  useEffect(() => {
+    const close = () => {
+      setSolMenuOpenId(null);
+      setTierMenuOpenId(null);
+    };
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+
+  const focusTierAttribution = useMemo(() => {
+    if (!updTierFocus) return { tasks: null as string | null, price: null as string | null };
+    const taskTierById = new Map(tasks.map((t) => [t.task_id, t.solution_tier_id]));
+    let tasksWho: string | null = null;
+    let priceWho: string | null = null;
+    for (const row of auditLog) {
+      const who = (row.changed_by_email ?? "").trim() || "Unknown";
+      const when = row.created_at
+        ? new Date(row.created_at).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : "";
+      const label = when ? `${who} · ${when}` : who;
+      if (!priceWho && row.entity_type === "solution_tier_pricing" && row.entity_id === updTierFocus) {
+        priceWho = label;
+      }
+      if (!tasksWho && row.entity_type === "tasks") {
+        const tid =
+          (typeof row.after_data?.solution_tier_id === "string" && row.after_data.solution_tier_id) ||
+          (typeof row.before_data?.solution_tier_id === "string" && row.before_data.solution_tier_id) ||
+          taskTierById.get(row.entity_id) ||
+          null;
+        if (tid === updTierFocus) tasksWho = label;
+      }
+      if (tasksWho && priceWho) break;
+    }
+    return { tasks: tasksWho, price: priceWho };
+  }, [auditLog, tasks, updTierFocus]);
+
+  const focusLiveVsSaved = useMemo(() => {
+    if (!updTierFocus) return null;
+    const stored = pricingByTierId.get(updTierFocus) ?? null;
+    const storedSell = stored?.sell_price != null ? Number(stored.sell_price) : null;
+    const taskCount = taskCountByTierId.get(updTierFocus) ?? 0;
+    const health = computeVaultTierHealth({
+      tierId: updTierFocus,
+      tasks,
+      pricing: stored,
+      implementerHourGroups,
+    });
+    return { storedSell, taskCount, health };
+  }, [updTierFocus, pricingByTierId, taskCountByTierId, tasks, implementerHourGroups]);
+
   const startEditSolution = (sol: Solution) => {
     cancelSolutionRename();
     cancelTierRename();
@@ -1509,6 +1644,20 @@ export function SolutionsBuilderPanel({
     setUpdSolType(solutionTypeForEdit(sol));
     setUpdSolAddOnsAllowed(Boolean(sol.add_ons_allowed));
     setShowUpdateDetails(true);
+    setVaultWorkTab("overview");
+  };
+
+  const openTierWorkspace = (t: SolutionTier, tab: VaultWorkTab = "overview") => {
+    startEditTier(t);
+    setUpdSolutionId(t.solution_id);
+    setExpandedSolutionId(t.solution_id);
+    setShowUpdateDetails(true);
+    setVaultWorkTab(tab);
+    setSolMenuOpenId(null);
+    setTierMenuOpenId(null);
+    syncVaultUrl(t.solution_tier_id, tab);
+    // Wait for the workspace panel to mount/paint, then scroll it into view.
+    window.setTimeout(() => jumpTo("sb-vault-workspace"), 50);
   };
 
   const startEditTier = (t: SolutionTier) => {
@@ -1674,8 +1823,13 @@ export function SolutionsBuilderPanel({
     const taskIds = tasksInSolution.map((k) => k.task_id);
     if (
       !window.confirm(
-        `Delete solution "${prev.solution_name}" (${solutionId}) and all related data?` +
-          `\n\nThis will also delete ${tiersInSolution.length} tier(s) and ${tasksInSolution.length} task(s).`
+        `Delete solution "${prev.solution_name}" (${solutionId})?\n\n` +
+          `This permanently removes:\n` +
+          `• ${tiersInSolution.length} tier(s)\n` +
+          `• ${tasksInSolution.length} vault task(s)\n` +
+          `• Pricing rows for those tiers\n` +
+          `• Package links that pointed at those tiers\n\n` +
+          `You cannot undo this.`
       )
     ) {
       return;
@@ -3731,39 +3885,39 @@ export function SolutionsBuilderPanel({
           <>
             <div className="admin-sb-block" style={{ marginTop: "0.6rem" }}>
               <h3 className="admin-sb-subhead" style={sectionTitle}>
-                Update solution + tiers — one page
+                Vault — solutions &amp; tiers
               </h3>
               <p style={{ ...muted, marginTop: 0, maxWidth: "62ch" }}>
-                Stay in one form: choose a solution, then update solution details, tiers, tasks, and pricing below.
+                Search, open a tier, then work in Overview, Tasks, or Pricing. Press <kbd className="admin-kbd">/</kbd> to
+                focus search · <kbd className="admin-kbd">1</kbd>/<kbd className="admin-kbd">2</kbd>/<kbd className="admin-kbd">3</kbd> for tabs.
               </p>
-              <div className="admin-actions-row" style={{ marginTop: 6 }}>
+              <div className="admin-vault-picker-toolbar">
+                <label className="admin-vault-picker-search">
+                  <span className="admin-field-caption">Search solutions or tiers</span>
+                  <input
+                    ref={vaultSearchRef}
+                    className="admin-field"
+                    style={input}
+                    value={vaultPickerSearch}
+                    onChange={(e) => setVaultPickerSearch(e.target.value)}
+                    placeholder="Name or id…"
+                    autoComplete="off"
+                  />
+                </label>
                 <button
                   type="button"
                   className="admin-btn-primary admin-sb-create-cta"
                   style={btnPrimary}
                   onClick={() => onRequestSubTabChange?.("create")}
                 >
-                  Create New Solution
+                  Create new solution
                 </button>
               </div>
-              {showUpdateDetails ? (
-                <nav className="admin-sb-quicknav" aria-label="Jump to update section">
-                  <a href="#sb-update-section-solution" className="admin-sb-quicknav__link">
-                    1. Solution
-                  </a>
-                  <a href="#sb-update-section-tiers" className="admin-sb-quicknav__link">
-                    2. Tiers
-                  </a>
-                  <a href="#sb-update-section-tasks-pricing" className="admin-sb-quicknav__link">
-                    3. Tasks &amp; pricing
-                  </a>
-                </nav>
-              ) : null}
 
               <div className="admin-sb-solutions-block" style={{ ...formSectionBox, marginTop: "0.55rem" }}>
                 <h4 style={formSectionHeading}>Solutions</h4>
                 <div className="admin-sb-solutions-list" role="list">
-                  {solutionsAlphabetical.map((sol) => {
+                  {filteredSolutionsForPicker.map((sol) => {
                     const isExpanded = expandedSolutionId === sol.solution_id;
                     const tierCount = tierCountBySolutionId.get(sol.solution_id) ?? 0;
                     return (
@@ -3832,16 +3986,6 @@ export function SolutionsBuilderPanel({
                                 <button
                                   type="button"
                                   style={btnSm}
-                                  onClick={() => {
-                                    startEditSolution(sol);
-                                    window.setTimeout(() => jumpTo("sb-update-section-solution"), 0);
-                                  }}
-                                >
-                                  Update
-                                </button>
-                                <button
-                                  type="button"
-                                  style={btnSm}
                                   className={
                                     isExpanded
                                       ? "admin-sb-sol-item__toggle admin-sb-sol-item__toggle--open"
@@ -3851,38 +3995,76 @@ export function SolutionsBuilderPanel({
                                   onClick={() => {
                                     cancelSolutionRename();
                                     cancelTierRename();
-                                    setShowUpdateDetails(false);
                                     if (isExpanded) {
                                       setExpandedSolutionId(null);
-                                      setInlinePricingTierIds(new Set());
                                       return;
                                     }
                                     setUpdSolutionId(sol.solution_id);
                                     setExpandedSolutionId(sol.solution_id);
-                                    setInlinePricingTierIds(new Set());
                                   }}
                                 >
-                                  {isExpanded ? "Hide tiers" : "Tiers"}
+                                  {isExpanded ? "Hide tiers" : "Show tiers"}
                                 </button>
-                                <button
-                                  type="button"
-                                  style={btnSm}
-                                  onClick={() => {
-                                    setOpErr(null);
-                                    cancelTierRename();
-                                    setSolutionRenameId(sol.solution_id);
-                                    setSolutionRenameDraft(sol.solution_name);
-                                  }}
-                                >
-                                  Rename
-                                </button>
-                                <button
-                                  type="button"
-                                  style={btnDangerSm}
-                                  onClick={() => void deleteSolutionById(sol.solution_id)}
-                                >
-                                  Delete
-                                </button>
+                                <div className="admin-overflow-menu">
+                                  <button
+                                    type="button"
+                                    style={btnSm}
+                                    aria-haspopup="menu"
+                                    aria-expanded={solMenuOpenId === sol.solution_id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTierMenuOpenId(null);
+                                      setSolMenuOpenId((id) =>
+                                        id === sol.solution_id ? null : sol.solution_id
+                                      );
+                                    }}
+                                  >
+                                    More
+                                  </button>
+                                  {solMenuOpenId === sol.solution_id ? (
+                                    <div
+                                      className="admin-overflow-menu__panel"
+                                      role="menu"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          startEditSolution(sol);
+                                          setSolMenuOpenId(null);
+                                          window.setTimeout(() => jumpTo("sb-vault-workspace"), 50);
+                                        }}
+                                      >
+                                        Edit solution details
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setOpErr(null);
+                                          cancelTierRename();
+                                          setSolutionRenameId(sol.solution_id);
+                                          setSolutionRenameDraft(sol.solution_name);
+                                          setSolMenuOpenId(null);
+                                        }}
+                                      >
+                                        Rename
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="admin-overflow-menu__danger"
+                                        onClick={() => {
+                                          setSolMenuOpenId(null);
+                                          void deleteSolutionById(sol.solution_id);
+                                        }}
+                                      >
+                                        Delete solution…
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
                               </>
                             )}
                           </div>
@@ -3898,15 +4080,10 @@ export function SolutionsBuilderPanel({
                               <p className="admin-sb-sol-tiers__empty">No tiers yet for this solution.</p>
                             ) : (
                               tiersOfUpdateSol.map((t) => {
-                                const pricingOpen = inlinePricingTierIds.has(t.solution_tier_id);
                                 return (
                                   <div
                                     key={t.solution_tier_id}
-                                    className={
-                                      pricingOpen
-                                        ? "admin-sb-tier-item admin-sb-tier-item--pricing-open"
-                                        : "admin-sb-tier-item"
-                                    }
+                                    className="admin-sb-tier-item"
                                   >
                                     <div className="admin-sb-tier-item__row">
                                       <div className="admin-sb-tier-item__main">
@@ -3943,6 +4120,42 @@ export function SolutionsBuilderPanel({
                                               {t.solution_tier_name}
                                             </span>
                                             <code className="admin-sb-sol-item__id">{t.solution_tier_id}</code>
+                                            {(() => {
+                                              const tc = taskCountByTierId.get(t.solution_tier_id) ?? 0;
+                                              const pr = pricingByTierId.get(t.solution_tier_id);
+                                              const sell =
+                                                pr?.sell_price != null
+                                                  ? `$${Math.round(Number(pr.sell_price)).toLocaleString()}`
+                                                  : null;
+                                              const health = computeVaultTierHealth({
+                                                tierId: t.solution_tier_id,
+                                                tasks,
+                                                pricing: pr,
+                                                implementerHourGroups,
+                                              });
+                                              return (
+                                                <span className="admin-sb-tier-meta">
+                                                  <span className="admin-sb-tier-meta__chip">
+                                                    {tc} task{tc === 1 ? "" : "s"}
+                                                  </span>
+                                                  {sell ? (
+                                                    <span className="admin-sb-tier-meta__chip">{sell}</span>
+                                                  ) : (
+                                                    <span className="admin-sb-tier-meta__chip admin-sb-tier-meta__chip--muted">
+                                                      no price
+                                                    </span>
+                                                  )}
+                                                  {health.kind !== "ok" ? (
+                                                    <span
+                                                      className="admin-sb-tier-meta__chip admin-sb-tier-meta__chip--warn"
+                                                      title={health.detail}
+                                                    >
+                                                      {health.label}
+                                                    </span>
+                                                  ) : null}
+                                                </span>
+                                              );
+                                            })()}
                                           </>
                                         )}
                                       </div>
@@ -3966,77 +4179,77 @@ export function SolutionsBuilderPanel({
                                             <button
                                               type="button"
                                               style={btnSm}
-                                              onClick={() => {
-                                                startEditTier(t);
-                                                setShowUpdateDetails(true);
-                                                window.setTimeout(
-                                                  () => jumpTo("sb-update-section-tiers"),
-                                                  0
-                                                );
-                                              }}
+                                              onClick={() => openTierWorkspace(t, "overview")}
                                             >
-                                              Update
+                                              Open
                                             </button>
                                             <button
                                               type="button"
                                               style={btnSm}
-                                              className={
-                                                pricingOpen
-                                                  ? "admin-sb-sol-item__toggle admin-sb-sol-item__toggle--open"
-                                                  : "admin-sb-sol-item__toggle"
-                                              }
-                                              aria-expanded={pricingOpen}
-                                              onClick={() => {
-                                                if (pricingOpen) closeInlinePricing(t.solution_tier_id);
-                                                else openInlinePricing(t.solution_tier_id);
-                                              }}
+                                              onClick={() => openTierWorkspace(t, "tasks")}
                                             >
-                                              {pricingOpen ? "Hide pricing" : "Pricing"}
+                                              Tasks
                                             </button>
                                             <button
                                               type="button"
                                               style={btnSm}
-                                              onClick={() => {
-                                                cancelSolutionRename();
-                                                setOpErr(null);
-                                                setTierRenameId(t.solution_tier_id);
-                                                setTierRenameDraft(t.solution_tier_name);
-                                              }}
+                                              onClick={() => openTierWorkspace(t, "pricing")}
                                             >
-                                              Rename
+                                              Pricing
                                             </button>
-                                            <button
-                                              type="button"
-                                              style={btnDangerSm}
-                                              onClick={() => void deleteUpdateTier(t)}
-                                            >
-                                              Delete
-                                            </button>
+                                            <div className="admin-overflow-menu">
+                                              <button
+                                                type="button"
+                                                style={btnSm}
+                                                aria-haspopup="menu"
+                                                aria-expanded={tierMenuOpenId === t.solution_tier_id}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSolMenuOpenId(null);
+                                                  setTierMenuOpenId((id) =>
+                                                    id === t.solution_tier_id ? null : t.solution_tier_id
+                                                  );
+                                                }}
+                                              >
+                                                More
+                                              </button>
+                                              {tierMenuOpenId === t.solution_tier_id ? (
+                                                <div
+                                                  className="admin-overflow-menu__panel"
+                                                  role="menu"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    onClick={() => {
+                                                      cancelSolutionRename();
+                                                      setOpErr(null);
+                                                      setTierRenameId(t.solution_tier_id);
+                                                      setTierRenameDraft(t.solution_tier_name);
+                                                      setTierMenuOpenId(null);
+                                                    }}
+                                                  >
+                                                    Rename
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    className="admin-overflow-menu__danger"
+                                                    onClick={() => {
+                                                      setTierMenuOpenId(null);
+                                                      void deleteUpdateTier(t);
+                                                    }}
+                                                  >
+                                                    Delete tier…
+                                                  </button>
+                                                </div>
+                                              ) : null}
+                                            </div>
                                           </>
                                         )}
                                       </div>
                                     </div>
-                                    {pricingOpen ? (
-                                      <SolutionTierInlineRiskPricing
-                                        tierId={t.solution_tier_id}
-                                        tierName={t.solution_tier_name}
-                                        solutionName={sol.solution_name}
-                                        pricingRow={pricingByTierId.get(t.solution_tier_id) ?? null}
-                                        mathConfig={tierPricingMathConfig}
-                                        client={getSupabase()}
-                                        logAudit={logAudit}
-                                        onSaved={onSaved}
-                                        onClose={() => closeInlinePricing(t.solution_tier_id)}
-                                        onError={(msg) => {
-                                          setOpOk(null);
-                                          setOpErr(msg || null);
-                                        }}
-                                        onOk={(msg) => {
-                                          setOpErr(null);
-                                          setOpOk(msg);
-                                        }}
-                                      />
-                                    ) : null}
                                   </div>
                                 );
                               })
@@ -4052,6 +4265,106 @@ export function SolutionsBuilderPanel({
 
             {showUpdateDetails ? (
               <>
+                <div id="sb-vault-workspace" className="admin-vault-workspace">
+                <div className="admin-vault-context admin-vault-context--sticky" role="status">
+                  <div className="admin-vault-context__main">
+                    <span className="admin-vault-context__eyebrow">Working on</span>
+                    <strong className="admin-vault-context__title">
+                      {(solutions.find((s) => s.solution_id === updSolutionId)?.solution_name ??
+                        updSolutionId) ||
+                        "Solution"}
+                      {updTierFocus
+                        ? ` · ${tiers.find((t) => t.solution_tier_id === updTierFocus)?.solution_tier_name ?? updTierFocus}`
+                        : ""}
+                    </strong>
+                    <span className="admin-vault-context__meta">
+                      {updTierFocus && focusLiveVsSaved ? (
+                        <>
+                          {focusLiveVsSaved.taskCount} task
+                          {focusLiveVsSaved.taskCount === 1 ? "" : "s"}
+                          {" · "}
+                          saved sell{" "}
+                          {focusLiveVsSaved.storedSell != null
+                            ? `$${Math.round(focusLiveVsSaved.storedSell).toLocaleString()}`
+                            : "—"}
+                          {focusLiveVsSaved.health.kind !== "ok" ? (
+                            <>
+                              {" · "}
+                              <span title={focusLiveVsSaved.health.detail}>
+                                {focusLiveVsSaved.health.label}
+                              </span>
+                            </>
+                          ) : null}
+                        </>
+                      ) : (
+                        "Select a tier from the list above, or open Overview to add one."
+                      )}
+                    </span>
+                    {updTierFocus ? (
+                      <span className="admin-vault-context__attr">
+                        <span>Tasks last: {focusTierAttribution.tasks ?? "—"}</span>
+                        <span>Price last: {focusTierAttribution.price ?? "—"}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  {updTierFocus ? (
+                    <label className="admin-vault-context__tier-pick">
+                      <AdminFieldCaption>Focused tier</AdminFieldCaption>
+                      <select
+                        className="admin-field"
+                        style={input}
+                        value={updTierFocus}
+                        onChange={(e) => {
+                          const nextId = e.target.value;
+                          const t = tiers.find((x) => x.solution_tier_id === nextId);
+                          if (t) openTierWorkspace(t, vaultWorkTab);
+                          else {
+                            setUpdTierFocus(nextId);
+                            setApplyTemplateGroupId("");
+                            setUpdCopyTierPick("");
+                          }
+                        }}
+                      >
+                        {tiersOfUpdateSol.map((t) => (
+                          <option key={t.solution_tier_id} value={t.solution_tier_id}>
+                            {t.solution_tier_name} ({t.solution_tier_id})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+                <div className="admin-vault-worktabs admin-vault-worktabs--sticky" role="tablist" aria-label="Tier workspace">
+                  {(
+                    [
+                      ["overview", "Overview", "1"],
+                      ["tasks", "Tasks", "2"],
+                      ["pricing", "Pricing", "3"],
+                    ] as const
+                  ).map(([id, label, key]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={vaultWorkTab === id}
+                      className={
+                        vaultWorkTab === id
+                          ? "admin-vault-worktab admin-vault-worktab--active"
+                          : "admin-vault-worktab"
+                      }
+                      onClick={() => {
+                        setVaultWorkTab(id);
+                        if (updTierFocus) syncVaultUrl(updTierFocus, id);
+                      }}
+                    >
+                      {label}
+                      <span className="admin-vault-worktab__key">{key}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {vaultWorkTab === "overview" ? (
+                <>
                 <div id="sb-update-section-solution" className="admin-sb-block">
                   <UpdateSectionHead
                     badge="1"
@@ -4217,36 +4530,56 @@ export function SolutionsBuilderPanel({
               </div>
                 </div>
 
+                </>
+                ) : null}
+
+                {vaultWorkTab === "tasks" || vaultWorkTab === "pricing" ? (
                 <div id="sb-update-section-tasks-pricing" className="admin-sb-block">
+              {vaultWorkTab === "tasks" ? (
               <UpdateSectionHead
-                badge="3"
-                title="Tasks & pricing for a tier"
-                hint="Select a tier, then add tasks manually, from a task-group template, or by copying vault tasks from another tier. Templates live in Admin → Task-Group templates."
+                badge="Tasks"
+                title="Tasks for this tier"
+                hint="Add tasks manually, from a task-group template, or by copying vault tasks from another tier. Saving tasks updates pricing hours and sell automatically."
                 muted={muted}
               />
-              <label style={{ ...lbl, maxWidth: 420 }}>
-                <AdminFieldCaption>Tier for tasks &amp; pricing</AdminFieldCaption>
-                <select
-                  style={input}
-                  value={updTierFocus}
-                  onChange={(e) => {
-                    setUpdTierFocus(e.target.value);
-                    setApplyTemplateGroupId("");
-                    setUpdCopyTierPick("");
-                  }}
-                >
-                  {tiersOfUpdateSol.map((t) => (
-                    <option key={t.solution_tier_id} value={t.solution_tier_id}>
-                      {t.solution_tier_name} ({t.solution_tier_id})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              ) : (
+              <UpdateSectionHead
+                badge="Pricing"
+                title="Pricing for this tier"
+                hint="Risk and strategic scores live here. Hour buckets follow vault tasks when implementer mapping is set."
+                muted={muted}
+              />
+              )}
+              {vaultWorkTab === "tasks" && updTierFocus && (taskCountByTierId.get(updTierFocus) ?? 0) === 0 ? (
+                <div className="admin-vault-empty" role="status">
+                  <p style={{ margin: 0 }}>
+                    <strong>No vault tasks yet.</strong>
+                    {focusLiveVsSaved?.storedSell != null && focusLiveVsSaved.storedSell > 0
+                      ? ` Saved sell is still $${Math.round(focusLiveVsSaved.storedSell).toLocaleString()}.`
+                      : ""}
+                  </p>
+                  <p style={{ ...muted, margin: "0.4rem 0 0", fontSize: "0.86rem" }}>
+                    Add tasks below, apply a task group, or open Pricing / Data health to sync sell down to $0.
+                  </p>
+                  <div className="admin-actions-row" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      style={btnSm}
+                      onClick={() => {
+                        setVaultWorkTab("pricing");
+                        if (updTierFocus) syncVaultUrl(updTierFocus, "pricing");
+                      }}
+                    >
+                      Open Pricing
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {tiersOfUpdateSol.length === 0 ? (
-                <p style={{ ...muted, marginTop: 8 }}>Add a tier above to manage tasks and pricing.</p>
+                <p style={{ ...muted, marginTop: 8 }}>Add a tier in Overview to manage tasks and pricing.</p>
               ) : (
                 <>
-                  {taskGroups.length > 0 ? (
+                  {vaultWorkTab === "tasks" && taskGroups.length > 0 ? (
                     <div style={{ ...formSectionBox, marginTop: 12 }}>
                       <p style={formSectionHeading}>Add tasks from a task group</p>
                       <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "52ch" }}>
@@ -4283,7 +4616,8 @@ export function SolutionsBuilderPanel({
                       </div>
                     </div>
                   ) : null}
-                  {sortedTiersForAutofill.filter((x) => x.solution_tier_id !== updTierFocus).length > 0 &&
+                  {vaultWorkTab === "tasks" &&
+                  sortedTiersForAutofill.filter((x) => x.solution_tier_id !== updTierFocus).length > 0 &&
                   updTierFocus ? (
                     <div style={{ ...formSectionBox, marginTop: 12 }}>
                       <p style={formSectionHeading}>Copy vault tasks from another tier</p>
@@ -4336,6 +4670,8 @@ export function SolutionsBuilderPanel({
                       </div>
                     </div>
                   ) : null}
+                  {vaultWorkTab === "tasks" ? (
+                  <>
                   <h4 style={{ ...sectionTitle, marginTop: "1rem", fontSize: "0.88rem" }}>Tasks</h4>
                   <div className="admin-table-scroll">
                     <table className="admin-data-table" style={{ ...tbl, marginTop: 4 }}>
@@ -4614,7 +4950,10 @@ export function SolutionsBuilderPanel({
                       </div>
                     </>
                   )}
+                  </>
+                  ) : null}
 
+                  {vaultWorkTab === "pricing" ? (
                   <PricingPanel
                     tierPricingMathConfig={tierPricingMathConfig}
                     subTab="update"
@@ -4642,8 +4981,11 @@ export function SolutionsBuilderPanel({
                     taskDrivenHours={implementerHourGroups.length > 0}
                     taskHourRollup={taskHourRollupForPricing}
                   />
+                  ) : null}
                 </>
               )}
+                </div>
+                ) : null}
                 </div>
               </>
             ) : null}

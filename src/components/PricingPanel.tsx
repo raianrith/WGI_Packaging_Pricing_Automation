@@ -299,6 +299,31 @@ export function PricingPanel({
     [hourBreakdown, scopeRisk, internalCoord, clientRev, stratScore, tierPricingMathConfig]
   );
 
+  const storedPricingRow = useMemo(() => {
+    if (!editingTierId) return null;
+    return pricing.find((p) => p.solution_tier_id === editingTierId) ?? null;
+  }, [pricing, editingTierId]);
+
+  /** Task-driven form hours can disagree with the last saved sell/hours in Supabase. */
+  const storedVsLiveMismatch = useMemo(() => {
+    if (!taskDrivenHours || !storedPricingRow) return null;
+    const storedSell = Number(storedPricingRow.sell_price ?? 0);
+    const storedHours = Number(storedPricingRow.total_hours ?? 0);
+    const liveSell = derived.sellPrice;
+    const liveHours = derived.totalHours;
+    if (Math.abs(storedSell - liveSell) < 0.51 && Math.abs(storedHours - liveHours) < 0.05) {
+      return null;
+    }
+    return {
+      storedSell,
+      storedHours,
+      liveSell,
+      liveHours,
+      storedCs: Number(storedPricingRow.hours_client_services ?? 0),
+      storedCp: Number(storedPricingRow.hours_copy ?? 0),
+    };
+  }, [taskDrivenHours, storedPricingRow, derived.sellPrice, derived.totalHours]);
+
   const parsedPackageSellDiscountPct = useMemo(
     () => parsePct0to100(packageSellDiscountPct),
     [packageSellDiscountPct]
@@ -819,10 +844,29 @@ export function PricingPanel({
 
       <div className="admin-pricing-section">
         <h3 className="admin-pricing-section__title">Hours</h3>
+        {storedVsLiveMismatch ? (
+          <div className="admin-pricing-mismatch" role="status">
+            <p style={{ margin: 0 }}>
+              <strong>Saved sell is still ${Math.round(storedVsLiveMismatch.storedSell).toLocaleString()}</strong>
+              {" "}
+              (stored {storedVsLiveMismatch.storedHours}h
+              {storedVsLiveMismatch.storedCs || storedVsLiveMismatch.storedCp
+                ? ` — e.g. ${storedVsLiveMismatch.storedCs} Client Services + ${storedVsLiveMismatch.storedCp} Copy`
+                : ""}
+              ).
+            </p>
+            <p style={{ ...muted, margin: "0.45rem 0 0", fontSize: "0.86rem" }}>
+              The hour fields below show the <strong>live task rollup</strong> (
+              {storedVsLiveMismatch.liveHours}h → ${Math.round(storedVsLiveMismatch.liveSell).toLocaleString()}
+              ), which is why they look like zeros when Tasks is empty. The table Sell column reads the
+              database until you Sync (Data health) or Save pricing.
+            </p>
+          </div>
+        ) : null}
         {taskDrivenHours ? (
-          <p className="admin-hint" style={{ ...muted, marginTop: 0, marginBottom: 10, maxWidth: "58ch" }}>
+          <p className="admin-hint" style={{ ...muted, marginTop: storedVsLiveMismatch ? 10 : 0, marginBottom: 10, maxWidth: "58ch" }}>
             These fields update from <strong>task time</strong> and <strong>implementer</strong> in <strong>Tasks</strong>{" "}
-            above, using mappings in <strong>Admin → Implementer-Pricing Mapping</strong>. Edit tasks to change the split; use{" "}
+            above, using mappings in <strong>Admin → Implementer mapping</strong>. Edit tasks to change the split; use{" "}
             <strong>Save pricing</strong> to persist the rolled-up hours to this tier.
           </p>
         ) : null}

@@ -80,6 +80,7 @@ import { ProposalSaveReminderBanner } from "../components/proposal-builder/Propo
 import { catalogSolutionKind, buildModuleAddOnGroups } from "../lib/buildCatalogDirectoryRows";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
+import { notifyOpsReviewSubmitted } from "../lib/notifyOpsReviewEmail";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import { fetchAllTaskRows } from "../lib/taskIds";
 import { filterConfigurablePackages } from "../lib/presetPackages";
@@ -1006,18 +1007,18 @@ export function RoadmapPlanningView() {
   const saveCurrentProposal = useCallback(async (opts?: {
     reviewStatus?: ProposalReviewStatus;
     successMessage?: string;
-  }): Promise<boolean> => {
+  }): Promise<RoadmapProposalRow | null> => {
     const client = getSupabase();
-    if (!client) return false;
+    if (!client) return null;
     const clientName = clientLabel.trim();
     const title = roadmapTitle.trim();
     if (!clientName || !title) {
       toastError("Add both Client name and Roadmap name before saving.");
-      return false;
+      return null;
     }
     if (!isValidRoadmapNameFormat(title)) {
       toastError(`Roadmap name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
-      return false;
+      return null;
     }
     setSavingProposal(true);
     const userId = user?.id ?? null;
@@ -1055,7 +1056,7 @@ export function RoadmapPlanningView() {
     setSavingProposal(false);
     if (result.error) {
       toastError(`Could not save proposal: ${result.error.message}`);
-      return false;
+      return null;
     }
     const saved = result.data as RoadmapProposalRow | null;
     if (saved?.id) setActiveProposalId(saved.id);
@@ -1063,7 +1064,7 @@ export function RoadmapPlanningView() {
     setLastSavedFingerprint(proposalSnapshotFingerprint(snapshot));
     toastSuccess(opts?.successMessage ?? `Saved "${title}" under ${clientName}.`);
     await loadSavedProposals();
-    return true;
+    return saved;
   }, [
     activeProposalId,
     clientBudget,
@@ -1080,22 +1081,30 @@ export function RoadmapPlanningView() {
   ]);
 
   const submitForOpsReview = useCallback(async () => {
-    const ok = await saveCurrentProposal({
+    const clientName = clientLabel.trim();
+    const title = roadmapTitle.trim();
+    const saved = await saveCurrentProposal({
       reviewStatus: "awaiting_ops_review",
-      successMessage: `Submitted "${roadmapTitle.trim()}" for Ops Review.`,
+      successMessage: `Submitted "${title}" for Ops Review.`,
     });
-    if (!ok) return;
+    if (!saved) return;
+    void notifyOpsReviewSubmitted({
+      proposalId: saved.id,
+      clientLabel: saved.client_label || clientName,
+      roadmapTitle: saved.roadmap_title || title,
+      submittedByEmail: user?.email ?? saved.updated_by_email ?? saved.created_by_email,
+    });
     setActiveProposalId(null);
     setBuilderMode("awaiting_ops");
     setBuilderStep("setup");
-  }, [roadmapTitle, saveCurrentProposal]);
+  }, [clientLabel, roadmapTitle, saveCurrentProposal, user?.email]);
 
   const markReviewedByOps = useCallback(async () => {
-    const ok = await saveCurrentProposal({
+    const saved = await saveCurrentProposal({
       reviewStatus: "client_ready",
       successMessage: `"${roadmapTitle.trim()}" marked Reviewed by Ops.`,
     });
-    if (!ok) return;
+    if (!saved) return;
     setActiveProposalId(null);
     setBuilderMode("client_ready");
     setBuilderStep("setup");

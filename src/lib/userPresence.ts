@@ -70,7 +70,7 @@ export function routePresenceLabel(pathname: string | null | undefined): string 
   if (path === "/packages") return "Packages";
   if (path.startsWith("/package/")) return "Package Workspace";
   if (path === "/roadmap") return "Proposal Builder";
-  if (path === "/admin") return "Admin";
+  if (path === "/admin" || path.startsWith("/admin/")) return "Admin";
   return path;
 }
 

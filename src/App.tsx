@@ -34,6 +34,10 @@ export default function App() {
           </Route>
           <Route
             path="/admin"
+            element={<Navigate to="/admin/vault" replace />}
+          />
+          <Route
+            path="/admin/*"
             element={
               <RequireAdmin>
                 <AdminView />

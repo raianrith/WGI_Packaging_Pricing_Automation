@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ADMIN_VIEW_DESCRIPTION,
   AGENCY_HERO_TITLE,
 } from "../branding";
+import {
+  ADMIN_NAV_GROUPS,
+  adminPath,
+  parseAdminLocation,
+  type AdminModeId,
+  type AdminSectionId,
+} from "../admin/adminRoutes";
 import {
   browserKeyConfigurationError,
   envConfigured,
@@ -41,6 +48,7 @@ import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
 import { PackageBuilderSlotLimitsPanel } from "../components/PackageBuilderSlotLimitsPanel";
 import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
+import { AdminDataHealthPanel } from "../components/AdminDataHealthPanel";
 import { useToast } from "../context/ToastContext";
 import type {
   AuditLogRow,
@@ -57,19 +65,18 @@ import type {
   TaskRow,
 } from "../types";
 
-type AdminTab =
-  | "packages"
-  | "solutions_builder"
-  | "task_group_builder"
-  | "tier_taxonomy_lists"
-  | "active_users"
-  | "pricing_calculator"
-  | "glossary"
-  | "implementer_mapping"
-  | "audit";
-
-/** Create-only vs list + edit, plus tier slot ceilings editor. Shown under Package / Solutions builder tabs. */
+/** @deprecated Prefer AdminModeId from adminRoutes — kept for PackagesBuilderPanel props. */
 export type AdminSubTab = "create" | "update" | "build_slots";
+
+function modeToSubTab(mode: AdminModeId): AdminSubTab {
+  if (mode === "slots") return "build_slots";
+  return mode;
+}
+
+function subTabToMode(sub: AdminSubTab): AdminModeId {
+  if (sub === "build_slots") return "slots";
+  return sub;
+}
 
 /** Single caption row so label+input stacks align across grid columns (avoids extra flex rows for “(locked)”). */
 function AdminFieldCaption({ children }: { children: ReactNode }) {
@@ -93,8 +100,13 @@ function rowJson(row: object): Record<string, unknown> {
 
 export function AdminView() {
   const { setOpErr, setOpOk, toastError, toastNote } = useToast();
-  const [tab, setTab] = useState<AdminTab>("packages");
-  const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>("create");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { section, mode } = useMemo(
+    () => parseAdminLocation(location.pathname),
+    [location.pathname]
+  );
+  const adminSubTab = modeToSubTab(mode);
   const [packages, setPackages] = useState<Package[]>([]);
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [tiers, setTiers] = useState<SolutionTier[]>([]);
@@ -276,9 +288,14 @@ export function AdminView() {
     void refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    setAdminSubTab(tab === "solutions_builder" ? "update" : "create");
-  }, [tab]);
+  const goAdmin = useCallback(
+    (nextSection: AdminSectionId, nextMode?: AdminModeId | null) => {
+      setOpErr(null);
+      setOpOk(null);
+      navigate(adminPath(nextSection, nextMode ?? null));
+    },
+    [navigate, setOpErr, setOpOk]
+  );
 
   useEffect(() => {
     if (!loadErr) {
@@ -415,13 +432,13 @@ export function AdminView() {
   }, [tierPricing, tierPricingMathConfig, logAudit, refreshAfterSave, setOpErr, setOpOk]);
 
   return (
-    <div className="admin-page-shell" style={shell}>
+    <div className="admin-page-shell admin-page-shell--v2" style={shell}>
       <header className="admin-page-header">
         <div className="admin-hero-top">
-          <span className="admin-hero__eyebrow">Admin · edit access</span>
+          <span className="admin-hero__eyebrow">Admin</span>
           <button
             type="button"
-            className="agency-btn-secondary admin-hero__reload"
+            className="agency-btn-secondary admin-hero__reload admin-btn-quiet"
             style={btnReload}
             onClick={() => void refresh()}
             disabled={loading}
@@ -429,7 +446,9 @@ export function AdminView() {
             Reload data
           </button>
         </div>
-        <h1 style={title}>{AGENCY_HERO_TITLE}</h1>
+        <h1 className="admin-hero__title" style={title}>
+          {AGENCY_HERO_TITLE}
+        </h1>
         <p className="admin-hero__desc" style={subtitle}>
           {ADMIN_VIEW_DESCRIPTION}{" "}
           <Link to="/" style={link}>
@@ -447,50 +466,65 @@ export function AdminView() {
       )}
 
       {!loadErr && !loading && (
-        <div className={`admin-workspace${tab === "solutions_builder" ? " admin-workspace--solutions-builder" : ""}`}>
-          <div className="admin-tabs" role="tablist" aria-label="Admin sections">
-            {(
-              [
-                ["packages", "Package Builder"],
-                ["solutions_builder", "Solutions Builder"],
-                ["task_group_builder", "Task-Group Builder"],
-                ["tier_taxonomy_lists", "Phase, Category & Tactic Lists"],
-                ["implementer_mapping", "Implementer-Pricing Mapping"],
-                ["pricing_calculator", "Pricing Calculator"],
-                ["glossary", "Data Glossary"],
-                ["audit", "Change History"],
-                ["active_users", "Active Users"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                className={tab === id ? "admin-tab admin-tab--active" : "admin-tab"}
-                onClick={() => {
-                  setTab(id);
-                  setAdminSubTab(id === "solutions_builder" ? "update" : "create");
-                  setOpErr(null);
-                  setOpOk(null);
-                }}
-              >
-                {label}
-              </button>
+        <div
+          className={`admin-workspace admin-workspace--revamp${
+            section === "vault" ? " admin-workspace--solutions-builder" : ""
+          }`}
+        >
+          <aside className="admin-side-nav" aria-label="Admin sections">
+            {ADMIN_NAV_GROUPS.map((group) => (
+              <div key={group.id} className="admin-side-nav__group">
+                <p className="admin-side-nav__group-label">{group.label}</p>
+                <ul className="admin-side-nav__list">
+                  {group.items.map((item) => (
+                    <li key={item.id}>
+                      <NavLink
+                        to={adminPath(item.id, item.id === "vault" || item.id === "packages" ? "update" : null)}
+                        className={({ isActive }) =>
+                          isActive || section === item.id
+                            ? "admin-side-nav__link admin-side-nav__link--active"
+                            : "admin-side-nav__link"
+                        }
+                        title={item.hint}
+                        onClick={() => {
+                          setOpErr(null);
+                          setOpOk(null);
+                        }}
+                      >
+                        <span className="admin-side-nav__link-label">{item.label}</span>
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </div>
+          </aside>
 
-          {tab !== "audit" &&
-            tab !== "glossary" &&
-            tab !== "implementer_mapping" &&
-            tab !== "pricing_calculator" &&
-            tab !== "active_users" &&
-            tab !== "task_group_builder" &&
-            tab !== "tier_taxonomy_lists" && (
+          <div className="admin-workspace__main">
+          <label className="admin-mobile-nav">
+            <span className="admin-field-caption">Section</span>
+            <select
+              className="admin-field"
+              value={section}
+              onChange={(e) => {
+                const next = e.target.value as AdminSectionId;
+                goAdmin(next, next === "vault" || next === "packages" ? "update" : null);
+              }}
+            >
+              {ADMIN_NAV_GROUPS.flatMap((g) =>
+                g.items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {g.label}: {item.label}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          {(section === "vault" || section === "packages") && (
             <div
               className="admin-subtabs"
               role="tablist"
-              aria-label={tab === "packages" ? "Package builder mode" : "Create or update records"}
+              aria-label={section === "packages" ? "Package builder mode" : "Vault mode"}
             >
               <button
                 type="button"
@@ -499,13 +533,9 @@ export function AdminView() {
                 className={
                   adminSubTab === "create" ? "admin-subtab admin-subtab--active" : "admin-subtab"
                 }
-                onClick={() => {
-                  setAdminSubTab("create");
-                  setOpErr(null);
-                  setOpOk(null);
-                }}
+                onClick={() => goAdmin(section, "create")}
               >
-                {tab === "packages" ? "Create New Preset Package" : "Create new"}
+                {section === "packages" ? "Create package" : "Create solution"}
               </button>
               <button
                 type="button"
@@ -514,15 +544,11 @@ export function AdminView() {
                 className={
                   adminSubTab === "update" ? "admin-subtab admin-subtab--active" : "admin-subtab"
                 }
-                onClick={() => {
-                  setAdminSubTab("update");
-                  setOpErr(null);
-                  setOpOk(null);
-                }}
+                onClick={() => goAdmin(section, "update")}
               >
-                {tab === "packages" ? "Update A Package" : "Update"}
+                {section === "packages" ? "Update package" : "Browse & edit"}
               </button>
-              {tab === "packages" && (
+              {section === "packages" && (
                 <button
                   type="button"
                   role="tab"
@@ -532,19 +558,15 @@ export function AdminView() {
                       ? "admin-subtab admin-subtab--active"
                       : "admin-subtab"
                   }
-                  onClick={() => {
-                    setAdminSubTab("build_slots");
-                    setOpErr(null);
-                    setOpOk(null);
-                  }}
+                  onClick={() => goAdmin("packages", "slots")}
                 >
-                  Configurable Package
+                  Configurable package
                 </button>
               )}
             </div>
           )}
 
-          {tab === "packages" && adminSubTab === "build_slots" && (
+          {section === "packages" && adminSubTab === "build_slots" && (
             <section className="admin-panel admin-panel--editor" style={panel}>
               <div className="admin-editor-layout admin-editor-layout--wide">
                 <PackageBuilderSlotLimitsPanel
@@ -566,7 +588,7 @@ export function AdminView() {
             </section>
           )}
 
-          {tab === "packages" && (adminSubTab === "create" || adminSubTab === "update") && (
+          {section === "packages" && (adminSubTab === "create" || adminSubTab === "update") && (
             <PackagesBuilderPanel
               subTab={adminSubTab}
               packages={packages}
@@ -601,7 +623,7 @@ export function AdminView() {
               }}
             />
           )}
-          {tab === "solutions_builder" && (
+          {section === "vault" && (
             <SolutionsBuilderPanel
               subTab={adminSubTab === "create" ? "create" : "update"}
               tierPricingMathConfig={tierPricingMathConfig}
@@ -614,10 +636,11 @@ export function AdminView() {
               implementerHourGroups={implementerHourGroups}
               taskGroups={taskGroups}
               taskGroupLines={taskGroupLines}
+              auditLog={auditLog}
               onSaved={refreshAfterSave}
               setOpErr={setOpErr}
               setOpOk={setOpOk}
-              onRequestSubTabChange={setAdminSubTab}
+              onRequestSubTabChange={(sub) => goAdmin("vault", subTabToMode(sub))}
               logAudit={logAudit}
               styles={{
                 panel,
@@ -637,7 +660,7 @@ export function AdminView() {
               }}
             />
           )}
-          {tab === "tier_taxonomy_lists" && (
+          {section === "taxonomy" && (
             <TierTaxonomyListsPanel
               rows={tierTaxonomyOptions}
               tiers={tiers}
@@ -659,7 +682,7 @@ export function AdminView() {
               td={td}
             />
           )}
-          {tab === "task_group_builder" && (
+          {section === "task-groups" && (
             <TaskGroupBuilderPanel
               tasks={tasks}
               tiers={tiers}
@@ -688,7 +711,7 @@ export function AdminView() {
               td={td}
             />
           )}
-          {tab === "pricing_calculator" && (
+          {section === "pricing" && (
             <PricingCalculatorPanel
               config={tierPricingMathConfig}
               onApply={setTierPricingMathConfig}
@@ -708,13 +731,37 @@ export function AdminView() {
               recalculateAllSavedPricingBusy={recalculateAllSavedPricingBusy}
             />
           )}
-          {tab === "active_users" && (
+          {section === "health" && (
+            <AdminDataHealthPanel
+              solutions={solutions}
+              tiers={tiers}
+              tasks={tasks}
+              tierPricing={tierPricing}
+              auditLog={auditLog}
+              implementerHourGroups={implementerHourGroups}
+              tierPricingMathConfig={tierPricingMathConfig}
+              onRefresh={refreshAfterSave}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              logAudit={logAudit}
+              panel={panel}
+              h2={h2}
+              muted={muted}
+              btn={btn}
+              btnPrimary={btnPrimary}
+              btnSm={btnSm}
+              tbl={tbl}
+              th={th}
+              td={td}
+            />
+          )}
+          {section === "users" && (
             <ActiveUsersPanel
               styles={{ panel, h2, muted, tbl, th, td, btnSm, input }}
             />
           )}
-          {tab === "glossary" && <DataGlossaryPanel />}
-          {tab === "implementer_mapping" && (
+          {section === "glossary" && <DataGlossaryPanel />}
+          {section === "implementers" && (
             <ImplementerMappingPanel
               rows={implementerHourGroups}
               loadNote={implementerMappingLoadNote}
@@ -735,7 +782,7 @@ export function AdminView() {
               td={td}
             />
           )}
-          {tab === "audit" && (
+          {section === "audit" && (
             <ChangeHistoryPanel
               auditLog={auditLog}
               packages={packages}
@@ -750,6 +797,7 @@ export function AdminView() {
             />
           )}
 
+          </div>
         </div>
       )}
     </div>
@@ -2527,45 +2575,45 @@ const shell: CSSProperties = {
 };
 
 const title: CSSProperties = {
-  margin: "0 0 0.55rem",
-  fontSize: "1.5rem",
+  margin: "0 0 0.45rem",
+  fontSize: "1.65rem",
   fontWeight: 700,
-  letterSpacing: "-0.035em",
-  lineHeight: 1.22,
+  letterSpacing: "-0.04em",
+  lineHeight: 1.2,
 };
 
 const subtitle: CSSProperties = {
   margin: 0,
   color: "var(--muted)",
-  fontSize: "0.94rem",
-  maxWidth: "min(100%, 68rem)",
+  fontSize: "0.9rem",
+  maxWidth: "min(100%, 42rem)",
   lineHeight: 1.55,
 };
 
 const btnReload: CSSProperties = {
-  padding: "0.5rem 1rem",
-  fontSize: "0.85rem",
+  padding: "0.45rem 0.9rem",
+  fontSize: "0.82rem",
   fontWeight: 600,
-  borderRadius: 10,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
+  borderRadius: 9,
+  border: "1px solid rgba(148, 163, 184, 0.55)",
+  background: "#ffffff",
   color: "var(--text)",
 };
 
 const link: CSSProperties = { color: "var(--accent)", fontWeight: 600 };
 
-const muted: CSSProperties = { color: "var(--muted)", fontSize: "0.88rem" };
+const muted: CSSProperties = { color: "var(--muted)", fontSize: "0.86rem" };
 
 const panel: CSSProperties = {
-  padding: "1.25rem 1.35rem",
-  marginBottom: "1.25rem",
+  padding: "1.35rem 1.45rem",
+  marginBottom: "0",
 };
 
 const h2: CSSProperties = {
-  margin: "0 0 0.85rem",
-  fontSize: "1.08rem",
+  margin: "0 0 0.65rem",
+  fontSize: "1.12rem",
   fontWeight: 700,
-  letterSpacing: "-0.02em",
+  letterSpacing: "-0.025em",
 };
 
 const formGrid: CSSProperties = {
@@ -2578,20 +2626,20 @@ const lbl: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "0.35rem",
-  fontSize: "0.78rem",
+  fontSize: "0.8rem",
   fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.04em",
+  letterSpacing: "0.01em",
   color: "var(--muted)",
+  textTransform: "none",
 };
 
 const input: CSSProperties = {
   fontFamily: "inherit",
   fontSize: "0.9rem",
-  padding: "0.5rem 0.65rem",
+  padding: "0.55rem 0.7rem",
   borderRadius: 10,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
+  border: "1px solid rgba(148, 163, 184, 0.55)",
+  background: "#ffffff",
   color: "var(--text)",
   width: "100%",
 };
@@ -2603,12 +2651,12 @@ const textarea: CSSProperties = {
 };
 
 const btn: CSSProperties = {
-  padding: "0.5rem 0.9rem",
-  fontSize: "0.85rem",
+  padding: "0.48rem 0.85rem",
+  fontSize: "0.84rem",
   fontWeight: 600,
-  borderRadius: 10,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
+  borderRadius: 9,
+  border: "1px solid rgba(148, 163, 184, 0.55)",
+  background: "#ffffff",
   color: "var(--text)",
   cursor: "pointer",
   transition: "background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
@@ -2616,27 +2664,29 @@ const btn: CSSProperties = {
 
 const btnPrimary: CSSProperties = {
   ...btn,
-  background: "var(--accent)",
+  background: "#0d5c4d",
   color: "#fffcf7",
-  borderColor: "rgba(13, 92, 77, 0.45)",
+  borderColor: "rgba(13, 92, 77, 0.55)",
+  boxShadow: "0 1px 2px rgba(13, 92, 77, 0.18)",
 };
 
 const btnSm: CSSProperties = {
-  padding: "0.32rem 0.58rem",
+  padding: "0.3rem 0.55rem",
   fontSize: "0.78rem",
   fontWeight: 600,
   borderRadius: 8,
-  border: "1px solid var(--border)",
-  background: "var(--surface)",
+  border: "1px solid rgba(148, 163, 184, 0.5)",
+  background: "transparent",
+  color: "var(--text)",
   cursor: "pointer",
-  transition: "background 0.12s ease",
+  transition: "background 0.12s ease, border-color 0.12s ease",
 };
 
 const btnDangerSm: CSSProperties = {
   ...btnSm,
-  borderColor: "rgba(239, 68, 68, 0.24)",
-  color: "var(--danger)",
-  background: "rgba(239, 68, 68, 0.08)",
+  borderColor: "transparent",
+  color: "#b42318",
+  background: "transparent",
 };
 
 const tbl: CSSProperties = {

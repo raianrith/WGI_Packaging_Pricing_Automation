@@ -278,6 +278,7 @@ export function PackagesBuilderPanel({
   const [tierSearch, setTierSearch] = useState("");
 
   const [pkgEditId, setPkgEditId] = useState<string | null>(null);
+  const [packagePickerSearch, setPackagePickerSearch] = useState("");
   const [packageDetails, setPackageDetails] =
     useState<Record<PackageDetailFieldKey, string>>(emptyPackageDetails);
   const [hourDiscountPctStr, setHourDiscountPctStr] = useState("0");
@@ -301,6 +302,16 @@ export function PackagesBuilderPanel({
     for (const p of packages) m.set(p.package_id, p.package_name);
     return m;
   }, [packages]);
+
+  const packagesForPicker = useMemo(() => {
+    const q = packagePickerSearch.trim().toLowerCase();
+    const rows = [...packages].sort((a, b) => sortId(a.package_id, b.package_id));
+    if (!q) return rows;
+    return rows.filter(
+      (p) =>
+        p.package_name.toLowerCase().includes(q) || p.package_id.toLowerCase().includes(q)
+    );
+  }, [packages, packagePickerSearch]);
 
   const tierRows = useMemo(() => {
     const q = tierSearch.trim().toLowerCase();
@@ -1018,6 +1029,16 @@ export function PackagesBuilderPanel({
         {subTab === "update" && !embedded ? (
           <div className="admin-form-stack" style={{ ...formGrid, marginBottom: "0.75rem" }}>
             <label style={lbl}>
+              <FieldCaption>Search packages</FieldCaption>
+              <input
+                style={input}
+                value={packagePickerSearch}
+                onChange={(e) => setPackagePickerSearch(e.target.value)}
+                placeholder="Name or id…"
+                autoComplete="off"
+              />
+            </label>
+            <label style={lbl}>
               <FieldCaption>Package to edit</FieldCaption>
               <select
                 style={input}
@@ -1032,13 +1053,22 @@ export function PackagesBuilderPanel({
                 }}
               >
                 <option value="">— Select —</option>
-                {[...packages].sort((a, b) => sortId(a.package_id, b.package_id)).map((p) => (
+                {packagesForPicker.map((p) => (
                   <option key={p.package_id} value={p.package_id}>
                     {p.package_name} ({p.package_id})
                   </option>
                 ))}
               </select>
             </label>
+            {pkgEditId ? (
+              <p style={{ ...muted, margin: 0, gridColumn: "1 / -1", fontSize: "0.86rem" }}>
+                Editing one package at a time — change details and tiers below, then save.
+              </p>
+            ) : (
+              <p style={{ ...muted, margin: 0, gridColumn: "1 / -1", fontSize: "0.86rem" }}>
+                Pick a package to open its workbench (details, tiers, pricing).
+              </p>
+            )}
           </div>
         ) : null}
 

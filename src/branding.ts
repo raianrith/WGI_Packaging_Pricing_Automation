@@ -53,4 +53,4 @@ export const PACKAGE_BUILDER_DESCRIPTION =
 
 /** Subtitle copy on the Admin view hero. */
 export const ADMIN_VIEW_DESCRIPTION =
-  "Edit mode — create and update packages, solutions, tiers, and tasks (requires signing in). Writes go to Supabase; change history lives in the audit log.";
+  "Edit mode — vault solutions and tiers, packages, templates, and system settings (requires signing in). Writes go to Supabase; change history lives under Ops.";

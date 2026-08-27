@@ -478,7 +478,7 @@ export function PackageBuilderSlotLimitsPanel({
     if (types.length <= 1) return;
     if (
       !globalThis.confirm(
-        "Remove this template and all of its tier slots? Agency users will no longer see it."
+        "Remove this template and all of its solution slots? Agency users will no longer see it."
       )
     ) {
       return;
@@ -503,7 +503,7 @@ export function PackageBuilderSlotLimitsPanel({
           id: newId,
           package_type_id: selectedTypeId,
           sort_order: maxOrder + 1,
-          label: "New tier",
+          label: "New solution",
           hour_ceiling: null,
           price_ceiling: null,
           solution_tier_limit: null,
@@ -543,7 +543,7 @@ export function PackageBuilderSlotLimitsPanel({
     setSlots((prev) => {
       const inType = prev.filter((s) => s.package_type_id === selectedTypeId);
       const maxOrder = inType.reduce((m, s) => Math.max(m, s.sort_order), 0);
-      const baseLabel = source.label.trim() || "Tier";
+      const baseLabel = source.label.trim() || "Solution";
       const copyLabel = inType.some((s) => s.label === `${baseLabel} (copy)`)
         ? `${baseLabel} (copy ${maxOrder + 1})`
         : `${baseLabel} (copy)`;
@@ -568,7 +568,7 @@ export function PackageBuilderSlotLimitsPanel({
     if (!selectedTypeId) return;
     const count = slots.filter((s) => s.package_type_id === selectedTypeId).length;
     if (count <= 1) return;
-    if (!globalThis.confirm("Remove this package tier slot?")) return;
+    if (!globalThis.confirm("Remove this package solution slot?")) return;
     const remaining = typeSlots.filter((s) => s.id !== id);
     setSlots((prev) => {
       const next = prev.filter((s) => s.id !== id);
@@ -685,7 +685,7 @@ export function PackageBuilderSlotLimitsPanel({
         return {
           ...s,
           package_type_id: mappedTypeId,
-          label: s.label.trim() || "Tier",
+          label: s.label.trim() || "Solution",
           hour_ceiling: parseOptionalCeiling(s.hour_ceiling),
           price_ceiling: parseOptionalCeiling(s.price_ceiling),
           solution_tier_limit: parseOptionalTierLimit(s.solution_tier_limit),
@@ -800,7 +800,7 @@ export function PackageBuilderSlotLimitsPanel({
         }
       }
 
-      setOpOk("Templates and tier slots saved.");
+      setOpOk("Templates and solution slots saved.");
       notifyPackagingDataChanged();
       await load();
       await onSaved();
@@ -825,7 +825,7 @@ export function PackageBuilderSlotLimitsPanel({
       <header className="admin-pkg-builder__hero">
         <h2 className="admin-pkg-builder__title">Configurable Package</h2>
         <p className="admin-pkg-builder__lead" style={muted}>
-          Templates group your configurable packages. Select a template, then a tier, to set limits,
+          Templates group your configurable packages. Select a template, then a solution, to set limits,
           always-included components, choice buckets, and package content. Leave the allow-list empty
           to permit any vault solution for additional picks.
         </p>
@@ -834,7 +834,7 @@ export function PackageBuilderSlotLimitsPanel({
             {sortedTypes.length} template{sortedTypes.length === 1 ? "" : "s"}
           </span>
           <span className="admin-pkg-builder__stat">
-            {totalTierCount} tier{totalTierCount === 1 ? "" : "s"}
+            {totalTierCount} solution{totalTierCount === 1 ? "" : "s"}
           </span>
         </div>
       </header>
@@ -894,7 +894,7 @@ export function PackageBuilderSlotLimitsPanel({
                           />
                           <span className="admin-pkg-builder__type-meta-row">
                             <span className="admin-pkg-builder__type-meta">
-                              {tiers.length} tier{tiers.length === 1 ? "" : "s"}
+                              {tiers.length} solution{tiers.length === 1 ? "" : "s"}
                             </span>
                             {(() => {
                               const tagCount =
@@ -914,7 +914,7 @@ export function PackageBuilderSlotLimitsPanel({
                                   className="admin-pkg-builder__tier-pill"
                                   title={slotLimitSummary(s)}
                                 >
-                                  {s.label.trim() || "Tier"}
+                                  {s.label.trim() || "Solution"}
                                 </span>
                               ))}
                             </span>
@@ -939,19 +939,19 @@ export function PackageBuilderSlotLimitsPanel({
         </aside>
 
         {!selectedTypeId ? (
-          <main className="admin-pkg-builder__main" aria-label="Package tiers">
+          <main className="admin-pkg-builder__main" aria-label="Package solutions">
             <p className="admin-pkg-builder__empty" style={muted}>
-              Select a template to configure its tiers.
+              Select a template to configure its solutions.
             </p>
           </main>
         ) : (
           <>
-            <div className="admin-pkg-builder__tiers-pane" aria-label="Template tiers">
+            <div className="admin-pkg-builder__tiers-pane" aria-label="Template solutions">
               <div className="admin-pkg-builder__main-head">
                 <div>
                   <h3 className="admin-pkg-builder__main-title">{selectedTypeName}</h3>
                   <p className="admin-pkg-builder__main-hint" style={muted}>
-                    Select a tier to edit limits, components, tags, and package content.
+                    Select a solution to edit limits, components, tags, and package content.
                   </p>
                 </div>
                 <div className="admin-pkg-builder__main-actions">
@@ -971,7 +971,7 @@ export function PackageBuilderSlotLimitsPanel({
                     disabled={busy}
                     onClick={addSlot}
                   >
-                    Add tier
+                    Add solution
                   </button>
                 </div>
               </div>
@@ -1025,7 +1025,7 @@ export function PackageBuilderSlotLimitsPanel({
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => setSlot(r.id, { label: e.target.value })}
                             onFocus={() => setSelectedSlotId(r.id)}
-                            aria-label={`Tier ${r.sort_order} label`}
+                            aria-label={`Solution ${r.sort_order} label`}
                           />
                           <span className="admin-pkg-builder__tier-row-meta" style={muted}>
                             {slotLimitSummary(r)}
@@ -1051,7 +1051,7 @@ export function PackageBuilderSlotLimitsPanel({
                             .filter((s) => s.id !== r.id)
                             .map((s) => (
                               <option key={s.id} value={s.id}>
-                                {s.label.trim() || `Tier ${s.sort_order}`}
+                                {s.label.trim() || `Solution ${s.sort_order}`}
                               </option>
                             ))}
                         </select>
@@ -1059,7 +1059,7 @@ export function PackageBuilderSlotLimitsPanel({
                           type="button"
                           style={btnSm}
                           disabled={busy}
-                          title="Duplicate tier with same limits and selection rules"
+                          title="Duplicate solution with same limits and selection rules"
                           onClick={() => duplicateSlot(r.id)}
                         >
                           Duplicate
@@ -1080,12 +1080,12 @@ export function PackageBuilderSlotLimitsPanel({
             </div>
 
             {selectedSlot ? (
-              <div className="admin-pkg-builder__tier-editor" aria-label="Tier editor">
+              <div className="admin-pkg-builder__tier-editor" aria-label="Solution editor">
                 <header className="admin-pkg-builder__editor-head">
                   <div className="admin-pkg-builder__editor-head-text">
-                    <p className="admin-pkg-builder__editor-kicker">Editing tier</p>
+                    <p className="admin-pkg-builder__editor-kicker">Editing solution</p>
                     <h3 className="admin-pkg-builder__editor-title">
-                      {selectedSlot.label.trim() || `Tier ${selectedSlot.sort_order}`}
+                      {selectedSlot.label.trim() || `Solution ${selectedSlot.sort_order}`}
                     </h3>
                     <p className="admin-pkg-builder__editor-meta">
                       {slotLimitSummary(selectedSlot)}
@@ -1123,7 +1123,7 @@ export function PackageBuilderSlotLimitsPanel({
                 {editorTab === "limits" ? (
                   <div className="admin-pkg-builder__editor-panel">
                     <div className="admin-pkg-builder__limits-panel">
-                      <p className="admin-pkg-builder__limits-label">Tier limits</p>
+                      <p className="admin-pkg-builder__limits-label">Solution limits</p>
                       <div className="admin-pkg-builder__limits">
                         <label className="admin-pkg-builder__field">
                           <span className="admin-pkg-builder__field-caption">Hour ceiling</span>
@@ -1139,7 +1139,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 hour_ceiling: e.target.value === "" ? null : Number(e.target.value),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} hour ceiling`}
+                            aria-label={`Solution ${selectedSlot.sort_order} hour ceiling`}
                           />
                         </label>
                         <label className="admin-pkg-builder__field">
@@ -1156,7 +1156,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 price_ceiling: e.target.value === "" ? null : Number(e.target.value),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} price ceiling`}
+                            aria-label={`Solution ${selectedSlot.sort_order} price ceiling`}
                           />
                         </label>
                         <label className="admin-pkg-builder__field">
@@ -1174,7 +1174,7 @@ export function PackageBuilderSlotLimitsPanel({
                                   e.target.value === "" ? null : Number(e.target.value),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} solution tier limit`}
+                            aria-label={`Solution ${selectedSlot.sort_order} component limit`}
                           />
                         </label>
                       </div>
@@ -1183,7 +1183,7 @@ export function PackageBuilderSlotLimitsPanel({
                     <div className="admin-pkg-builder__limits-panel">
                       <p className="admin-pkg-builder__limits-label">Preset risk &amp; strategic scores</p>
                       <p className="admin-pkg-builder__limits-hint">
-                        Applied at package level when someone finishes building from this tier.
+                        Applied at package level when someone finishes building from this solution.
                       </p>
                       <div className="admin-pkg-builder__limits admin-pkg-builder__limits--scores">
                         <label className="admin-pkg-builder__field">
@@ -1198,7 +1198,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 scope_risk: clampScore012(Number(e.target.value)),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} scope risk`}
+                            aria-label={`Solution ${selectedSlot.sort_order} scope risk`}
                           >
                             {SCOPE_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>
@@ -1219,7 +1219,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 internal_coordination: clampScore012(Number(e.target.value)),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} internal coordination`}
+                            aria-label={`Solution ${selectedSlot.sort_order} internal coordination`}
                           >
                             {INTERNAL_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>
@@ -1240,7 +1240,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 client_revision_risk: clampScore012(Number(e.target.value)),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} client revision risk`}
+                            aria-label={`Solution ${selectedSlot.sort_order} client revision risk`}
                           >
                             {CLIENT_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>
@@ -1261,7 +1261,7 @@ export function PackageBuilderSlotLimitsPanel({
                                 strategic_value_score: clampScore012(Number(e.target.value)),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} strategic value`}
+                            aria-label={`Solution ${selectedSlot.sort_order} strategic value`}
                           >
                             {STRATEGIC_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>
@@ -1274,7 +1274,7 @@ export function PackageBuilderSlotLimitsPanel({
                     </div>
 
                     <label className="admin-pkg-builder__field admin-pkg-builder__field--full">
-                      <span className="admin-pkg-builder__field-caption">Tier disclaimer note</span>
+                      <span className="admin-pkg-builder__field-caption">Solution disclaimer note</span>
                       <textarea
                         className="admin-pkg-builder__notes-input"
                         style={input}
@@ -1285,8 +1285,8 @@ export function PackageBuilderSlotLimitsPanel({
                             tier_notes: e.target.value.length > 0 ? e.target.value : null,
                           })
                         }
-                        placeholder="Shown when users select this package tier in Build a Package (optional)."
-                        aria-label={`Tier ${selectedSlot.sort_order} disclaimer note`}
+                        placeholder="Shown when users select this package solution in Build a Package (optional)."
+                        aria-label={`Solution ${selectedSlot.sort_order} disclaimer note`}
                       />
                     </label>
                   </div>
@@ -1360,7 +1360,7 @@ export function PackageBuilderSlotLimitsPanel({
                             </span>
                           </h4>
                           <p className="admin-pkg-builder__section-lead" style={muted}>
-                            Locked vault tiers added automatically with a default quantity.
+                            Locked vault solutions added automatically with a default quantity.
                           </p>
                         </div>
                       </div>
@@ -1581,7 +1581,7 @@ export function PackageBuilderSlotLimitsPanel({
                 {editorTab === "tags" && selectedType ? (
                   <div className="admin-pkg-builder__editor-panel admin-pkg-builder__editor-panel--tags">
                     <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
-                      These tags apply to the whole template ({selectedTypeName}), not just this tier.
+                      These tags apply to the whole template ({selectedTypeName}), not just this solution.
                     </p>
                     <PackageTypeTaxonomyTagsEditor
                       phaseTags={selectedType.phase_tags}
@@ -1599,7 +1599,7 @@ export function PackageBuilderSlotLimitsPanel({
                     <div className="admin-pkg-builder__details-head">
                       <p className="admin-pkg-builder__vault-panel-hint" style={muted}>
                         Overview, scope, process, and resources copied to packages built from this
-                        tier. Package category is set from the template name.
+                        solution. Package category is set from the template name.
                       </p>
                       <select
                         className="admin-pkg-builder__copy-select admin-pkg-builder__copy-select--details"
@@ -1618,7 +1618,7 @@ export function PackageBuilderSlotLimitsPanel({
                           .filter((s) => s.id !== selectedSlot.id)
                           .map((s) => (
                             <option key={s.id} value={s.id}>
-                              {s.label.trim() || `Tier ${s.sort_order}`}
+                              {s.label.trim() || `Solution ${s.sort_order}`}
                             </option>
                           ))}
                       </select>
@@ -1641,7 +1641,7 @@ export function PackageBuilderSlotLimitsPanel({
                         <div className="admin-pkg-builder__section-copy">
                           <h4 className="admin-pkg-builder__section-title">Package hour discount</h4>
                           <p className="admin-pkg-builder__section-lead" style={muted}>
-                            Applied when someone finishes Build a Package from this tier. Use a preset
+                            Applied when someone finishes Build a Package from this solution. Use a preset
                             or enter any custom percent (0–100). Leave blank to use the label default
                             (Basic 20%, Standard 25%, Advanced 30%).
                           </p>
@@ -1678,21 +1678,21 @@ export function PackageBuilderSlotLimitsPanel({
                                     : parseOptionalHourDiscountPct(Number(e.target.value)),
                               })
                             }
-                            aria-label={`Tier ${selectedSlot.sort_order} hour discount percent`}
+                            aria-label={`Solution ${selectedSlot.sort_order} hour discount percent`}
                           />
                         </label>
                       </div>
 
                       <p className="admin-pkg-builder__limits-hint" style={muted}>
                         {selectedSlot.hour_discount_pct != null
-                          ? `Configured: ${selectedSlot.hour_discount_pct}% hour discount on packages built from this tier.`
+                          ? `Configured: ${selectedSlot.hour_discount_pct}% hour discount on packages built from this solution.`
                           : (() => {
                               const suggested = suggestedHourDiscountPctForLabel(
                                 selectedSlot.label,
                                 selectedTypeName
                               );
                               return suggested != null
-                                ? `Using label default for now: ${suggested}% (from “${selectedSlot.label.trim() || "Tier"}”).`
+                                ? `Using label default for now: ${suggested}% (from “${selectedSlot.label.trim() || "Solution"}”).`
                                 : "No discount configured and no Basic/Standard/Advanced label match — packages will use 0%.";
                             })()}
                       </p>

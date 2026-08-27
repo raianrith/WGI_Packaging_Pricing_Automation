@@ -286,7 +286,7 @@ export function ProposalConfigurablePackagesPanel({
                     <p className="proposal-configurable-packages__card-desc">{pt.card_description}</p>
                   ) : null}
                   <p className="proposal-configurable-packages__card-meta">
-                    {tierCount} package tier{tierCount === 1 ? "" : "s"}
+                    {tierCount} package solution{tierCount === 1 ? "" : "s"}
                   </p>
                   <div className="proposal-configurable-packages__card-actions">
                     <button

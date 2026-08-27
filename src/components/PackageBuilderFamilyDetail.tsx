@@ -14,7 +14,7 @@ type Props = {
 export function PackageBuilderFamilyDetail({ slots }: Props) {
   if (slots.length === 0) {
     return (
-      <p className="agency-pkg-build-start__card-detail-empty">No package tiers configured for this family.</p>
+      <p className="agency-pkg-build-start__card-detail-empty">No package solutions configured for this family.</p>
     );
   }
 
@@ -30,7 +30,7 @@ export function PackageBuilderFamilyDetail({ slots }: Props) {
           <div key={slot.id} className="agency-pkg-build-start__card-detail-tier">
             {showTierHeading ? (
               <div className="agency-pkg-build-start__card-detail-tier-head">
-                <h4 className="agency-pkg-build-start__card-detail-tier-title">{slot.label.trim() || "Tier"}</h4>
+                <h4 className="agency-pkg-build-start__card-detail-tier-title">{slot.label.trim() || "Solution"}</h4>
                 {limits !== "No limits configured" ? (
                   <span className="agency-pkg-build-start__card-detail-tier-limits">{limits}</span>
                 ) : null}
@@ -42,7 +42,7 @@ export function PackageBuilderFamilyDetail({ slots }: Props) {
             <PackageNarrativeSections narrative={narrative} compact />
             {!slotHasNarrative(slot) && !slot.tier_notes?.trim() ? (
               <p className="agency-pkg-build-start__card-detail-empty">
-                No details configured{showTierHeading ? ` for ${slot.label.trim() || "this tier"}` : " yet"}.
+                No details configured{showTierHeading ? ` for ${slot.label.trim() || "this solution"}` : " yet"}.
               </p>
             ) : null}
           </div>

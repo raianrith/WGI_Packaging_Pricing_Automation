@@ -7441,8 +7441,7 @@ html[data-theme="dark"] .admin-side-nav__link--active {
   margin-bottom: 0.3rem;
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: rgba(146, 64, 14, 0.95);
 }
 
@@ -7479,6 +7478,11 @@ html[data-theme="dark"] .admin-side-nav__link--active {
   color: var(--text);
 }
 
+.agency-pkg-wizard__required {
+  color: rgba(185, 28, 28, 0.9);
+  font-weight: 700;
+}
+
 .agency-pkg-wizard__field-input {
   width: 100%;
   box-sizing: border-box;
@@ -7488,6 +7492,22 @@ html[data-theme="dark"] .admin-side-nav__link--active {
   border: 1px solid var(--border);
   background: #fff;
   color: var(--text);
+}
+
+.agency-pkg-wizard__field-input::placeholder {
+  color: rgba(120, 113, 108, 0.72);
+  opacity: 1;
+}
+
+.agency-pkg-wizard__field-input--required-empty {
+  border-color: rgba(185, 28, 28, 0.45);
+}
+
+.agency-pkg-wizard__field-error {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(185, 28, 28, 0.95);
 }
 
 .agency-pkg-wizard__field-input:focus {

@@ -238,11 +238,11 @@ export function ProposalAddedEditModal({
                   ))}
                 </ul>
               ) : (
-                <p className="proposal-added-edit-modal__hint">No tiers linked to this package yet.</p>
+                <p className="proposal-added-edit-modal__hint">No solutions linked to this package yet.</p>
               )}
               {onEditPackageComponents ? (
                 <p className="proposal-added-edit-modal__hint">
-                  Edit components to add or remove solution tiers in this package. Hours and price update after you
+                  Edit components to add or remove solutions in this package. Hours and price update after you
                   save.
                 </p>
               ) : null}

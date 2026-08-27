@@ -483,7 +483,7 @@ export function PackagesBuilderPanel({
     for (const tid of wanted) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
       if (!t?.solution_tier_name.trim()) {
-        setOpErr(`Tier ${tid} needs a non-empty name in Solutions Builder before it can be added to a package.`);
+        setOpErr(`Solution ${tid} needs a non-empty name in Solutions Builder before it can be added to a package.`);
         return;
       }
     }
@@ -535,7 +535,7 @@ export function PackagesBuilderPanel({
       before: null,
       after: { ...(rowJson(row as unknown as Package) as Record<string, unknown>), solution_tier_ids: wanted },
     });
-    setOpOk(`Package ${newId} created with ${selectedTierLineCount} tier line(s).`);
+    setOpOk(`Package ${newId} created with ${selectedTierLineCount} solution line(s).`);
     startNewCreate();
     await onSaved();
   };
@@ -553,7 +553,7 @@ export function PackagesBuilderPanel({
     for (const tid of wanted) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
       if (!t?.solution_tier_name.trim()) {
-        setOpErr(`Tier ${tid} needs a non-empty name in Solutions Builder before it can be added to a package.`);
+        setOpErr(`Solution ${tid} needs a non-empty name in Solutions Builder before it can be added to a package.`);
         return;
       }
     }
@@ -613,7 +613,7 @@ export function PackagesBuilderPanel({
         solution_tier_ids: wanted,
       },
     });
-    setOpOk(`Package ${pkgEditId} updated (${wanted.length} tier link(s)).`);
+    setOpOk(`Package ${pkgEditId} updated (${wanted.length} solution link(s)).`);
     await onSaved();
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     loadPackageDrafts(pkgEditId);
@@ -622,7 +622,7 @@ export function PackagesBuilderPanel({
   const removeCurrentPackage = async () => {
     const client = getSupabase();
     if (!client || !pkgEditId) return;
-    if (!globalThis.confirm(`Delete package ${pkgEditId} and all its tier links? This cannot be undone.`)) return;
+    if (!globalThis.confirm(`Delete package ${pkgEditId} and all its solution links? This cannot be undone.`)) return;
     setOpErr(null);
     setOpOk(null);
     const beforePkg = packages.find((p) => p.package_id === pkgEditId);
@@ -901,17 +901,17 @@ export function PackagesBuilderPanel({
   const tierPickerIntro =
     subTab === "create"
       ? "Set quantity for each solution component to include. You can add the same component multiple times (e.g. 3× Customer Interviews - Basic). The same component can appear in multiple packages."
-      : "Manage tier membership and quantities for this package. Set quantity to 0 to remove a tier link on save.";
+      : "Manage solution membership and quantities for this package. Set quantity to 0 to remove a solution link on save.";
 
   const addedTiersBox =
     subTab === "update" && pkgEditId ? (
-      <div className="admin-packages-builder__added-tiers" aria-label="Solution tiers added to this package">
+      <div className="admin-packages-builder__added-tiers" aria-label="Solutions added to this package">
         <div className="admin-packages-builder__added-tiers-head">
-          <h3 className="admin-packages-builder__added-tiers-title">Solution tiers added</h3>
+          <h3 className="admin-packages-builder__added-tiers-title">Solutions added</h3>
           <p className="admin-packages-builder__added-tiers-lead">
             {selectedTierLineCount > 0
               ? `${selectedTierLineCount} line${selectedTierLineCount === 1 ? "" : "s"} across ${addedTierRows.length} component${addedTierRows.length === 1 ? "" : "s"} in this package.`
-              : "No solution tiers linked yet. Increase quantity in the catalog below to add them."}
+              : "No solutions linked yet. Increase quantity in the catalog below to add them."}
           </p>
         </div>
         {addedTierRows.length === 0 ? (
@@ -923,8 +923,8 @@ export function PackagesBuilderPanel({
                 <tr>
                   <th style={{ ...th, width: "6.5rem" }}>Qty</th>
                   <th style={th}>Solution</th>
-                  <th style={th}>Tier</th>
-                  <th style={th}>Tier id</th>
+                  <th style={th}>Option</th>
+                  <th style={th}>Id</th>
                 </tr>
               </thead>
               <tbody>
@@ -977,12 +977,12 @@ export function PackagesBuilderPanel({
         {tierPickerIntro}
       </p>
       <label style={{ ...lbl, marginTop: 8 }}>
-        <FieldCaption>{subTab === "update" ? "Browse all tiers" : "Filter tiers"}</FieldCaption>
+        <FieldCaption>{subTab === "update" ? "Browse all solutions" : "Filter solutions"}</FieldCaption>
         <input
           style={input}
           value={tierSearch}
           onChange={(e) => setTierSearch(e.target.value)}
-          placeholder="Tier name, tier id, solution id, or solution name…"
+          placeholder="Solution name, id, or solution id…"
         />
       </label>
       <div
@@ -994,8 +994,8 @@ export function PackagesBuilderPanel({
             <tr>
               <th style={{ ...th, width: "6.5rem" }}>Qty</th>
               <th style={th}>Solution</th>
-              <th style={th}>Tier</th>
-              <th style={th}>Tier id</th>
+              <th style={th}>Option</th>
+              <th style={th}>Id</th>
               <th style={th}>Current package</th>
             </tr>
           </thead>
@@ -1003,7 +1003,7 @@ export function PackagesBuilderPanel({
             {tierRows.length === 0 ? (
               <tr>
                 <td colSpan={5} style={td}>
-                  No tiers match this filter.
+                  No solutions match this filter.
                 </td>
               </tr>
             ) : (
@@ -1088,16 +1088,16 @@ export function PackagesBuilderPanel({
             <h2 style={h2}>Package Builder</h2>
             {subTab === "create" ? (
               <p className="admin-intro" style={muted}>
-                Name the bundle, pick solution tiers, then fill in <strong>package-level</strong> copy, reorder or remove
+                Name the bundle, pick solutions, then fill in <strong>package-level</strong> copy, reorder or remove
                 vault tasks, add package-only rows, tune combined pricing (hour buckets roll up from those tasks, then
-                discounts), and create once. Vault tier descriptions are edited only in Solutions Builder. Build-a-Package
+                discounts), and create once. Vault solution descriptions are edited only in Solutions Builder. Build-a-Package
                 ceilings live under <strong>Configurable Package</strong>.
               </p>
             ) : (
               <p className="admin-intro" style={muted}>
-                Packages store narrative and aggregate pricing on the <strong>packages</strong> row; tier links carry task
+                Packages store narrative and aggregate pricing on the <strong>packages</strong> row; solution links carry task
                 visibility and package-only extras. Pricing hour buckets roll up from the tasks you list below (then package
-                hour discount %), before the usual sell math (plus optional sell discount %). Vault tier narratives are not
+                hour discount %), before the usual sell math (plus optional sell discount %). Vault solution narratives are not
                 editable here.
               </p>
             )}
@@ -1140,11 +1140,11 @@ export function PackagesBuilderPanel({
             </label>
             {pkgEditId ? (
               <p style={{ ...muted, margin: 0, gridColumn: "1 / -1", fontSize: "0.86rem" }}>
-                Editing one package at a time — change details and tiers below, then save.
+                Editing one package at a time — change details and solutions below, then save.
               </p>
             ) : (
               <p style={{ ...muted, margin: 0, gridColumn: "1 / -1", fontSize: "0.86rem" }}>
-                Pick a package to open its workbench (details, tiers, pricing).
+                Pick a package to open its workbench (details, solutions, pricing).
               </p>
             )}
           </div>
@@ -1225,8 +1225,8 @@ export function PackagesBuilderPanel({
                 Tasks inside this package
               </h3>
               <p style={{ ...muted, marginTop: 0, maxWidth: "68ch" }}>
-                Combined vault tasks from the tiers you checked, in one list. Inline edits adjust how each task appears in{" "}
-                <strong>this package only</strong> (tier vault checklists elsewhere are unchanged): name, assignee/implementer,
+                Combined vault tasks from the solutions you checked, in one list. Inline edits adjust how each task appears in{" "}
+                <strong>this package only</strong> (vault checklists elsewhere are unchanged): name, assignee/implementer,
                 and hours feed the package hour rollup; drag to reorder, hide vault lines per package, or add package-only
                 rows below.
               </p>
@@ -1235,7 +1235,7 @@ export function PackagesBuilderPanel({
                   <thead>
                     <tr>
                       <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
-                      <th style={th}>Tier</th>
+                      <th style={th}>Option</th>
                       <th style={th}>Task id</th>
                       <th style={th}>Name</th>
                       <th style={th}>Implementer</th>

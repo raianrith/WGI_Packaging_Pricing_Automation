@@ -406,8 +406,8 @@ function cardForPackage(
     .filter(Boolean) as string[];
   const desc =
     tierNames.length > 0
-      ? `Package includes ${tierNames.length} solution tier(s): ${tierNames.join(", ")}.`
-      : "No tiers linked to this package yet.";
+      ? `Package includes ${tierNames.length} solution(s): ${tierNames.join(", ")}.`
+      : "No solutions linked to this package yet.";
   return makeCard("package", p.package_id, scenarioId, phaseId, p.package_name, desc, hours, price, undefined, dates);
 }
 

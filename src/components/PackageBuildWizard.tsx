@@ -129,7 +129,9 @@ function slotLimitTags(slot: PackageBuilderSlotTemplate): string[] {
     tags.push(`${fmtUsd(Number(slot.price_ceiling))} max`);
   }
   if (slotEnforcesTierCountLimit(slot)) {
-    tags.push(`${slot.solution_tier_limit} tier${slot.solution_tier_limit === 1 ? "" : "s"} max`);
+    tags.push(
+      `${slot.solution_tier_limit} solution${slot.solution_tier_limit === 1 ? "" : "s"} max`
+    );
   }
   if (slot.allowed_solution_tier_ids.length > 0) {
     tags.push(`${slot.allowed_solution_tier_ids.length} allowed solution components`);
@@ -145,7 +147,7 @@ type WizardStep = 1 | 2 | 3 | 4;
 function WizardStepper({ step }: { step: WizardStep }) {
   const steps = [
     { n: 1 as const, label: "Template" },
-    { n: 2 as const, label: "Tier" },
+    { n: 2 as const, label: "Solution" },
     { n: 3 as const, label: "Solution components" },
     { n: 4 as const, label: "Pricing" },
   ];
@@ -180,7 +182,7 @@ function PackageTierDisclaimer({ notes }: { notes: string | null }) {
           !
         </span>
         <div className="agency-pkg-wizard__disclaimer-body">
-          <span className="agency-pkg-wizard__disclaimer-label">Important</span>
+          <span className="agency-pkg-wizard__disclaimer-label">More Information</span>
           <p className="agency-pkg-wizard__disclaimer-text">{notes}</p>
         </div>
       </div>
@@ -346,7 +348,7 @@ function WizardSolutionTierTable({
                 Qty
               </th>
               <th scope="col">Solution</th>
-              <th scope="col">Tier</th>
+              <th scope="col">Option</th>
               <th className="col-hours" scope="col">
                 Hours
               </th>
@@ -665,7 +667,7 @@ export function PackageBuildWizard({
   const canCreate = tierStepValid && !createBusy;
 
   const wizardTierDiscount = useMemo(() => {
-    if (!selectedSlot) return { level: null, hourPct: 0, tierLabel: "Tier", source: "none" as const };
+    if (!selectedSlot) return { level: null, hourPct: 0, tierLabel: "Solution", source: "none" as const };
     return packageTierDiscountSummary(
       selectedSlot.label,
       selectedPackageType?.name,
@@ -717,7 +719,7 @@ export function PackageBuildWizard({
     setLabelPrompt(null);
     setTierSearch("");
     setAdditionalTierSearch("");
-    setPkgName(`${packageType.name} package`);
+    setPkgName("");
   }, []);
 
   const beginPackageEdit = useCallback(
@@ -734,7 +736,7 @@ export function PackageBuildWizard({
       const selectedIds = tierIdsFromQuantities(qty);
       const slot = resolveSlotForEdit(pkg, packageType, slots, selectedIds);
       if (!slot) {
-        toastError("No Build a Package tier template is configured for this package family.");
+        toastError("No Build a Package solution template is configured for this package family.");
         return false;
       }
 
@@ -881,7 +883,7 @@ export function PackageBuildWizard({
       if (result.blockedByMaxTiers) {
         queueMicrotask(() =>
           toastNote(
-            `This tier allows at most ${selectedSlot.solution_tier_limit} solution component line${
+            `This solution allows at most ${selectedSlot.solution_tier_limit} solution component line${
               selectedSlot.solution_tier_limit === 1 ? "" : "s"
             }. Remove one to add another.`
           )
@@ -925,7 +927,7 @@ export function PackageBuildWizard({
       const probe = adjustTierQuantity(tierPickQty, tier.solution_tier_id, 1, maxTiers);
       if (probe.blockedByMaxTiers) {
         toastNote(
-          `This tier allows at most ${selectedSlot.solution_tier_limit} solution component line${
+          `This solution allows at most ${selectedSlot.solution_tier_limit} solution component line${
             selectedSlot.solution_tier_limit === 1 ? "" : "s"
           }. Remove one to add another.`
         );
@@ -1014,7 +1016,7 @@ export function PackageBuildWizard({
     for (const tid of wantedIds) {
       const t = tiers.find((x) => x.solution_tier_id === tid);
       if (!t?.solution_tier_name.trim()) {
-        toastError(`Tier ${tid} needs a name in the vault before it can be added to a package.`);
+        toastError(`Solution ${tid} needs a name in the vault before it can be added to a package.`);
         return;
       }
     }
@@ -1129,7 +1131,7 @@ export function PackageBuildWizard({
           );
         }
         notifyPackagingDataChanged();
-        toastNote(`Package ${packageId} updated (${tierLineCount} tier line(s)).`);
+        toastNote(`Package ${packageId} updated (${tierLineCount} solution line(s)).`);
         setWizardOpen(false);
         setEditingPackageId(null);
         editHydratedRef.current = null;
@@ -1170,7 +1172,7 @@ export function PackageBuildWizard({
       const assignErr = await applyPackageTierMembership(client, packageId, tierPickQty, payloadByTier);
       if (assignErr) {
         toastError(
-          `${assignErr} Package ${packageId} was created; fix tier links in Admin → Package Builder if needed.`
+          `${assignErr} Package ${packageId} was created; fix solution links in Admin → Package Builder if needed.`
         );
         notifyPackagingDataChanged();
         await onReload?.();
@@ -1193,7 +1195,7 @@ export function PackageBuildWizard({
         );
       }
       notifyPackagingDataChanged();
-      toastNote(`Package ${packageId} created (${tierLineCount} tier line(s)).`);
+      toastNote(`Package ${packageId} created (${tierLineCount} solution line(s)).`);
       setWizardOpen(false);
       await onReload?.();
       onCreated(packageId, row);
@@ -1233,8 +1235,8 @@ export function PackageBuildWizard({
           </div>
           <p className="agency-pkg-build-start__lead">
             {variant === "page"
-              ? "Select a template below to start the wizard. Tier limits are configured in "
-              : "Pick a template below. We’ll open tier setup next, then you can add solution components. Limits are managed in "}
+              ? "Select a template below to start the wizard. Solution limits are configured in "
+              : "Pick a template below. We’ll open solution setup next, then you can add solution components. Limits are managed in "}
             <Link className="agency-hub__link" to="/admin">
               Admin → Configurable Package
             </Link>
@@ -1279,7 +1281,7 @@ export function PackageBuildWizard({
                         <span className="agency-pkg-build-start__card-desc">{pt.card_description}</span>
                       ) : null}
                       <span className="agency-pkg-build-start__card-meta">
-                        {tierCount} tier{tierCount === 1 ? "" : "s"}
+                        {tierCount} solution{tierCount === 1 ? "" : "s"}
                       </span>
                     </button>
                     <div
@@ -1421,7 +1423,7 @@ export function PackageBuildWizard({
                         >
                           <span className="agency-pkg-wizard__choice-title">{pt.name}</span>
                           <span className="agency-pkg-wizard__choice-meta">
-                            {tierCount} tier{tierCount === 1 ? "" : "s"}
+                            {tierCount} solution{tierCount === 1 ? "" : "s"}
                           </span>
                         </button>
                       );
@@ -1436,7 +1438,7 @@ export function PackageBuildWizard({
                     <span className="agency-pkg-wizard__chip">{selectedPackageType.name}</span>
                   </div>
                   <p className="agency-pkg-wizard__lead">
-                    Pick a tier. Each option can enforce hour, price, and solution component limits.
+                    Pick a solution. Each option can enforce hour, price, and solution component limits.
                   </p>
                   <div className="agency-pkg-wizard__tier-pick-block">
                   <div className="agency-pkg-wizard__choice-grid">
@@ -1507,7 +1509,7 @@ export function PackageBuildWizard({
                         over={overHours}
                         note={
                           usage.missingHours
-                            ? "Some selected tiers have no hour total in the vault."
+                            ? "Some selected solutions have no hour total in the vault."
                             : null
                         }
                       />
@@ -1521,7 +1523,7 @@ export function PackageBuildWizard({
                         over={overPrice}
                         note={
                           usage.missingPrice
-                            ? "Some selected tiers have no sell price in the vault."
+                            ? "Some selected solutions have no sell price in the vault."
                             : null
                         }
                       />
@@ -1539,20 +1541,35 @@ export function PackageBuildWizard({
 
                   {(overHours || overPrice || overTierCount) && (
                     <p className="agency-pkg-wizard__alert" role="alert">
-                      You are over a configured limit. Remove components or go back and choose a different tier.
+                      You are over a configured limit. Remove components or go back and choose a different solution.
                     </p>
                   )}
                   </div>
 
                   <label className="agency-pkg-wizard__field">
-                    <span className="agency-pkg-wizard__field-label">Package name</span>
+                    <span className="agency-pkg-wizard__field-label">
+                      Package name <span className="agency-pkg-wizard__required">*</span>
+                    </span>
                     <input
-                      className="agency-pkg-wizard__field-input"
+                      className={[
+                        "agency-pkg-wizard__field-input",
+                        !pkgName.trim() ? "agency-pkg-wizard__field-input--required-empty" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       value={pkgName}
                       onChange={(e) => setPkgName(e.target.value)}
-                      placeholder="Display name for this package"
+                      placeholder="CLIENT CODE-CONTENT PKG NAME-TIME PERIOD"
                       autoComplete="off"
+                      required
+                      aria-required="true"
+                      aria-invalid={!pkgName.trim()}
                     />
+                    {!pkgName.trim() ? (
+                      <p className="agency-pkg-wizard__field-error" role="status">
+                        Package name is required.
+                      </p>
+                    ) : null}
                   </label>
 
                   <div className="agency-nav-sol-filter agency-pkg-wizard__filter">
@@ -1566,7 +1583,7 @@ export function PackageBuildWizard({
                         className="agency-nav-sol-filter__input"
                         value={tierSearch}
                         onChange={(e) => setTierSearch(e.target.value)}
-                        placeholder="Filter by solution or tier name…"
+                        placeholder="Filter by solution or option name…"
                         autoComplete="off"
                       />
                       {tierSearch ? (
@@ -1659,7 +1676,7 @@ export function PackageBuildWizard({
                         <p className="agency-pkg-wizard__sel-lead">
                           Optional picks outside always-included and choice groups
                           {selectedSlot.allowed_solution_tier_ids.length > 0
-                            ? " (filtered by this tier’s allow-list)."
+                            ? " (filtered by this solution’s allow-list)."
                             : "."}
                         </p>
                       ) : null}
@@ -1676,7 +1693,7 @@ export function PackageBuildWizard({
                             className="agency-nav-sol-filter__input"
                             value={additionalTierSearch}
                             onChange={(e) => setAdditionalTierSearch(e.target.value)}
-                            placeholder="Filter by solution or tier name…"
+                            placeholder="Filter by solution or option name…"
                             autoComplete="off"
                           />
                           {additionalTierSearch ? (
@@ -1715,7 +1732,7 @@ export function PackageBuildWizard({
                     <span className="agency-pkg-wizard__chip">
                       {displayTierLabel(selectedPackageType.name, selectedSlot.label)}
                     </span>
-                    <span className="agency-pkg-wizard__chip">{tierLineCount} tier lines</span>
+                    <span className="agency-pkg-wizard__chip">{tierLineCount} solution lines</span>
                   </div>
 
                   <div className="agency-pkg-wizard__pricing agency-pkg-wizard__pricing--simple">
@@ -1941,10 +1958,9 @@ export function PackageBuildWizard({
                     onClick={() => {
                       if (!selectedPackageType) return;
                       setWizStep(2);
-                      setPkgName((n) => (n.trim() ? n : `${selectedPackageType.name} package`));
                     }}
                   >
-                    Next: tier
+                    Next: solution
                   </button>
                 </>
               )}
@@ -1972,11 +1988,6 @@ export function PackageBuildWizard({
                     onClick={() => {
                       if (!selectedSlot) return;
                       setWizStep(3);
-                      setPkgName((n) =>
-                        n.trim()
-                          ? n
-                          : `${selectedPackageType.name} — ${displayTierLabel(selectedPackageType.name, selectedSlot.label)}`
-                      );
                     }}
                   >
                     Next: solution components

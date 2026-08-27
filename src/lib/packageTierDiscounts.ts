@@ -17,14 +17,14 @@ const TIER_LEVEL_LABEL: Record<PackageTierLevel, string> = {
 export function slotTierShortLabel(slotLabel: string, packageTypeName?: string): string {
   const label = slotLabel.trim();
   const name = (packageTypeName ?? "").trim();
-  if (!name) return label || "Tier";
+  if (!name) return label || "Solution";
   const prefixes = [`${name} - `, `${name} – `, `${name}: `];
   for (const prefix of prefixes) {
     if (label.toLowerCase().startsWith(prefix.toLowerCase())) {
       return label.slice(prefix.length).trim() || label;
     }
   }
-  return label || "Tier";
+  return label || "Solution";
 }
 
 export function resolvePackageTierLevel(label: string): PackageTierLevel | null {
@@ -81,7 +81,7 @@ export function formatPackageTierDiscountRule(
   hourPct: number,
   tierLabel?: string
 ): string {
-  const name = level ? TIER_LEVEL_LABEL[level] : tierLabel?.trim() || "Tier";
+  const name = level ? TIER_LEVEL_LABEL[level] : tierLabel?.trim() || "Solution";
   return `${name} — ${hourPct}% hour discount`;
 }
 

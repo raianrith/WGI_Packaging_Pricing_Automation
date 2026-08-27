@@ -45,7 +45,7 @@ const shell: CSSProperties = {
 
 const BUILD_STEPS = [
   { n: 1, label: "Template", hint: "Pick a template" },
-  { n: 2, label: "Tier", hint: "Basic · Standard · Advanced" },
+  { n: 2, label: "Solution", hint: "Basic · Standard · Advanced" },
   { n: 3, label: "Solution components", hint: "Add solutions" },
   { n: 4, label: "Pricing", hint: "Confirm discounts" },
 ] as const;

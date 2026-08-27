@@ -114,7 +114,7 @@ function buildPackageHubItemMeta(
   const ws = pkgWorkspaceById.get(p.package_id);
   const wsOk = ws?.ok === true;
   const tierLabel =
-    rollup.tierCount === 0 ? "No tiers" : rollup.tierCount === 1 ? "1 tier" : `${rollup.tierCount} tiers`;
+    rollup.tierCount === 0 ? "No solutions" : rollup.tierCount === 1 ? "1 solution" : `${rollup.tierCount} solutions`;
   const workspaceHoursDisplay =
     rollup.tierCount === 0 ? "—" : wsOk ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} h` : "—";
   const workspaceSellDisplay =
@@ -124,7 +124,7 @@ function buildPackageHubItemMeta(
   const creatorEmail = packageCreatorById.get(p.package_id) ?? null;
   const partialNote =
     rollup.tierCount > 0 && (rollup.hoursPartial || rollup.pricePartial)
-      ? "* Some linked tiers have no hours or sell price in the vault."
+      ? "* Some linked solutions have no hours or sell price in the vault."
       : null;
   const a11yLabel = [
     p.package_name,
@@ -132,7 +132,7 @@ function buildPackageHubItemMeta(
     creatorEmail ? `Created by ${creatorEmail}` : null,
     tierLabel,
     rollup.tierCount === 0
-      ? "No linked tiers"
+      ? "No linked solutions"
       : [
           wsOk
             ? `${fmtHoursTotal(ws.totalResourceHoursAfterDiscount)} workspace hours after hour discount`
@@ -525,7 +525,7 @@ export function AgencyPackagesHub() {
       const label = packageName.trim() || packageId;
       if (
         !globalThis.confirm(
-          `Delete package “${label}” and all its tier links? This cannot be undone.`
+          `Delete package “${label}” and all its solution links? This cannot be undone.`
         )
       ) {
         return;
@@ -748,7 +748,7 @@ export function AgencyPackagesHub() {
                       <PackageListSortTh col="package" label="Package" sort={packageListSort} onToggle={togglePackageListSort} />
                       <PackageListSortTh
                         col="tiers"
-                        label="Tiers"
+                        label="Solutions"
                         align="right"
                         sort={packageListSort}
                         onToggle={togglePackageListSort}

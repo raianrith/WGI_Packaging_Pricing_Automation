@@ -243,7 +243,7 @@ export function buildSolutionDirectoryRowsFromTier(
         type: kind.type,
         typeLabel: kind.typeLabel,
         name,
-        meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
+        meta: tierCount === 0 ? "No solutions" : tierCount === 1 ? "1 solution" : `${tierCount} solutions`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
@@ -302,7 +302,7 @@ export function buildCatalogDirectoryRows(
         type: kind.type,
         typeLabel: kind.typeLabel,
         name,
-        meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
+        meta: tierCount === 0 ? "No solutions" : tierCount === 1 ? "1 solution" : `${tierCount} solutions`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
@@ -338,7 +338,11 @@ export function buildCatalogDirectoryRows(
         0
       );
       const meta =
-        tierLineCount === 0 ? "No tiers" : tierLineCount === 1 ? "1 tier" : `${tierLineCount} tiers`;
+        tierLineCount === 0
+          ? "No solutions"
+          : tierLineCount === 1
+            ? "1 solution"
+            : `${tierLineCount} solutions`;
 
       return {
         id: `package:${pkg.package_id}`,
@@ -370,7 +374,7 @@ export function buildCatalogDirectoryRows(
         type: "configurable_package" as const,
         typeLabel: "Configurable Package",
         name: pt.name.trim() || pt.id,
-        meta: slotCount === 0 ? "No package tiers" : slotCount === 1 ? "1 package tier" : `${slotCount} package tiers`,
+        meta: slotCount === 0 ? "No package solutions" : slotCount === 1 ? "1 package solution" : `${slotCount} package solutions`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",

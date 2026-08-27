@@ -19,7 +19,7 @@ const ENTITY_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "solutions", label: "Solutions" },
   { value: "solution_tiers", label: "Solution tiers" },
   { value: "solution_tier_pricing", label: "Tier pricing" },
-  { value: "package_solution_tiers", label: "Package ↔ tier links" },
+  { value: "package_solution_tiers", label: "Package ↔ solution links" },
   { value: "tasks", label: "Tasks" },
   { value: "task_groups", label: "Task groups" },
   { value: "task_group_lines", label: "Task group lines" },

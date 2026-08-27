@@ -1507,7 +1507,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
           <nav
             className={mode === "catalog" ? "kb-nav kb-nav--catalog-flyout" : "kb-nav"}
             aria-label={
-              mode === "package" ? "Packages and solution tiers" : "Solutions and tiers"
+              mode === "package" ? "Packages and solutions" : "Solutions and tiers"
             }
           >
             {mode === "package" ? (
@@ -1580,16 +1580,16 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
                 <div className="agency-nav-panel">
                   <section style={navSection}>
-                    <h2 style={navHeading}>Solution tiers</h2>
+                    <h2 style={navHeading}>Solutions</h2>
                     {pkgId == null ? (
                       <p style={emptyHint}>Select a package above.</p>
                     ) : tiersForWorkspacePackage.length === 0 ? (
-                      <p style={emptyHint}>No tiers in this package.</p>
+                      <p style={emptyHint}>No solutions in this package.</p>
                     ) : (
                       <>
                         <div className="agency-nav-sol-filter">
                           <label className="agency-nav-sol-filter__label" htmlFor={tierSearchFieldId}>
-                            Search solution tiers
+                            Search solutions
                           </label>
                           <div className="agency-nav-sol-filter__row">
                             <input
@@ -1616,7 +1616,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                           {tiersNavList.length === 0 ? (
                             <li>
                               <p style={{ ...emptyHint, padding: "0.35rem 0 0" }}>
-                                No solution tiers match this search.
+                                No solutions match this search.
                               </p>
                             </li>
                           ) : (
@@ -1766,7 +1766,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                         </>
                       ) : (
                         <>
-                          Sell total is the sum of each tier’s modeled sell (vault + link overrides when in package mode).
+                          Sell total is the sum of each solution’s modeled sell (vault + link overrides when in package mode).
                           Hours are the sum of task times in the checklist—they are not divided to get price.
                         </>
                       )}
@@ -1775,14 +1775,14 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                 </div>
                 <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
                   <div className="agency-kpi-card agency-kpi-card--tasks">
-                    <span className="agency-kpi-card__label">Tiers in package</span>
+                    <span className="agency-kpi-card__label">Solutions in package</span>
                     <span className="agency-kpi-card__value">
                       {selectedPackageOverview.tiersCount}
                     </span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--pricing">
                     <span className="agency-kpi-card__label">
-                      {selectedPackageOverview.useWorkspaceTotals ? "Net sell (workspace)" : "Sell total (Σ tiers)"}
+                      {selectedPackageOverview.useWorkspaceTotals ? "Net sell (workspace)" : "Sell total (Σ solutions)"}
                     </span>
                     <span className="agency-kpi-card__value">{selectedPackageOverview.sellTotalDisplay}</span>
                   </div>
@@ -1819,7 +1819,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       lineHeight: 1.45,
                     }}
                   >
-                    Package comparison: Σ tier vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
+                    Package comparison: Σ solution vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
                     summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong> ·
                     summed checklist task duration{" "}
                     <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskDuration)}</strong>.
@@ -1831,13 +1831,13 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             {mode === "package" && packagePriceMatrix.length > 0 && (
               <section
                 className="agency-package-matrix"
-                aria-label="Sell prices for every tier in this package"
+                aria-label="Sell prices for every solution in this package"
               >
                 <div className="agency-package-matrix__head">
                   <h2 className="agency-package-matrix__title">Price sheet (this package)</h2>
                   <p className="agency-package-matrix__lede">
                     Sell price, hours, and tax reflect package overrides when set; otherwise hours fall back to summed task
-                    time for that tier.
+                    time for that solution.
                   </p>
                 </div>
                 <div className="agency-package-matrix__scroll">
@@ -1846,7 +1846,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       <tr>
                         <th scope="col">Solution</th>
                         <th scope="col">Client label</th>
-                        <th scope="col">Tier</th>
+                        <th scope="col">Option</th>
                         <th scope="col">Quantity</th>
                         <th scope="col">Hours</th>
                         <th scope="col">Sell</th>
@@ -2111,7 +2111,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       lineHeight: 1.45,
                     }}
                   >
-                    Combined checklist for every tier in this package (same ordering as Package Builder).
+                    Combined checklist for every solution in this package (same ordering as Package Builder).
                   </p>
                   {packageWorkspaceUnifiedRows.length === 0 ? (
                     <p style={emptyHint}>No tasks in this package checklist yet.</p>
@@ -2121,7 +2121,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                         <thead>
                           <tr>
                             <th scope="col">Client Facing Label</th>
-                            <th scope="col">Tier</th>
+                            <th scope="col">Option</th>
                             <th scope="col">Task</th>
                             <th scope="col">Implementer</th>
                             <th scope="col" className="agency-task-table__th--num">
@@ -2228,10 +2228,10 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
             {showPackageTierPrompt ? (
               <div className="agency-package-tier-prompt" role="status">
-                <p className="agency-package-tier-prompt__eyebrow">Solution tier detail</p>
-                <p className="agency-package-tier-prompt__title">Select a tier to continue</p>
+                <p className="agency-package-tier-prompt__eyebrow">Solution detail</p>
+                <p className="agency-package-tier-prompt__title">Select a solution to continue</p>
                 <p className="agency-package-tier-prompt__text">
-                  Choose a solution tier in the left sidebar to open its narrative, scope, process, and task checklist
+                  Choose a solution in the left sidebar to open its narrative, scope, process, and task checklist
                   for this package.
                 </p>
               </div>

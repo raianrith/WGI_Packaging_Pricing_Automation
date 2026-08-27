@@ -3,8 +3,13 @@ import type { Package, Solution, SolutionTier } from "../../types";
 import type { CatalogTierTableRow } from "../CatalogTierTable";
 import type { RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { sortedPhasesForScenario } from "../../lib/roadmapModel";
-import type { ProposalOfferingDates } from "../../lib/proposalDates";
 import {
+  emptyOfferingDates,
+  enumerateProposalMonths,
+  type ProposalOfferingDates,
+} from "../../lib/proposalDates";
+import {
+  computePaidAdsOptimizationUsd,
   isPaidAdsVariableTierRefId,
   isPercentVariableTierRefId,
   isTravelVariableTierRefId,
@@ -86,12 +91,18 @@ type Props = {
   formatUsd: (n: number | null | undefined) => string;
   addedLines: ProposalAddedLine[];
   onRemoveAdded: (key: string) => void;
+  onEditAdded?: (key: string) => void;
+  onDuplicateAdded?: (key: string) => void;
   onAddAddOns?: (parentKey: string, tierIds: string[]) => void;
   addedTierRefIds: Set<string>;
   addedPackageRefIds: Set<string>;
   copyFromScenarios?: ScenarioCopySource[];
   onCopyFromScenario?: (sourceScenarioId: string) => void;
 };
+
+function parsePaidAdsSpendInput(raw: string): number {
+  return Number(String(raw).trim().replace(/[$,\s]/g, ""));
+}
 
 export function ProposalCatalogPanel({
   panelVariant = "offerings",
@@ -124,6 +135,8 @@ export function ProposalCatalogPanel({
   formatUsd,
   addedLines,
   onRemoveAdded,
+  onEditAdded,
+  onDuplicateAdded,
   onAddAddOns,
   addedTierRefIds,
   addedPackageRefIds,
@@ -132,7 +145,7 @@ export function ProposalCatalogPanel({
 }: Props) {
   const searchId = useId();
   const travelHoursFieldId = useId();
-  const paidAdsSpendFieldId = useId();
+  const paidAdsSpendFieldIdPrefix = useId();
   const isPackageOnlyStep =
     panelVariant === "preset_packages" || panelVariant === "configurable_packages";
   const isVariableOnlyStep = panelVariant === "variable_tiers";
@@ -146,7 +159,7 @@ export function ProposalCatalogPanel({
   const [travelModalTierId, setTravelModalTierId] = useState<string | null>(null);
   const [travelHoursStr, setTravelHoursStr] = useState("");
   const [paidAdsModalTierId, setPaidAdsModalTierId] = useState<string | null>(null);
-  const [paidAdsSpendStr, setPaidAdsSpendStr] = useState("");
+  const [paidAdsSpendByMonth, setPaidAdsSpendByMonth] = useState<Record<string, string>>({});
   const [linkModalTierId, setLinkModalTierId] = useState<string | null>(null);
   const [selectedLinkedTierRefId, setSelectedLinkedTierRefId] = useState<string | null>(null);
 
@@ -233,6 +246,11 @@ export function ProposalCatalogPanel({
   const paidAdsModalTier = paidAdsModalTierId ? tierById.get(paidAdsModalTierId) ?? null : null;
   const linkModalTier = linkModalTierId ? tierById.get(linkModalTierId) ?? null : null;
 
+  const paidAdsMonths = useMemo(
+    () => enumerateProposalMonths(proposalStartDate, proposalEndDate),
+    [proposalStartDate, proposalEndDate]
+  );
+
   const closeTravelModal = () => {
     setTravelModalTierId(null);
     setTravelHoursStr("");
@@ -240,7 +258,7 @@ export function ProposalCatalogPanel({
 
   const closePaidAdsModal = () => {
     setPaidAdsModalTierId(null);
-    setPaidAdsSpendStr("");
+    setPaidAdsSpendByMonth({});
   };
 
   const closeLinkModal = () => {
@@ -257,12 +275,54 @@ export function ProposalCatalogPanel({
   };
 
   const submitPaidAdsModal = () => {
-    if (!paidAdsModalTier) return;
-    const spend = Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""));
-    if (!Number.isFinite(spend) || spend <= 0) return;
-    setDatesModalPending({ kind: "variable", tier: paidAdsModalTier, opts: { paidAdsSpendUsd: spend } });
+    if (!paidAdsModalTier || paidAdsMonths.length === 0) return;
+    const months: NonNullable<AddVariableTierOpts["paidAdsMonths"]> = [];
+    for (const m of paidAdsMonths) {
+      const spend = parsePaidAdsSpendInput(paidAdsSpendByMonth[m.key] ?? "");
+      if (!Number.isFinite(spend) || spend <= 0) return;
+      months.push({
+        spendUsd: spend,
+        startDate: m.startDate,
+        endDate: m.endDate,
+        monthLabel: m.label,
+      });
+    }
+    onAddVariableTier(paidAdsModalTier, emptyOfferingDates(), { paidAdsMonths: months });
+    const justAdded = `tier:${paidAdsModalTier.solution_tier_id}`;
+    setJustAddedId(justAdded);
+    window.setTimeout(() => setJustAddedId((id) => (id === justAdded ? null : id)), 1600);
     closePaidAdsModal();
   };
+
+  const paidAdsAllMonthsValid =
+    paidAdsMonths.length > 0 &&
+    paidAdsMonths.every((m) => {
+      const spend = parsePaidAdsSpendInput(paidAdsSpendByMonth[m.key] ?? "");
+      return Number.isFinite(spend) && spend > 0;
+    });
+
+  const paidAdsPreviewRows = useMemo(() => {
+    return paidAdsMonths.map((m) => {
+      const spend = parsePaidAdsSpendInput(paidAdsSpendByMonth[m.key] ?? "");
+      const sell =
+        Number.isFinite(spend) && spend > 0 ? computePaidAdsOptimizationUsd(spend) : null;
+      const formula =
+        Number.isFinite(spend) && spend > 0 ? paidAdsOptimizationFormulaLabel(spend) : null;
+      return { ...m, spend, sell, formula };
+    });
+  }, [paidAdsMonths, paidAdsSpendByMonth]);
+
+  const paidAdsTotalSell = useMemo(() => {
+    let sum = 0;
+    let any = false;
+    for (const row of paidAdsPreviewRows) {
+      if (row.sell != null) {
+        sum += row.sell;
+        any = true;
+      }
+    }
+    return any ? sum : null;
+  }, [paidAdsPreviewRows]);
 
   const submitLinkModal = () => {
     if (!linkModalTier || !selectedLinkedTierRefId) return;
@@ -284,7 +344,7 @@ export function ProposalCatalogPanel({
     }
     if (isPaidAdsVariableTierRefId(tierId)) {
       setPaidAdsModalTierId(tierId);
-      setPaidAdsSpendStr("");
+      setPaidAdsSpendByMonth({});
       return;
     }
     if (isPercentVariableTierRefId(tierId)) {
@@ -564,6 +624,8 @@ export function ProposalCatalogPanel({
           targetPhaseTitle={targetPhaseTitle}
           lines={addedLines}
           onRemove={onRemoveAdded}
+          onEdit={onEditAdded}
+          onDuplicate={onDuplicateAdded}
           copyFromScenarios={copyFromScenarios}
           onCopyFromScenario={onCopyFromScenario}
           addonGroups={moduleAddOnGroups}
@@ -968,7 +1030,8 @@ export function ProposalCatalogPanel({
                   {paidAdsModalTier.solution_tier_name}
                 </h2>
                 <p className="proposal-travel-modal__subtitle">
-                  Enter total paid ads spend for this scenario. Sell price is calculated automatically from tiered rates.
+                  Enter ad spend for each month. Sell price is calculated from the rates below; each
+                  month is added as its own line.
                 </p>
               </div>
             </header>
@@ -984,58 +1047,83 @@ export function ProposalCatalogPanel({
                 </div>
               </div>
 
-              <label className="proposal-travel-modal__field" htmlFor={paidAdsSpendFieldId}>
-                <span className="proposal-travel-modal__field-label">Total paid ads spend</span>
-                <div className="proposal-travel-modal__input-wrap">
-                  <span className="proposal-travel-modal__input-prefix">$</span>
-                  <input
-                    id={paidAdsSpendFieldId}
-                    type="number"
-                    min={1}
-                    step={100}
-                    inputMode="decimal"
-                    className="proposal-travel-modal__input proposal-travel-modal__input--currency"
-                    placeholder="0"
-                    value={paidAdsSpendStr}
-                    onChange={(e) => setPaidAdsSpendStr(e.target.value)}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") submitPaidAdsModal();
-                      if (e.key === "Escape") closePaidAdsModal();
-                    }}
-                  />
+              {paidAdsMonths.length === 0 ? (
+                <div className="proposal-travel-modal__dates-missing" role="status">
+                  <strong>Set proposal dates in Setup</strong>
+                  <span>
+                    Paid Campaign Management needs a Proposal Start Date and End Date so months can be
+                    listed here.
+                  </span>
                 </div>
-              </label>
+              ) : (
+                <>
+                  <div className="proposal-paid-ads-months" role="group" aria-label="Monthly paid ads spend">
+                    <div className="proposal-paid-ads-months__head">
+                      <span>Month</span>
+                      <span>Monthly ad spend</span>
+                      <span>Est. sell</span>
+                    </div>
+                    <ul className="proposal-paid-ads-months__list">
+                      {paidAdsPreviewRows.map((row, idx) => {
+                        const fieldId = `${paidAdsSpendFieldIdPrefix}-${row.key}`;
+                        return (
+                          <li key={row.key} className="proposal-paid-ads-months__row">
+                            <div className="proposal-paid-ads-months__month">
+                              <label htmlFor={fieldId} className="proposal-paid-ads-months__month-label">
+                                {row.label}
+                              </label>
+                            </div>
+                            <div className="proposal-travel-modal__input-wrap proposal-paid-ads-months__input-wrap">
+                              <span className="proposal-travel-modal__input-prefix">$</span>
+                              <input
+                                id={fieldId}
+                                type="number"
+                                min={1}
+                                step={100}
+                                inputMode="decimal"
+                                className="proposal-travel-modal__input proposal-travel-modal__input--currency proposal-paid-ads-months__input"
+                                placeholder="0"
+                                value={paidAdsSpendByMonth[row.key] ?? ""}
+                                autoFocus={idx === 0}
+                                onChange={(e) =>
+                                  setPaidAdsSpendByMonth((prev) => ({
+                                    ...prev,
+                                    [row.key]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") closePaidAdsModal();
+                                }}
+                              />
+                            </div>
+                            <div
+                              className={`proposal-paid-ads-months__sell${row.sell != null ? " proposal-paid-ads-months__sell--live" : ""}`}
+                              title={row.formula ?? undefined}
+                            >
+                              {row.sell != null ? formatUsd(row.sell) : "—"}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
 
-              {(() => {
-                const spend = Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""));
-                const preview =
-                  Number.isFinite(spend) && spend > 0
-                    ? previewVariableTierPriceUsd(paidAdsModalTier.solution_tier_id, {
-                        paidAdsSpendUsd: spend,
-                      })
-                    : null;
-                const formula =
-                  Number.isFinite(spend) && spend > 0 ? paidAdsOptimizationFormulaLabel(spend) : null;
-                return (
                   <div
-                    className={`proposal-travel-modal__preview${preview != null ? " proposal-travel-modal__preview--live" : ""}`}
+                    className={`proposal-travel-modal__preview${paidAdsTotalSell != null ? " proposal-travel-modal__preview--live" : ""}`}
                     role="status"
                   >
-                    <span className="proposal-travel-modal__preview-label">Estimated sell price</span>
+                    <span className="proposal-travel-modal__preview-label">Total estimated sell</span>
                     <strong className="proposal-travel-modal__preview-value">
-                      {preview != null ? formatUsd(preview) : "—"}
+                      {paidAdsTotalSell != null ? formatUsd(paidAdsTotalSell) : "—"}
                     </strong>
-                    {preview != null && formula ? (
-                      <span className="proposal-travel-modal__preview-formula">{formula}</span>
-                    ) : (
-                      <span className="proposal-travel-modal__preview-hint">
-                        Enter total paid ads spend to see the sell price
-                      </span>
-                    )}
+                    <span className="proposal-travel-modal__preview-hint">
+                      {paidAdsAllMonthsValid
+                        ? `${paidAdsMonths.length} month${paidAdsMonths.length === 1 ? "" : "s"} will be added as separate lines`
+                        : "Enter spend for every month to continue"}
+                    </span>
                   </div>
-                );
-              })()}
+                </>
+              )}
             </div>
 
             <footer className="roadmap-modal__actions proposal-travel-modal__actions">
@@ -1045,13 +1133,12 @@ export function ProposalCatalogPanel({
               <button
                 type="button"
                 className="roadmap-btn roadmap-btn--primary proposal-travel-modal__submit"
-                disabled={
-                  !Number.isFinite(Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, ""))) ||
-                  Number(paidAdsSpendStr.trim().replace(/[$,\s]/g, "")) <= 0
-                }
+                disabled={!paidAdsAllMonthsValid}
                 onClick={submitPaidAdsModal}
               >
-                Add to scenario
+                {paidAdsMonths.length > 1
+                  ? `Add ${paidAdsMonths.length} months`
+                  : "Add to scenario"}
               </button>
             </footer>
           </div>

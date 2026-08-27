@@ -22,6 +22,7 @@ import {
   parseTaskOverridesMap,
 } from "../lib/packagePricingTaskOverrides";
 import {
+  clientFacingLabelsForQuantity,
   mergeTierWithPackageOverrides,
   parseTierOverrides,
 } from "../lib/packageTierOverrides";
@@ -1202,8 +1203,10 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       bySol.set(t.solution_id, arr);
     }
     const rows: Array<{
+      key: string;
       solution: Solution;
-      tier: SolutionTier;
+      vaultTierName: string;
+      clientLabel: string;
       quantity: number;
       hours: string;
       sell: string;
@@ -1226,10 +1229,13 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                 parsePricingOverrides(link?.pricing_overrides)
               )
             : vault;
-        const tierDisplay =
-          useMergedPackage
-            ? mergeTierWithPackageOverrides(t, parseTierOverrides(link?.tier_overrides))
-            : t;
+        const ov = useMergedPackage ? parseTierOverrides(link?.tier_overrides) : {};
+        const qty = useMergedPackage ? normalizeTierQuantity(link?.quantity) : 1;
+        const labels = clientFacingLabelsForQuantity(
+          ov,
+          qty,
+          s.solution_name?.trim() || t.solution_tier_name.trim() || t.solution_tier_id
+        );
         const mergedTasks = useMergedPackage
           ? buildMergedTaskRowsForPackageTier({
               tierId: t.solution_tier_id,
@@ -1250,19 +1256,27 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
         }
         const pricingHours =
           pr?.total_hours != null && Number.isFinite(Number(pr.total_hours)) ? Number(pr.total_hours) : null;
-        rows.push({
-          solution: s,
-          tier: tierDisplay,
-          quantity: useMergedPackage ? normalizeTierQuantity(link?.quantity) : 1,
-          hours:
-            pricingHours != null
-              ? formatKpiNumber(pricingHours)
-              : hasSummedTaskHours
-                ? formatKpiNumber(summedTaskHours)
-                : "—",
-          sell: sellPriceDisplay(pr),
-          tax: taxableLabel(pr),
-        });
+        const hours =
+          pricingHours != null
+            ? formatKpiNumber(pricingHours)
+            : hasSummedTaskHours
+              ? formatKpiNumber(summedTaskHours)
+              : "—";
+        const sell = sellPriceDisplay(pr);
+        const tax = taxableLabel(pr);
+        const vaultTierName = t.solution_tier_name?.trim() || t.solution_tier_id;
+        for (let i = 0; i < qty; i++) {
+          rows.push({
+            key: `${t.solution_tier_id}#${i}`,
+            solution: s,
+            vaultTierName,
+            clientLabel: labels[i] ?? s.solution_name,
+            quantity: 1,
+            hours,
+            sell,
+            tax,
+          });
+        }
       }
     }
     return rows;
@@ -1831,6 +1845,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                     <thead>
                       <tr>
                         <th scope="col">Solution</th>
+                        <th scope="col">Client label</th>
                         <th scope="col">Tier</th>
                         <th scope="col">Quantity</th>
                         <th scope="col">Hours</th>
@@ -1840,9 +1855,10 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                     </thead>
                     <tbody>
                       {packagePriceMatrix.map((row) => (
-                        <tr key={row.tier.solution_tier_id}>
+                        <tr key={row.key}>
                           <td>{row.solution.solution_name}</td>
-                          <td>{row.tier.solution_tier_name}</td>
+                          <td>{row.clientLabel}</td>
+                          <td>{row.vaultTierName}</td>
                           <td>{row.quantity}</td>
                           <td>{row.hours}</td>
                           <td>{row.sell}</td>

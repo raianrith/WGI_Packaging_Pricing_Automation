@@ -25,10 +25,15 @@ import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOr
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
 import type { ProposalAddedLine } from "../components/proposal-builder/ProposalAddedItemsPanel";
+import {
+  ProposalAddedEditModal,
+  type ProposalAddedEditPatch,
+} from "../components/proposal-builder/ProposalAddedEditModal";
+import { PackageBuildWizard } from "../components/PackageBuildWizard";
 import { ProposalClientServiceReviewPanel } from "../components/proposal-builder/ProposalClientServiceReviewPanel";
 import { ProposalClientReadyPanel } from "../components/proposal-builder/ProposalClientReadyPanel";
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
-import { useToast } from "../context/ToastContext";
+import { useToast, useToastBusy } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
 import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
 import {
@@ -360,7 +365,12 @@ function cardForVariableTier(
   opts?: AddVariableTierOpts,
   dates?: ProposalOfferingDates
 ): RoadmapCard {
-  const card = cardForTier(t, ctx, scenarioId, phaseId, dates);
+  const monthLabel = opts?.paidAdsMonthLabel?.trim();
+  const headline =
+    monthLabel && isPaidAdsVariableTierRefId(t.solution_tier_id)
+      ? `${t.solution_tier_name.trim() || t.solution_tier_id} · ${monthLabel}`
+      : undefined;
+  const card = cardForTier(t, ctx, scenarioId, phaseId, dates, headline);
   if (opts?.travelHours != null && isTravelVariableTierRefId(t.solution_tier_id)) {
     return { ...card, variableTravelHours: opts.travelHours };
   }
@@ -399,6 +409,57 @@ function cardForPackage(
       ? `Package includes ${tierNames.length} solution tier(s): ${tierNames.join(", ")}.`
       : "No tiers linked to this package yet.";
   return makeCard("package", p.package_id, scenarioId, phaseId, p.package_name, desc, hours, price, undefined, dates);
+}
+
+function packageComponentRows(
+  packageId: string,
+  ctx: CatalogCtx
+): Array<{ id: string; name: string }> {
+  const tids = tierIdsForPackage(ctx.packageTiers, packageId);
+  const linksByTier = new Map(
+    ctx.packageTiers.filter((l) => l.package_id === packageId).map((l) => [l.solution_tier_id, l])
+  );
+  const rows: Array<{ id: string; name: string }> = [];
+  for (const id of tids) {
+    const tier = ctx.tiers.find((t) => t.solution_tier_id === id);
+    const link = linksByTier.get(id);
+    const ov = parseTierOverrides(link?.tier_overrides);
+    const qty =
+      link?.quantity != null && link.quantity > 0 ? Math.floor(link.quantity) : 1;
+    const fallback = tier?.solution_tier_name?.trim() || id;
+    const labels =
+      Array.isArray(ov.client_facing_labels) && ov.client_facing_labels.length > 0
+        ? ov.client_facing_labels
+        : ov.solution_tier_name?.trim()
+          ? [ov.solution_tier_name.trim()]
+          : [fallback];
+    for (let i = 0; i < qty; i++) {
+      rows.push({
+        id: qty > 1 ? `${id}#${i + 1}` : id,
+        name: labels[i]?.trim() || labels[0]?.trim() || fallback,
+      });
+    }
+  }
+  return rows;
+}
+
+function refreshPackageCardsFromCatalog(cards: RoadmapCard[], ctx: CatalogCtx): RoadmapCard[] {
+  return cards.map((c) => {
+    if (c.kind !== "package") return c;
+    const p = ctx.packages.find((x) => x.package_id === c.refId);
+    if (!p) return c;
+    const dates = {
+      startDate: c.startDate ?? "",
+      endDate: c.endDate ?? "",
+    };
+    const fresh = cardForPackage(p, ctx, c.scenarioId, c.phaseId, dates);
+    return {
+      ...c,
+      hours: fresh.hours,
+      price: fresh.price,
+      description: fresh.description,
+    };
+  });
 }
 
 function cardAllowsAddOns(card: RoadmapCard, ctx: CatalogCtx): boolean {
@@ -792,12 +853,17 @@ export function RoadmapPlanningView() {
   const { setGuard } = useProposalDraftGuard();
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [catalogReloading, setCatalogReloading] = useState(false);
+  useToastBusy(catalogReloading, "Refreshing solutions…");
   const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
   const [savedProposalsLoading, setSavedProposalsLoading] = useState(false);
   const [savingProposal, setSavingProposal] = useState(false);
+  useToastBusy(savingProposal, "Saving proposal…");
   const [pdfGenerating, setPdfGenerating] = useState<"client" | "ops" | null>(null);
+  useToastBusy(pdfGenerating != null, "Generating PDF…");
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
+  useToastBusy(deletingProposalId != null, "Deleting proposal…");
   const [reviewingProposalId, setReviewingProposalId] = useState<string | null>(null);
+  useToastBusy(reviewingProposalId != null, "Updating review status…");
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const [proposalReviewStatus, setProposalReviewStatus] = useState<ProposalReviewStatus>("draft");
   const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
@@ -817,6 +883,9 @@ export function RoadmapPlanningView() {
     () => INITIAL_SCENARIOS_AND_PHASES.scenarios[0]!.id
   );
   const [detailsModalKey, setDetailsModalKey] = useState<string | null>(null);
+  const [addedEditKey, setAddedEditKey] = useState<string | null>(null);
+  const [vaultPackageEditId, setVaultPackageEditId] = useState<string | null>(null);
+  const pendingPackageCardRefreshRef = useRef(false);
   /** Live edit buffer for scratch tier in the details modal */
   const [scratchDraft, setScratchDraft] = useState<RoadmapCard | null>(null);
   /** After opening Details from Customize, scroll the composition section into view once */
@@ -1530,6 +1599,52 @@ export function RoadmapPlanningView() {
     [catalogCtx, setCardsSynced]
   );
 
+  const duplicateAddedCard = useCallback(
+    (key: string) => {
+      setCardsSynced((prev) => {
+        const source = prev.find((c) => c.key === key);
+        if (!source) return prev;
+        const newKey = newRoadmapCardKey();
+        const baseHeadline = source.headline.trim() || "Untitled";
+        const copyHeadline = /\(copy\)\s*$/i.test(baseHeadline)
+          ? baseHeadline
+          : `${baseHeadline} (copy)`;
+        const clone: RoadmapCard = {
+          ...source,
+          key: newKey,
+          headline: copyHeadline,
+          taskLayout: source.taskLayout
+            ? {
+                ...source.taskLayout,
+                extras: source.taskLayout.extras?.map((ex) => ({
+                  ...ex,
+                  id: newRoadmapCardKey(),
+                })),
+              }
+            : source.taskLayout,
+        };
+        const extras = prev
+          .filter((c) => c.addonOfCardKey === key)
+          .map((child) => ({
+            ...child,
+            key: newRoadmapCardKey(),
+            addonOfCardKey: newKey,
+            taskLayout: child.taskLayout
+              ? {
+                  ...child.taskLayout,
+                  extras: child.taskLayout.extras?.map((ex) => ({
+                    ...ex,
+                    id: newRoadmapCardKey(),
+                  })),
+                }
+              : child.taskLayout,
+          }));
+        return [...prev, clone, ...extras];
+      });
+    },
+    [setCardsSynced]
+  );
+
   const openDetailsModal = useCallback((c: RoadmapCard, opts?: { focusCompose?: boolean }) => {
     setDetailsModalKey(c.key);
     if (c.kind === "custom_tier") {
@@ -1542,6 +1657,50 @@ export function RoadmapPlanningView() {
       setScratchModalFocusCompose(false);
     }
   }, []);
+
+  const openAddedEdit = useCallback(
+    (key: string) => {
+      const card = cards.find((c) => c.key === key);
+      if (!card) return;
+      if (card.kind === "custom_tier") {
+        openDetailsModal(card);
+        return;
+      }
+      setAddedEditKey(key);
+    },
+    [cards, openDetailsModal]
+  );
+
+  const closeAddedEdit = useCallback(() => setAddedEditKey(null), []);
+
+  const saveAddedEdit = useCallback(
+    (key: string, patch: ProposalAddedEditPatch) => {
+      patchCard(key, patch);
+      setAddedEditKey(null);
+    },
+    [patchCard]
+  );
+
+  const openVaultPackageComponentsEditor = useCallback(() => {
+    const card = addedEditKey ? cards.find((c) => c.key === addedEditKey) : null;
+    if (!card || card.kind !== "package") return;
+    setVaultPackageEditId(card.refId);
+  }, [addedEditKey, cards]);
+
+  const closeVaultPackageComponentsEditor = useCallback(() => {
+    setVaultPackageEditId(null);
+  }, []);
+
+  const onVaultPackageComponentsSaved = useCallback(async () => {
+    pendingPackageCardRefreshRef.current = true;
+    await load(true);
+  }, [load]);
+
+  useEffect(() => {
+    if (!pendingPackageCardRefreshRef.current || !catalogCtx) return;
+    pendingPackageCardRefreshRef.current = false;
+    setCardsSynced((prev) => refreshPackageCardsFromCatalog(prev, catalogCtx));
+  }, [catalogCtx, setCardsSynced]);
 
   const closeDetailsModal = useCallback(() => {
     setDetailsModalKey(null);
@@ -1572,6 +1731,12 @@ export function RoadmapPlanningView() {
       closeDetailsModal();
     }
   }, [cards, detailsModalKey, closeDetailsModal]);
+
+  useEffect(() => {
+    if (addedEditKey && !cards.some((c) => c.key === addedEditKey)) {
+      setAddedEditKey(null);
+    }
+  }, [cards, addedEditKey]);
 
   useEffect(() => {
     if (!detailsModalKey) return;
@@ -2127,6 +2292,11 @@ export function RoadmapPlanningView() {
 
   const ctx = catalogCtx;
   const detailsCard = detailsModalKey ? cards.find((c) => c.key === detailsModalKey) ?? null : null;
+  const addedEditCard = addedEditKey ? cards.find((c) => c.key === addedEditKey) ?? null : null;
+  const addedEditPackageComponents =
+    addedEditCard?.kind === "package" && ctx
+      ? packageComponentRows(addedEditCard.refId, ctx)
+      : undefined;
   const targetScenarioTitle =
     scenarios.find((s) => s.id === targetScenarioId)?.title.trim() || "Scenario";
   const targetPhaseTitle =
@@ -2175,6 +2345,8 @@ export function RoadmapPlanningView() {
       formatUsd={formatUsd}
       addedLines={catalogAddedLines}
       onRemoveAdded={removeCard}
+      onEditAdded={openAddedEdit}
+      onDuplicateAdded={duplicateAddedCard}
       onAddAddOns={addAddOnsToParent}
       addonGroups={moduleAddOnGroups}
       copyFromScenarios={copyFromScenarios}
@@ -2229,6 +2401,23 @@ export function RoadmapPlanningView() {
       }}
       onAddVariableTier={(t, dates, opts) => {
         if (!canAddToTarget) return;
+        if (opts?.paidAdsMonths?.length) {
+          const monthCards = opts.paidAdsMonths.map((m) =>
+            cardForVariableTier(
+              t,
+              ctx,
+              targetScenarioId,
+              targetPhaseId,
+              {
+                paidAdsSpendUsd: m.spendUsd,
+                paidAdsMonthLabel: m.monthLabel,
+              },
+              { startDate: m.startDate, endDate: m.endDate }
+            )
+          );
+          setCardsSynced((prev) => [...prev, ...monthCards]);
+          return;
+        }
         addCard(cardForVariableTier(t, ctx, targetScenarioId, targetPhaseId, opts, dates));
       }}
       previewVariableTierPriceUsd={previewVariableTierPriceUsd}
@@ -2250,6 +2439,8 @@ export function RoadmapPlanningView() {
       }))}
       addedLines={catalogAddedLines}
       onRemoveAdded={removeCard}
+      onEditAdded={openAddedEdit}
+      onDuplicateAdded={duplicateAddedCard}
       onAddAddOns={addAddOnsToParent}
       addedTierRefIds={addedTierRefIds}
       addedPackageRefIds={addedPackageRefIds}
@@ -2738,6 +2929,43 @@ export function RoadmapPlanningView() {
         </div>
         )}
       </div>
+
+      {addedEditCard ? (
+        <ProposalAddedEditModal
+          card={addedEditCard}
+          phaseChoices={sortedPhasesForScenario(phases, addedEditCard.scenarioId)}
+          formatUsd={formatUsd}
+          packageComponents={addedEditPackageComponents}
+          onEditPackageComponents={
+            addedEditCard.kind === "package" ? openVaultPackageComponentsEditor : undefined
+          }
+          onClose={closeAddedEdit}
+          onSave={saveAddedEdit}
+        />
+      ) : null}
+
+      {vaultPackageEditId && data && ctx ? (
+        <PackageBuildWizard
+          variant="proposal"
+          editPackageId={vaultPackageEditId}
+          onEditPackageConsumed={closeVaultPackageComponentsEditor}
+          packageTypes={data.packageTypes}
+          slots={data.packageBuilderSlots}
+          packages={ctx.packages}
+          packageTiers={ctx.packageTiers}
+          solutions={ctx.solutions}
+          tiers={ctx.tiers}
+          tasks={ctx.tasks}
+          pricing={[...ctx.pricingMap.values()]}
+          wizardTitle="Edit package components"
+          onReload={async () => {
+            await load(true);
+          }}
+          onCreated={async () => {
+            await onVaultPackageComponentsSaved();
+          }}
+        />
+      ) : null}
 
       {detailsModalKey && detailsCard ? (
         <div className="roadmap-modal-backdrop" onClick={closeDetailsModal} role="presentation">

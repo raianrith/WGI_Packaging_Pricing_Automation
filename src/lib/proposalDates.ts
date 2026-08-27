@@ -73,3 +73,60 @@ export function isValidOfferingDateRange(dates: ProposalOfferingDates): boolean 
   if (!a || !b) return true;
   return a <= b;
 }
+
+/** One calendar month clipped to the proposal start/end range. */
+export type ProposalMonthSegment = {
+  /** `YYYY-MM` */
+  key: string;
+  /** e.g. `Sep 2026` */
+  label: string;
+  startDate: string;
+  endDate: string;
+};
+
+function toIsoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Calendar months that intersect [proposalStart, proposalEnd], each clipped to the range.
+ * Empty if either date is missing/invalid or start is after end.
+ */
+export function enumerateProposalMonths(
+  proposalStart: string,
+  proposalEnd: string
+): ProposalMonthSegment[] {
+  const start = normalizeIsoDateInput(proposalStart);
+  const end = normalizeIsoDateInput(proposalEnd);
+  if (!start || !end || start > end) return [];
+
+  const startD = parseLocalDate(start)!;
+  const endD = parseLocalDate(end)!;
+  let y = startD.getFullYear();
+  let m = startD.getMonth();
+  const endY = endD.getFullYear();
+  const endM = endD.getMonth();
+
+  const out: ProposalMonthSegment[] = [];
+  while (y < endY || (y === endY && m <= endM)) {
+    const monthFirst = new Date(y, m, 1, 12, 0, 0);
+    const monthLast = new Date(y, m + 1, 0, 12, 0, 0);
+    const segStart = startD > monthFirst ? startD : monthFirst;
+    const segEnd = endD < monthLast ? endD : monthLast;
+    out.push({
+      key: `${y}-${String(m + 1).padStart(2, "0")}`,
+      label: monthFirst.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+      startDate: toIsoLocal(segStart),
+      endDate: toIsoLocal(segEnd),
+    });
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+  }
+  return out;
+}

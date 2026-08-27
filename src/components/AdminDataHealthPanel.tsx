@@ -14,6 +14,7 @@ import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../li
 import { syncTierPricingFromTasks } from "../lib/syncTierPricingFromTasks";
 import type { TierPricingMathConfig } from "../lib/tierPricingMath";
 import { vaultPathForTier } from "../lib/vaultTierHealth";
+import { useToastBusy } from "../context/ToastContext";
 import type {
   AuditLogRow,
   ImplementerHourGroupRow,
@@ -127,6 +128,10 @@ export function AdminDataHealthPanel({
 }) {
   const [busyTierId, setBusyTierId] = useState<string | null>(null);
   const [busyAll, setBusyAll] = useState(false);
+  useToastBusy(
+    busyAll || busyTierId != null,
+    busyAll ? "Syncing pricing for all tiers…" : "Syncing pricing…"
+  );
   const [filter, setFilter] = useState<HealthIssueKind | "all">("all");
   const [ignoreTick, setIgnoreTick] = useState(0);
   const [showIgnored, setShowIgnored] = useState(false);

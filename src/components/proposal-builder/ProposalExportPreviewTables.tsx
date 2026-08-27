@@ -103,6 +103,7 @@ export function ProposalExportPreviewTables({
       {accountMgmt.includedLineCount > 0 ? (
         <ProposalOrganizeAccountMgmtCard
           accountMgmtHours={accountMgmt.accountMgmtHours}
+          continuousImprovementHours={accountMgmt.continuousImprovementHours}
           resourceHours={accountMgmt.resourceHours}
           formatHoursShort={formatHoursShort}
         />

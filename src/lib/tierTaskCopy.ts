@@ -91,6 +91,7 @@ export async function insertCopiedVaultTasksFromTier(params: {
   allTasks: TaskRow[];
   tiers: SolutionTier[];
   logAudit: LogAudit;
+  onProgress?: (update: { current: number; total: number; label?: string }) => void;
 }): Promise<{ ok: true; created: number } | { ok: false; message: string }> {
   const client = getSupabase();
   if (!client) return { ok: false, message: "Supabase client is not available." };
@@ -112,6 +113,8 @@ export async function insertCopiedVaultTasksFromTier(params: {
   const baseMax = tierMaxSortOrder(params.allTasks, params.targetTierId);
 
   try {
+    const total = sourceRows.length;
+    params.onProgress?.({ current: 0, total, label: `Copying ${total} task(s)…` });
     for (let i = 0; i < sourceRows.length; i++) {
       const src = sourceRows[i]!;
       const id = nextAutoTaskId(localTasks);
@@ -157,8 +160,14 @@ export async function insertCopiedVaultTasksFromTier(params: {
         after: rowJson(row),
       });
       localTasks.push(row);
+      params.onProgress?.({
+        current: i + 1,
+        total,
+        label: `Copying task ${i + 1} of ${total}…`,
+      });
     }
 
+    params.onProgress?.({ current: total, total, label: "Updating tier pricing…" });
     const pricingSync = await syncTierPricingFromTasks({
       client,
       tierIds: params.targetTierId,

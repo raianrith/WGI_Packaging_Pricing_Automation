@@ -28,6 +28,8 @@ type Props = {
   targetPhaseTitle: string;
   lines: ProposalAddedLine[];
   onRemove: (key: string) => void;
+  onEdit?: (key: string) => void;
+  onDuplicate?: (key: string) => void;
   copyFromScenarios?: ScenarioCopySource[];
   onCopyFromScenario?: (sourceScenarioId: string) => void;
   addonGroups?: ModuleAddOnGroup[];
@@ -89,12 +91,16 @@ function AddedLineRow({
   nested,
   canOfferMoreAddOns,
   onRemove,
+  onEdit,
+  onDuplicate,
   onAddAddOns,
 }: {
   line: ProposalAddedLine;
   nested?: boolean;
   canOfferMoreAddOns: boolean;
   onRemove: (key: string) => void;
+  onEdit?: (key: string) => void;
+  onDuplicate?: (key: string) => void;
   onAddAddOns?: (parentKey: string) => void;
 }) {
   const kindClass = line.isAddon ? "addon" : line.kind;
@@ -109,18 +115,24 @@ function AddedLineRow({
           {kindShortLabel(line)}
         </span>
         <div className="proposal-added-line__text">
-          <strong className="proposal-added-line__title">{line.headline.trim() || "(untitled)"}</strong>
+          <div className="proposal-added-line__title-row">
+            <strong className="proposal-added-line__title">{line.headline.trim() || "(untitled)"}</strong>
+            <span className="proposal-added-line__price">{line.priceDisplay}</span>
+          </div>
           {line.appliedToLabel ? (
             <span className="proposal-added-line__applied">
               Applied to <strong>{line.appliedToLabel}</strong>
             </span>
           ) : null}
-          <span className="proposal-added-line__meta">
-            {line.phaseTitle} · {line.priceDisplay} · {scopeLabel(line.scope)}
-            {!nested && line.addons && line.addons.length > 0
-              ? ` · ${line.addons.length} add-on${line.addons.length === 1 ? "" : "s"}`
-              : ""}
-          </span>
+          <div className="proposal-added-line__meta">
+            <span className="proposal-added-line__chip">{line.phaseTitle}</span>
+            <span className="proposal-added-line__chip">{scopeLabel(line.scope)}</span>
+            {!nested && line.addons && line.addons.length > 0 ? (
+              <span className="proposal-added-line__chip">
+                {line.addons.length} add-on{line.addons.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
           {canOfferMoreAddOns && onAddAddOns ? (
             <button
               type="button"
@@ -132,14 +144,34 @@ function AddedLineRow({
           ) : null}
         </div>
       </div>
-      <button
-        type="button"
-        className="proposal-added-line__remove"
-        onClick={() => onRemove(line.key)}
-        aria-label={`Remove ${line.headline}`}
-      >
-        ×
-      </button>
+      <div className="proposal-added-line__actions">
+        {onEdit ? (
+          <button
+            type="button"
+            className="proposal-added-line__action"
+            onClick={() => onEdit(line.key)}
+          >
+            Edit
+          </button>
+        ) : null}
+        {onDuplicate ? (
+          <button
+            type="button"
+            className="proposal-added-line__action"
+            onClick={() => onDuplicate(line.key)}
+          >
+            Duplicate
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="proposal-added-line__action proposal-added-line__action--danger"
+          onClick={() => onRemove(line.key)}
+          aria-label={`Remove ${line.headline}`}
+        >
+          Remove
+        </button>
+      </div>
     </div>
   );
 }
@@ -149,6 +181,8 @@ export function ProposalAddedItemsPanel({
   targetPhaseTitle,
   lines,
   onRemove,
+  onEdit,
+  onDuplicate,
   copyFromScenarios,
   onCopyFromScenario,
   addonGroups = [],
@@ -203,31 +237,28 @@ export function ProposalAddedItemsPanel({
     cancelAddOns();
   };
 
+  const summaryParts: string[] = [];
+  if (tierLines.length > 0) {
+    summaryParts.push(`${tierLines.length} tier${tierLines.length === 1 ? "" : "s"}`);
+  }
+  if (addonCount > 0) {
+    summaryParts.push(`${addonCount} add-on${addonCount === 1 ? "" : "s"}`);
+  }
+  if (packageLines.length > 0) {
+    summaryParts.push(`${packageLines.length} package${packageLines.length === 1 ? "" : "s"}`);
+  }
+  if (otherLines.length > 0) {
+    summaryParts.push(`${otherLines.length} other`);
+  }
+
   return (
     <section className="proposal-added-card" aria-label="Added solutions">
       <header className="proposal-added-card__head">
         <div>
           <p className="proposal-added-card__eyebrow">Your Additions</p>
           <h3 className="proposal-added-card__title">Solutions on {scenarioTitle}</h3>
-        </div>
-        <div className="proposal-added-card__counts" aria-live="polite">
-          <span className="proposal-added-card__count proposal-added-card__count--tiers">
-            <strong>{tierLines.length}</strong> tier{tierLines.length === 1 ? "" : "s"}
-          </span>
-          {addonCount > 0 ? (
-            <span className="proposal-added-card__count">
-              <strong>{addonCount}</strong> add-on{addonCount === 1 ? "" : "s"}
-            </span>
-          ) : null}
-          {packageLines.length > 0 ? (
-            <span className="proposal-added-card__count proposal-added-card__count--packages">
-              <strong>{packageLines.length}</strong> package{packageLines.length === 1 ? "" : "s"}
-            </span>
-          ) : null}
-          {otherLines.length > 0 ? (
-            <span className="proposal-added-card__count">
-              <strong>{otherLines.length}</strong> other
-            </span>
+          {summaryParts.length > 0 ? (
+            <p className="proposal-added-card__summary">{summaryParts.join(" · ")}</p>
           ) : null}
         </div>
       </header>
@@ -242,43 +273,44 @@ export function ProposalAddedItemsPanel({
 
       {lines.length > 0 ? (
         <>
-          <div className="proposal-added-card__filters" role="tablist" aria-label="Filter additions">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === "all"}
-              className={`proposal-added-card__filter${filter === "all" ? " is-active" : ""}`}
-              onClick={() => setFilter("all")}
-            >
-              All ({lines.length})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={filter === "tiers"}
-              className={`proposal-added-card__filter${filter === "tiers" ? " is-active" : ""}`}
-              onClick={() => setFilter("tiers")}
-            >
-              Tiers ({tierLines.length})
-            </button>
-            {packageLines.length > 0 ? (
+          <div className="proposal-added-card__toolbar">
+            <div className="proposal-added-card__filters" role="tablist" aria-label="Filter additions">
               <button
                 type="button"
                 role="tab"
-                aria-selected={filter === "packages"}
-                className={`proposal-added-card__filter${filter === "packages" ? " is-active" : ""}`}
-                onClick={() => setFilter("packages")}
+                aria-selected={filter === "all"}
+                className={`proposal-added-card__filter${filter === "all" ? " is-active" : ""}`}
+                onClick={() => setFilter("all")}
               >
-                Packages ({packageLines.length})
+                All ({lines.length})
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filter === "tiers"}
+                className={`proposal-added-card__filter${filter === "tiers" ? " is-active" : ""}`}
+                onClick={() => setFilter("tiers")}
+              >
+                Tiers ({tierLines.length})
+              </button>
+              {packageLines.length > 0 ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === "packages"}
+                  className={`proposal-added-card__filter${filter === "packages" ? " is-active" : ""}`}
+                  onClick={() => setFilter("packages")}
+                >
+                  Packages ({packageLines.length})
+                </button>
+              ) : null}
+            </div>
+            {inTargetPhaseOfferings.length > 0 ? (
+              <p className="proposal-added-card__phase-note">
+                {inTargetPhaseOfferings.length} in {targetPhaseTitle}
+              </p>
             ) : null}
           </div>
-          {inTargetPhaseOfferings.length > 0 ? (
-            <p className="proposal-added-card__phase-note">
-              <strong>{inTargetPhaseOfferings.length}</strong> in <strong>{targetPhaseTitle}</strong> (current add
-              target)
-            </p>
-          ) : null}
           <ul className="proposal-added-card__list">
             {visibleLines.map((line) => {
               const canOfferMoreAddOns =
@@ -289,6 +321,8 @@ export function ProposalAddedItemsPanel({
                     line={line}
                     canOfferMoreAddOns={canOfferMoreAddOns}
                     onRemove={onRemove}
+                    onEdit={onEdit}
+                    onDuplicate={onDuplicate}
                     onAddAddOns={openAddOns}
                   />
                   {line.addons && line.addons.length > 0 ? (
@@ -300,6 +334,8 @@ export function ProposalAddedItemsPanel({
                             nested
                             canOfferMoreAddOns={false}
                             onRemove={onRemove}
+                            onEdit={onEdit}
+                            onDuplicate={onDuplicate}
                           />
                         </li>
                       ))}

@@ -198,7 +198,13 @@ export type PackageTierOverrides = Partial<
     | "solution_tier_final_deliverable"
     | "solution_tier_how_do_we_get_this_work_done"
   >
->;
+> & {
+  /**
+   * Per-quantity client-facing labels when the same vault tier is included more than once.
+   * Index 0 should match `solution_tier_name` when both are set.
+   */
+  client_facing_labels?: string[] | null;
+};
 
 export type TaskRow = {
   task_id: string;

@@ -6,6 +6,7 @@ import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
 import { compareTierCategoryLabels } from "../lib/tierCategories";
 import type { SolutionTier, SolutionTierTaxonomyOptionRow, TierTaxonomyKind } from "../types";
+import { useToast } from "../context/ToastContext";
 
 type Props = {
   rows: SolutionTierTaxonomyOptionRow[];
@@ -65,6 +66,7 @@ function TierTaxonomySection({
   Props,
   "formGrid" | "lbl" | "input" | "btn" | "btnPrimary" | "btnDangerSm" | "tbl" | "th" | "td"
 >) {
+  const { clearOpOk, clearOpErr } = useToast();
   const meta = KIND_META[kind];
   const sectionRows = useMemo(
     () =>
@@ -195,8 +197,8 @@ function TierTaxonomySection({
   );
 
   const startEdit = (r: SolutionTierTaxonomyOptionRow) => {
-    setOpErr(null);
-    setOpOk(null);
+    clearOpErr();
+    clearOpOk();
     setEditingId(r.id);
     setLabelField(r.label);
   };

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Link } from "react-router-dom";
-import { AgencyPackageEditModal } from "../components/AgencyPackageEditModal";
+import { PackageBuildWizard } from "../components/PackageBuildWizard";
 import {
   AGENCY_HERO_TITLE,
   AGENCY_HUB_DESCRIPTION,
@@ -14,7 +14,6 @@ import { vaultSellPriceUsd, vaultTierHours } from "../lib/vaultTierMetrics";
 import {
   loadTierPricingMathConfigFromStorage,
   normalizeTierPricingMathConfig,
-  type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
 import { computePackageWorkspaceFormMetrics } from "../lib/packageWorkspaceMetrics";
 import {
@@ -28,6 +27,7 @@ import type {
   ImplementerHourGroupRow,
   Package,
   PackageBuilderPackageType,
+  PackageBuilderSlotTemplate,
   PackageSolutionTier,
   Solution,
   SolutionTier,
@@ -301,7 +301,7 @@ const subtitle: CSSProperties = {
 };
 
 export function AgencyPackagesHub() {
-  const { toastError, setOpErr, setOpOk } = useToast();
+  const { toastError, setOpOk, clearOpErr, clearOpOk, beginProgress } = useToast();
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
@@ -313,12 +313,12 @@ export function AgencyPackagesHub() {
   const [packageCreateAuditRows, setPackageCreateAuditRows] = useState<AuditLogRow[]>([]);
   const [implementerHourGroups, setImplementerHourGroups] = useState<ImplementerHourGroupRow[]>([]);
   const [packageTypes, setPackageTypes] = useState<PackageBuilderPackageType[]>([]);
+  const [packageBuilderSlots, setPackageBuilderSlots] = useState<PackageBuilderSlotTemplate[]>([]);
   const [pkgFilter, setPkgFilter] = useState("");
   const [packageLayoutMode, setPackageLayoutMode] = useState<PackageLayoutMode>(() => loadPackageLayoutMode());
   const [packageListSort, setPackageListSort] = useState<PackageListSort>({ col: "package", dir: "asc" });
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
   const [editPackageId, setEditPackageId] = useState<string | null>(null);
-  const [tierPricingMathConfig] = useState<TierPricingMathConfig>(() => loadTierPricingMathConfigFromStorage());
 
   const logAudit = useCallback(
     async (client: SupabaseClient, params: Parameters<typeof insertAuditLog>[1]) => {
@@ -404,6 +404,7 @@ export function AgencyPackagesHub() {
     setPackageCreateAuditRows(auditRes.error ? [] : ((auditRes.data ?? []) as AuditLogRow[]));
     setImplementerHourGroups(implRes.error ? [] : ((implRes.data ?? []) as ImplementerHourGroupRow[]));
     setPackageTypes(slotPack.catalog.types.map((t) => ({ ...t })));
+    setPackageBuilderSlots(slotPack.catalog.slots.map((s) => ({ ...s })));
     setLoading(false);
   }, []);
 
@@ -513,16 +514,11 @@ export function AgencyPackagesHub() {
     if (!packageCreatorOptions.includes(packageCreatorFilter)) setPackageCreatorFilter("all");
   }, [packageCreatorFilter, packageCreatorOptions]);
 
-  const editPackage = useMemo(
-    () => (editPackageId ? packages.find((p) => p.package_id === editPackageId) ?? null : null),
-    [editPackageId, packages]
-  );
-
   const closePackageEdit = useCallback(() => {
     setEditPackageId(null);
-    setOpErr(null);
-    setOpOk(null);
-  }, [setOpErr, setOpOk]);
+    clearOpErr();
+    clearOpOk();
+  }, [clearOpErr, clearOpOk]);
 
   const deletePackageById = useCallback(
     async (packageId: string, packageName: string) => {
@@ -539,6 +535,7 @@ export function AgencyPackagesHub() {
         toastError("Supabase client is not available.");
         return;
       }
+      beginProgress("Deleting package…");
       const beforePkg = packages.find((p) => p.package_id === packageId) ?? null;
       const beforeTierIds = packageTiers
         .filter((x) => x.package_id === packageId)
@@ -571,7 +568,7 @@ export function AgencyPackagesHub() {
       setOpOk(`Package ${label} deleted.`);
       await load();
     },
-    [editPackageId, load, logAudit, packageTiers, packages, setOpOk, toastError]
+    [beginProgress, editPackageId, load, logAudit, packageTiers, packages, setOpOk, toastError]
   );
 
   const setLayoutMode = useCallback((mode: PackageLayoutMode) => {
@@ -943,23 +940,24 @@ export function AgencyPackagesHub() {
         </>
       )}
 
-      {editPackage ? (
-        <AgencyPackageEditModal
-          packageId={editPackage.package_id}
-          packageName={editPackage.package_name ?? editPackage.package_id}
+      {editPackageId ? (
+        <PackageBuildWizard
+          variant="proposal"
+          editPackageId={editPackageId}
+          onEditPackageConsumed={closePackageEdit}
+          packageTypes={packageTypes}
+          slots={packageBuilderSlots}
           packages={packages}
+          packageTiers={packageTiers}
           solutions={solutions}
           tiers={tiers}
           tasks={tasks}
-          tierPricing={pricing}
-          packageTiers={packageTiers}
-          implementerHourGroups={implementerHourGroups}
-          tierPricingMathConfig={normalizeTierPricingMathConfig(tierPricingMathConfig)}
-          onClose={closePackageEdit}
-          onSaved={load}
-          setOpErr={setOpErr}
-          setOpOk={setOpOk}
-          logAudit={logAudit}
+          pricing={pricing}
+          wizardTitle="Edit package components"
+          onReload={load}
+          onCreated={() => {
+            void load();
+          }}
         />
       ) : null}
     </div>

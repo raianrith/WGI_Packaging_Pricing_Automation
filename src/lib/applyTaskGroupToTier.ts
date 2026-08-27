@@ -28,6 +28,7 @@ export async function applyTaskGroupToTier(params: {
   lines: TaskGroupLineRow[];
   allTasks: TaskRow[];
   logAudit: LogAudit;
+  onProgress?: (update: { current: number; total: number; label?: string }) => void;
 }): Promise<{ ok: true; created: number } | { ok: false; message: string }> {
   const client = getSupabase();
   if (!client) return { ok: false, message: "Supabase client not available." };
@@ -72,6 +73,8 @@ export async function applyTaskGroupToTier(params: {
   };
 
   try {
+    const total = sorted.length;
+    params.onProgress?.({ current: 0, total, label: `Adding ${total} task(s) from template…` });
     for (let lineIdx = 0; lineIdx < sorted.length; lineIdx++) {
       const line = sorted[lineIdx]!;
       baseSort += 1;
@@ -124,6 +127,11 @@ export async function applyTaskGroupToTier(params: {
       });
       insertedTaskIds.push(id);
       knownTaskIds.push({ task_id: id });
+      params.onProgress?.({
+        current: lineIdx + 1,
+        total,
+        label: `Adding task ${lineIdx + 1} of ${total}…`,
+      });
     }
 
     await params.logAudit(client, {
@@ -137,6 +145,7 @@ export async function applyTaskGroupToTier(params: {
       }),
     });
 
+    params.onProgress?.({ current: total, total, label: "Updating tier pricing…" });
     const pricingSync = await syncTierPricingFromTasks({
       client,
       tierIds: params.solution_tier_id,

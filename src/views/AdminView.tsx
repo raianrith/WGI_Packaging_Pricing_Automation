@@ -99,7 +99,7 @@ function rowJson(row: object): Record<string, unknown> {
 }
 
 export function AdminView() {
-  const { setOpErr, setOpOk, toastError, toastNote } = useToast();
+  const { setOpErr, setOpOk, clearOpErr, clearOpOk, toastError, toastNote } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const { section, mode } = useMemo(
@@ -290,11 +290,11 @@ export function AdminView() {
 
   const goAdmin = useCallback(
     (nextSection: AdminSectionId, nextMode?: AdminModeId | null) => {
-      setOpErr(null);
-      setOpOk(null);
+      clearOpErr();
+      clearOpOk();
       navigate(adminPath(nextSection, nextMode ?? null));
     },
-    [navigate, setOpErr, setOpOk]
+    [navigate, clearOpErr, clearOpOk]
   );
 
   useEffect(() => {
@@ -487,8 +487,8 @@ export function AdminView() {
                         }
                         title={item.hint}
                         onClick={() => {
-                          setOpErr(null);
-                          setOpOk(null);
+                          clearOpErr();
+                          clearOpOk();
                         }}
                       >
                         <span className="admin-side-nav__link-label">{item.label}</span>

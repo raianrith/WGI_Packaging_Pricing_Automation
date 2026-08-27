@@ -30,6 +30,7 @@ import {
   catalogUsageFromQuantities,
   emptyTierQuantities,
   tierIdsFromQuantities,
+  tierQuantitiesFromLinks,
   totalTierLineCount,
   type PackageTierQuantities,
 } from "../lib/packageTierQuantities";
@@ -49,19 +50,40 @@ import {
   packageTierDiscountSummary,
   slotTierShortLabel,
 } from "../lib/packageTierDiscounts";
+import { parseTierOverrides, withClientFacingLabels } from "../lib/packageTierOverrides";
+import {
+  parsePricingOverrides,
+  parseTaskOverridesMap,
+} from "../lib/packagePricingTaskOverrides";
+import { parseTaskExtensions } from "../lib/packageTaskLayout";
 import { getSupabase } from "../lib/supabase";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
-import { useToast } from "../context/ToastContext";
+import { useToast, useToastBusy } from "../context/ToastContext";
 import type {
   Package,
   PackageBuilderPackageType,
   PackageBuilderSlotBucket,
   PackageBuilderSlotTemplate,
+  PackageSolutionTier,
   Solution,
   SolutionTier,
   SolutionTierPricing,
   TaskRow,
 } from "../types";
+
+/** Per vault tier id → one client-facing label per quantity unit. */
+type ClientFacingLabelMap = Record<string, string[]>;
+
+function labelsForTier(map: ClientFacingLabelMap, tierId: string): string[] {
+  return map[tierId] ?? [];
+}
+
+function padLabelsToQty(labels: readonly string[], qty: number, fallback: string): string[] {
+  const fb = fallback.trim() || "Component";
+  const next = labels.map((s) => s.trim()).filter(Boolean);
+  while (next.length < qty) next.push(fb);
+  return next.slice(0, Math.max(0, qty));
+}
 
 function sortId(a: string, b: string): number {
   const pa = a.split("-").map(Number);
@@ -207,6 +229,8 @@ export type PackageBuildWizardProps = {
   packageTypes: PackageBuilderPackageType[];
   slots: PackageBuilderSlotTemplate[];
   packages: Package[];
+  /** Required when editing an existing package (`editPackageId`). */
+  packageTiers?: PackageSolutionTier[];
   solutions: Solution[];
   tiers: SolutionTier[];
   tasks: TaskRow[];
@@ -218,8 +242,69 @@ export type PackageBuildWizardProps = {
   /** When set (e.g. from Proposal Builder), open the wizard for this package family. */
   launchPackageTypeId?: string | null;
   onLaunchPackageTypeConsumed?: () => void;
+  /** Open the wizard to edit components of an existing Build-a-Package package. */
+  editPackageId?: string | null;
+  onEditPackageConsumed?: () => void;
   wizardTitle?: string;
 };
+
+function resolvePackageTypeForEdit(
+  pkg: Package,
+  packageTypes: readonly PackageBuilderPackageType[]
+): PackageBuilderPackageType | null {
+  const cat = (pkg.package_category ?? "").trim().toLowerCase();
+  if (!cat) return null;
+  return packageTypes.find((t) => t.name.trim().toLowerCase() === cat) ?? null;
+}
+
+/** Best-effort slot match when packages do not store the builder slot id. */
+function resolveSlotForEdit(
+  pkg: Package,
+  packageType: PackageBuilderPackageType,
+  slots: readonly PackageBuilderSlotTemplate[],
+  selectedTierIds: readonly string[]
+): PackageBuilderSlotTemplate | null {
+  const typeSlots = slotsForPackageType([...slots], packageType.id);
+  if (typeSlots.length === 0) return null;
+  if (typeSlots.length === 1) return typeSlots[0]!;
+
+  const hourPct =
+    pkg.package_hour_discount_pct != null && Number.isFinite(Number(pkg.package_hour_discount_pct))
+      ? Number(pkg.package_hour_discount_pct)
+      : null;
+
+  let best: PackageBuilderSlotTemplate | null = null;
+  let bestScore = -1;
+  for (const slot of typeSlots) {
+    let score = 0;
+    const summary = packageTierDiscountSummary(
+      slot.label,
+      packageType.name,
+      slot.hour_discount_pct
+    );
+    if (hourPct != null && Math.abs(summary.hourPct - hourPct) < 0.51) score += 40;
+    if (slot.hour_discount_pct != null && hourPct != null && Math.abs(slot.hour_discount_pct - hourPct) < 0.51) {
+      score += 20;
+    }
+    if (slot.allowed_solution_tier_ids.length > 0) {
+      const allowed = new Set(slot.allowed_solution_tier_ids);
+      const allAllowed = selectedTierIds.every((id) => allowed.has(id));
+      if (allAllowed) score += 30;
+      else score -= 10;
+    } else {
+      score += 5;
+    }
+    const pre = new Set(slot.preselected_tiers.map((p) => p.solution_tier_id));
+    for (const id of selectedTierIds) {
+      if (pre.has(id)) score += 2;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = slot;
+    }
+  }
+  return best ?? typeSlots[0]!;
+}
 
 function WizardSolutionTierTable({
   rows,
@@ -239,11 +324,11 @@ function WizardSolutionTierTable({
   pricingByTierId: Map<string, SolutionTierPricing>;
   tasks: TaskRow[];
   solutionById: Map<string, Solution>;
-  clientFacingLabels: Record<string, string>;
+  clientFacingLabels: ClientFacingLabelMap;
   minQtyForTier: (tierId: string) => number;
   onDecrease: (tierId: string) => void;
   onIncrease: (tier: SolutionTier, solutionName: string) => void;
-  onEditLabel: (tier: SolutionTier, solutionName: string) => void;
+  onEditLabel: (tier: SolutionTier, solutionName: string, instanceIndex: number) => void;
   emptyMessage?: string;
 }) {
   if (rows.length === 0) {
@@ -281,6 +366,13 @@ function WizardSolutionTierTable({
               const lineHours = h != null ? h * Math.max(qty, 1) : null;
               const lineSell = usd != null && qty > 0 ? usd * qty : null;
               const locked = minQty > 0;
+              const fallbackLabel =
+                sol?.solution_name?.trim() || t.solution_tier_name.trim() || t.solution_tier_id;
+              const instanceLabels = padLabelsToQty(
+                labelsForTier(clientFacingLabels, t.solution_tier_id),
+                qty,
+                fallbackLabel
+              );
               return (
                 <tr
                   key={t.solution_tier_id}
@@ -321,23 +413,28 @@ function WizardSolutionTierTable({
                     <div className="agency-pkg-wizard__sol-cell">
                       <span>{sol?.solution_name ?? t.solution_id}</span>
                       {qty > 0 ? (
-                        <button
-                          type="button"
-                          className="agency-pkg-wizard__label-chip"
-                          onClick={() =>
-                            onEditLabel(t, sol?.solution_name ?? t.solution_tier_name)
-                          }
-                          title="Edit client facing label"
-                        >
-                          <span className="agency-pkg-wizard__label-chip-kicker">
-                            Client label
-                          </span>
-                          <span className="agency-pkg-wizard__label-chip-value">
-                            {clientFacingLabels[t.solution_tier_id]?.trim() ||
-                              sol?.solution_name ||
-                              t.solution_tier_name}
-                          </span>
-                        </button>
+                        <div className="agency-pkg-wizard__label-chips">
+                          {instanceLabels.map((label, idx) => (
+                            <button
+                              key={`${t.solution_tier_id}-label-${idx}`}
+                              type="button"
+                              className="agency-pkg-wizard__label-chip"
+                              onClick={() =>
+                                onEditLabel(t, sol?.solution_name ?? t.solution_tier_name, idx)
+                              }
+                              title={
+                                qty > 1
+                                  ? `Edit client facing label (${idx + 1} of ${qty})`
+                                  : "Edit client facing label"
+                              }
+                            >
+                              <span className="agency-pkg-wizard__label-chip-kicker">
+                                {qty > 1 ? `Client label ${idx + 1}` : "Client label"}
+                              </span>
+                              <span className="agency-pkg-wizard__label-chip-value">{label}</span>
+                            </button>
+                          ))}
+                        </div>
                       ) : null}
                     </div>
                   </td>
@@ -367,6 +464,7 @@ export function PackageBuildWizard({
   packageTypes,
   slots,
   packages,
+  packageTiers = [],
   solutions,
   tiers,
   tasks,
@@ -376,27 +474,34 @@ export function PackageBuildWizard({
   initialPackageTypeId = null,
   launchPackageTypeId = null,
   onLaunchPackageTypeConsumed,
+  editPackageId = null,
+  onEditPackageConsumed,
   wizardTitle = "Build a Package",
 }: PackageBuildWizardProps) {
   const { toastError, toastNote } = useToast();
   const startedFromDirectoryRef = useRef(false);
+  const editHydratedRef = useRef<string | null>(null);
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null);
   const [wizStep, setWizStep] = useState<WizardStep>(1);
   const [selectedPackageType, setSelectedPackageType] = useState<PackageBuilderPackageType | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<PackageBuilderSlotTemplate | null>(null);
   const [tierPickQty, setTierPickQty] = useState<PackageTierQuantities>(() => emptyTierQuantities());
-  const [clientFacingLabels, setClientFacingLabels] = useState<Record<string, string>>({});
+  const [clientFacingLabels, setClientFacingLabels] = useState<ClientFacingLabelMap>({});
   const [labelPrompt, setLabelPrompt] = useState<{
     tierId: string;
     solutionName: string;
     tierName: string;
     draft: string;
     mode: "add" | "edit";
+    instanceIndex: number;
   } | null>(null);
   const [tierSearch, setTierSearch] = useState("");
+  const [additionalTierSearch, setAdditionalTierSearch] = useState("");
   const [pkgName, setPkgName] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
+  useToastBusy(createBusy, "Creating package…");
   const [expandedFamilyTypeId, setExpandedFamilyTypeId] = useState<string | null>(null);
 
   const familyDetailType = useMemo(
@@ -455,8 +560,8 @@ export function PackageBuildWizard({
   }, [tiers]);
 
   const matchesTierSearch = useCallback(
-    (t: SolutionTier) => {
-      const q = tierSearch.trim().toLowerCase();
+    (t: SolutionTier, query: string) => {
+      const q = query.trim().toLowerCase();
       if (!q) return true;
       const sol = solutionById.get(t.solution_id);
       const solName = sol?.solution_name?.toLowerCase() ?? "";
@@ -467,18 +572,21 @@ export function PackageBuildWizard({
         solName.includes(q)
       );
     },
-    [tierSearch, solutionById]
+    [solutionById]
   );
+
+  const hasSelectionSections =
+    (selectedSlot?.preselected_tiers.length ?? 0) > 0 || (selectedSlot?.buckets.length ?? 0) > 0;
 
   const alwaysIncludedRows = useMemo(() => {
     if (!selectedSlot) return [] as SolutionTier[];
     const rows: SolutionTier[] = [];
     for (const p of selectedSlot.preselected_tiers) {
       const t = tierById.get(p.solution_tier_id);
-      if (t && matchesTierSearch(t)) rows.push(t);
+      if (t && matchesTierSearch(t, tierSearch)) rows.push(t);
     }
     return rows;
-  }, [selectedSlot, tierById, matchesTierSearch]);
+  }, [selectedSlot, tierById, matchesTierSearch, tierSearch]);
 
   const bucketSections = useMemo(() => {
     if (!selectedSlot) return [] as { bucket: PackageBuilderSlotBucket; rows: SolutionTier[] }[];
@@ -486,25 +594,30 @@ export function PackageBuildWizard({
       const rows: SolutionTier[] = [];
       for (const tid of bucket.member_tier_ids) {
         const t = tierById.get(tid);
-        if (t && matchesTierSearch(t)) rows.push(t);
+        if (t && matchesTierSearch(t, tierSearch)) rows.push(t);
       }
       return { bucket, rows };
     });
-  }, [selectedSlot, tierById, matchesTierSearch]);
+  }, [selectedSlot, tierById, matchesTierSearch, tierSearch]);
 
   /** Free picks: allow-list filtered, excluding locked + bucket members. */
   const additionalTierRows = useMemo(() => {
     if (!selectedSlot) return [] as SolutionTier[];
     const reserved = reservedSolutionTierIds(selectedSlot);
+    const search = hasSelectionSections ? additionalTierSearch : tierSearch;
     return [...tiers]
       .filter((t) => !reserved.has(t.solution_tier_id))
       .filter((t) => isVaultTierAllowedForSlot(selectedSlot, t.solution_tier_id))
-      .filter(matchesTierSearch)
+      .filter((t) => matchesTierSearch(t, search))
       .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
-  }, [tiers, selectedSlot, matchesTierSearch]);
-
-  const hasSelectionSections =
-    (selectedSlot?.preselected_tiers.length ?? 0) > 0 || (selectedSlot?.buckets.length ?? 0) > 0;
+  }, [
+    tiers,
+    selectedSlot,
+    matchesTierSearch,
+    additionalTierSearch,
+    tierSearch,
+    hasSelectionSections,
+  ]);
 
   const usage = useMemo(
     () => catalogUsageFromQuantities(tierPickQty, pricingByTierId, tasks),
@@ -594,6 +707,7 @@ export function PackageBuildWizard({
   ]);
 
   const beginPackageBuild = useCallback((packageType: PackageBuilderPackageType) => {
+    setEditingPackageId(null);
     setWizardOpen(true);
     setWizStep(2);
     setSelectedPackageType({ ...packageType });
@@ -602,8 +716,61 @@ export function PackageBuildWizard({
     setClientFacingLabels({});
     setLabelPrompt(null);
     setTierSearch("");
+    setAdditionalTierSearch("");
     setPkgName(`${packageType.name} package`);
   }, []);
+
+  const beginPackageEdit = useCallback(
+    (pkg: Package): boolean => {
+      const packageType = resolvePackageTypeForEdit(pkg, packageTypes);
+      if (!packageType) {
+        toastError(
+          "This package wasn’t built with Build a Package, so its components can’t be edited here."
+        );
+        return false;
+      }
+      const links = packageTiers.filter((l) => l.package_id === pkg.package_id);
+      const qty = tierQuantitiesFromLinks(links);
+      const selectedIds = tierIdsFromQuantities(qty);
+      const slot = resolveSlotForEdit(pkg, packageType, slots, selectedIds);
+      if (!slot) {
+        toastError("No Build a Package tier template is configured for this package family.");
+        return false;
+      }
+
+      const labels: ClientFacingLabelMap = {};
+      for (const link of links) {
+        const t = tiers.find((x) => x.solution_tier_id === link.solution_tier_id);
+        const sol = t ? solutions.find((s) => s.solution_id === t.solution_id) : null;
+        const fallback =
+          sol?.solution_name?.trim() ||
+          t?.solution_tier_name?.trim() ||
+          link.solution_tier_id;
+        const q = qty[link.solution_tier_id] ?? 1;
+        const ov = parseTierOverrides(link.tier_overrides);
+        labels[link.solution_tier_id] = padLabelsToQty(
+          ov.client_facing_labels ??
+            (ov.solution_tier_name?.trim() ? [ov.solution_tier_name.trim()] : []),
+          q,
+          fallback
+        );
+      }
+
+      setEditingPackageId(pkg.package_id);
+      setWizardOpen(true);
+      setWizStep(3);
+      setSelectedPackageType({ ...packageType });
+      setSelectedSlot({ ...slot });
+      setTierPickQty(qty);
+      setClientFacingLabels(labels);
+      setLabelPrompt(null);
+      setTierSearch("");
+      setAdditionalTierSearch("");
+      setPkgName(pkg.package_name?.trim() || `${packageType.name} package`);
+      return true;
+    },
+    [packageTypes, packageTiers, slots, tiers, solutions, toastError]
+  );
 
   useEffect(() => {
     if (!initialPackageTypeId || startedFromDirectoryRef.current) return;
@@ -624,26 +791,56 @@ export function PackageBuildWizard({
     onLaunchPackageTypeConsumed?.();
   }, [launchPackageTypeId, packageTypes, beginPackageBuild, onLaunchPackageTypeConsumed]);
 
+  useEffect(() => {
+    if (!editPackageId) {
+      editHydratedRef.current = null;
+      return;
+    }
+    if (editHydratedRef.current === editPackageId) return;
+    const pkg = packages.find((p) => p.package_id === editPackageId);
+    if (!pkg) {
+      toastError(`Package ${editPackageId} was not found in the catalog.`);
+      onEditPackageConsumed?.();
+      return;
+    }
+    const ok = beginPackageEdit(pkg);
+    if (!ok) {
+      onEditPackageConsumed?.();
+      return;
+    }
+    editHydratedRef.current = editPackageId;
+  }, [editPackageId, packages, beginPackageEdit, onEditPackageConsumed, toastError]);
+
   const closeWizard = () => {
     if (createBusy) return;
+    const wasEditing = editingPackageId != null;
     setWizardOpen(false);
+    setEditingPackageId(null);
+    if (wasEditing || editPackageId) {
+      editHydratedRef.current = null;
+      onEditPackageConsumed?.();
+    }
   };
 
   const applySlotSelection = useCallback(
     (slot: PackageBuilderSlotTemplate) => {
       setSelectedSlot({ ...slot });
-      setTierPickQty(seedQtyFromPreselected(slot));
-      const labels: Record<string, string> = {};
+      const seeded = seedQtyFromPreselected(slot);
+      setTierPickQty(seeded);
+      const labels: ClientFacingLabelMap = {};
       for (const p of slot.preselected_tiers) {
         const t = tiers.find((x) => x.solution_tier_id === p.solution_tier_id);
         const sol = t ? solutions.find((s) => s.solution_id === t.solution_id) : null;
-        labels[p.solution_tier_id] =
+        const fallback =
           sol?.solution_name?.trim() ||
           t?.solution_tier_name?.trim() ||
           p.solution_tier_id;
+        const q = seeded[p.solution_tier_id] ?? p.default_qty ?? 1;
+        labels[p.solution_tier_id] = padLabelsToQty([], q, fallback);
       }
       setClientFacingLabels(labels);
       setLabelPrompt(null);
+      setAdditionalTierSearch("");
     },
     [tiers, solutions]
   );
@@ -698,15 +895,18 @@ export function PackageBuildWizard({
       }
 
       const nextQty = quantities[tierId] ?? 0;
-      if (nextQty <= 0 && minQty <= 0) {
-        queueMicrotask(() => {
-          setClientFacingLabels((labels) => {
+      queueMicrotask(() => {
+        setClientFacingLabels((labels) => {
+          if (nextQty <= 0 && minQty <= 0) {
             if (!(tierId in labels)) return labels;
             const { [tierId]: _, ...rest } = labels;
             return rest;
-          });
+          }
+          const curLabels = labels[tierId] ?? [];
+          if (curLabels.length <= nextQty) return labels;
+          return { ...labels, [tierId]: curLabels.slice(0, nextQty) };
         });
-      }
+      });
       return quantities;
     });
   };
@@ -732,18 +932,16 @@ export function PackageBuildWizard({
         return;
       }
     }
-    if (currentQty > 0) {
-      changeTierQty(tier.solution_tier_id, 1);
-      return;
-    }
-    // Bucket gate before label prompt
-    for (const b of selectedSlot.buckets) {
-      if (!b.member_tier_ids.includes(tier.solution_tier_id)) continue;
-      if (bucketSelectedCount(b, tierPickQty) >= b.pick_count) {
-        toastNote(
-          `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
-        );
-        return;
+    // Bucket gate before label prompt (only for first pick of this tier)
+    if (currentQty <= 0) {
+      for (const b of selectedSlot.buckets) {
+        if (!b.member_tier_ids.includes(tier.solution_tier_id)) continue;
+        if (bucketSelectedCount(b, tierPickQty) >= b.pick_count) {
+          toastNote(
+            `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
+          );
+          return;
+        }
       }
     }
     const defaultLabel = solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
@@ -753,18 +951,22 @@ export function PackageBuildWizard({
       tierName: tier.solution_tier_name,
       draft: defaultLabel,
       mode: "add",
+      instanceIndex: currentQty,
     });
   };
 
-  const openEditLabel = (tier: SolutionTier, solutionName: string) => {
-    const existing = clientFacingLabels[tier.solution_tier_id]?.trim();
-    const defaultLabel = existing || solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
+  const openEditLabel = (tier: SolutionTier, solutionName: string, instanceIndex: number) => {
+    const qty = tierPickQty[tier.solution_tier_id] ?? 0;
+    const fallback = solutionName.trim() || tier.solution_tier_name.trim() || tier.solution_tier_id;
+    const labels = padLabelsToQty(labelsForTier(clientFacingLabels, tier.solution_tier_id), qty, fallback);
+    const idx = Math.max(0, Math.min(instanceIndex, Math.max(0, labels.length - 1)));
     setLabelPrompt({
       tierId: tier.solution_tier_id,
       solutionName: solutionName.trim() || tier.solution_tier_name,
       tierName: tier.solution_tier_name,
-      draft: defaultLabel,
+      draft: labels[idx] || fallback,
       mode: "edit",
+      instanceIndex: idx,
     });
   };
 
@@ -775,9 +977,25 @@ export function PackageBuildWizard({
       labelPrompt.solutionName.trim() ||
       labelPrompt.tierName.trim() ||
       labelPrompt.tierId;
-    setClientFacingLabels((prev) => ({ ...prev, [labelPrompt.tierId]: label }));
     if (labelPrompt.mode === "add") {
+      setClientFacingLabels((prev) => {
+        const cur = [...(prev[labelPrompt.tierId] ?? [])];
+        while (cur.length < labelPrompt.instanceIndex) {
+          cur.push(labelPrompt.solutionName.trim() || labelPrompt.tierName.trim() || labelPrompt.tierId);
+        }
+        cur[labelPrompt.instanceIndex] = label;
+        return { ...prev, [labelPrompt.tierId]: cur };
+      });
       changeTierQty(labelPrompt.tierId, 1);
+    } else {
+      setClientFacingLabels((prev) => {
+        const cur = [...(prev[labelPrompt.tierId] ?? [])];
+        while (cur.length <= labelPrompt.instanceIndex) {
+          cur.push(labelPrompt.solutionName.trim() || labelPrompt.tierName.trim() || labelPrompt.tierId);
+        }
+        cur[labelPrompt.instanceIndex] = label;
+        return { ...prev, [labelPrompt.tierId]: cur };
+      });
     }
     setLabelPrompt(null);
   };
@@ -803,11 +1021,126 @@ export function PackageBuildWizard({
     setCreateBusy(true);
     try {
       const today = todayISODate();
-      const newId = nextAutoPackageId(packages);
       const hourPct = wizardTierDiscount.hourPct;
       const sellPct = 0;
+      const isEdit = Boolean(editingPackageId);
+      const packageId = isEdit ? editingPackageId! : nextAutoPackageId(packages);
+
+      const existingLinks = isEdit
+        ? packageTiers.filter((l) => l.package_id === packageId)
+        : [];
+      const existingByTier = new Map(existingLinks.map((l) => [l.solution_tier_id, l]));
+
+      const payloadByTier: Record<string, ReturnType<typeof emptyPackageLinkPayload>> = {};
+      for (const tid of wantedIds) {
+        const existing = existingByTier.get(tid);
+        const payload = existing
+          ? {
+              tier_overrides: parseTierOverrides(existing.tier_overrides),
+              pricing_overrides: parsePricingOverrides(existing.pricing_overrides),
+              task_overrides: parseTaskOverridesMap(existing.task_overrides),
+              task_extensions: parseTaskExtensions(existing.task_extensions),
+            }
+          : emptyPackageLinkPayload();
+        const t = tiers.find((x) => x.solution_tier_id === tid);
+        const sol = t ? solutions.find((s) => s.solution_id === t.solution_id) : null;
+        const fallback =
+          sol?.solution_name?.trim() ||
+          t?.solution_tier_name?.trim() ||
+          tid;
+        const q = tierPickQty[tid] ?? 1;
+        const labels = padLabelsToQty(labelsForTier(clientFacingLabels, tid), q, fallback);
+        payload.tier_overrides = withClientFacingLabels(payload.tier_overrides, labels);
+        payloadByTier[tid] = payload;
+      }
+
+      if (isEdit) {
+        const beforePkg = packages.find((p) => p.package_id === packageId) ?? null;
+        const updateRow: Partial<Package> = {
+          package_name: name,
+          package_modified_date: today,
+          package_category: selectedPackageType?.name?.trim() || null,
+          package_hour_discount_pct: hourPct,
+          package_sell_discount_pct: sellPct,
+          ...(selectedSlot
+            ? {
+                package_pricing_overrides: packagePricingOverridesFromSlot(selectedSlot),
+              }
+            : {}),
+        };
+        const dbUpdate = {
+          ...updateRow,
+          ...(updateRow.package_pricing_overrides
+            ? {
+                package_pricing_overrides: sanitizePricingOverridesForDb(
+                  updateRow.package_pricing_overrides
+                ),
+              }
+            : {}),
+        };
+        const { error: updErr } = await client
+          .from("packages")
+          .update(dbUpdate)
+          .eq("package_id", packageId);
+        if (updErr) {
+          toastError(friendlyMutationMessage(updErr.message));
+          return;
+        }
+        const assignErr = await applyPackageTierMembership(
+          client,
+          packageId,
+          tierPickQty,
+          payloadByTier
+        );
+        if (assignErr) {
+          toastError(assignErr);
+          notifyPackagingDataChanged();
+          await onReload?.();
+          return;
+        }
+        const afterPkg: Package = {
+          ...(beforePkg ?? {
+            package_id: packageId,
+            package_name: name,
+            package_create_date: today,
+            package_modified_date: today,
+          }),
+          ...updateRow,
+          package_id: packageId,
+          package_name: name,
+          package_modified_date: today,
+        };
+        const { error: auditErr } = await insertAuditLog(client, {
+          entityType: "packages",
+          entityId: packageId,
+          action: "update",
+          before: beforePkg
+            ? (JSON.parse(JSON.stringify(beforePkg)) as Record<string, unknown>)
+            : null,
+          after: {
+            ...(JSON.parse(JSON.stringify(afterPkg)) as Record<string, unknown>),
+            solution_tier_ids: wantedIds,
+            solution_tier_quantities: tierPickQty,
+          },
+        });
+        if (auditErr) {
+          toastNote(
+            `Package updated, but change history was not recorded (${auditErr}). Run the audit_log migration in Supabase if this persists.`
+          );
+        }
+        notifyPackagingDataChanged();
+        toastNote(`Package ${packageId} updated (${tierLineCount} tier line(s)).`);
+        setWizardOpen(false);
+        setEditingPackageId(null);
+        editHydratedRef.current = null;
+        await onReload?.();
+        onCreated(packageId, afterPkg);
+        onEditPackageConsumed?.();
+        return;
+      }
+
       const row: Package = {
-        package_id: newId,
+        package_id: packageId,
         package_name: name,
         package_create_date: today,
         package_modified_date: today,
@@ -834,19 +1167,10 @@ export function PackageBuildWizard({
         toastError(friendlyMutationMessage(insErr.message));
         return;
       }
-      const payloadByTier: Record<string, ReturnType<typeof emptyPackageLinkPayload>> = {};
-      for (const tid of wantedIds) {
-        const label = clientFacingLabels[tid]?.trim();
-        const payload = emptyPackageLinkPayload();
-        if (label) {
-          payload.tier_overrides = { solution_tier_name: label };
-        }
-        payloadByTier[tid] = payload;
-      }
-      const assignErr = await applyPackageTierMembership(client, newId, tierPickQty, payloadByTier);
+      const assignErr = await applyPackageTierMembership(client, packageId, tierPickQty, payloadByTier);
       if (assignErr) {
         toastError(
-          `${assignErr} Package ${newId} was created; fix tier links in Admin → Package Builder if needed.`
+          `${assignErr} Package ${packageId} was created; fix tier links in Admin → Package Builder if needed.`
         );
         notifyPackagingDataChanged();
         await onReload?.();
@@ -854,7 +1178,7 @@ export function PackageBuildWizard({
       }
       const { error: auditErr } = await insertAuditLog(client, {
         entityType: "packages",
-        entityId: newId,
+        entityId: packageId,
         action: "insert",
         before: null,
         after: {
@@ -869,10 +1193,10 @@ export function PackageBuildWizard({
         );
       }
       notifyPackagingDataChanged();
-      toastNote(`Package ${newId} created (${tierLineCount} tier line(s)).`);
+      toastNote(`Package ${packageId} created (${tierLineCount} tier line(s)).`);
       setWizardOpen(false);
       await onReload?.();
-      onCreated(newId, row);
+      onCreated(packageId, row);
     } finally {
       setCreateBusy(false);
     }
@@ -1059,7 +1383,7 @@ export function PackageBuildWizard({
           >
             <header className="agency-pkg-wizard__header">
               <h2 id="pkg-wiz-title" className="agency-pkg-wizard__title">
-                {wizardTitle}
+                {editingPackageId ? "Edit package components" : wizardTitle}
               </h2>
               <WizardStepper step={wizStep} />
             </header>
@@ -1129,7 +1453,11 @@ export function PackageBuildWizard({
                               : "agency-pkg-wizard__choice"
                           }
                           onClick={() => {
-                            applySlotSelection(s);
+                            if (editingPackageId) {
+                              setSelectedSlot({ ...s });
+                            } else {
+                              applySlotSelection(s);
+                            }
                           }}
                         >
                           <span className="agency-pkg-wizard__choice-title">
@@ -1336,6 +1664,33 @@ export function PackageBuildWizard({
                         </p>
                       ) : null}
                     </header>
+                    {hasSelectionSections ? (
+                      <div className="agency-nav-sol-filter agency-pkg-wizard__filter agency-pkg-wizard__filter--section">
+                        <label className="agency-nav-sol-filter__label" htmlFor="wiz-additional-tier-search">
+                          Additional components
+                        </label>
+                        <div className="agency-nav-sol-filter__row">
+                          <input
+                            id="wiz-additional-tier-search"
+                            type="search"
+                            className="agency-nav-sol-filter__input"
+                            value={additionalTierSearch}
+                            onChange={(e) => setAdditionalTierSearch(e.target.value)}
+                            placeholder="Filter by solution or tier name…"
+                            autoComplete="off"
+                          />
+                          {additionalTierSearch ? (
+                            <button
+                              type="button"
+                              className="agency-nav-sol-filter__clear"
+                              onClick={() => setAdditionalTierSearch("")}
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <WizardSolutionTierTable
                       rows={additionalTierRows}
                       tierPickQty={tierPickQty}
@@ -1598,16 +1953,18 @@ export function PackageBuildWizard({
                   <button type="button" className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary" onClick={closeWizard}>
                     Cancel
                   </button>
-                  <button
-                    type="button"
-                    className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
-                    onClick={() => {
-                      setWizardOpen(false);
-                      setSelectedSlot(null);
-                    }}
-                  >
-                    Change template
-                  </button>
+                  {!editingPackageId ? (
+                    <button
+                      type="button"
+                      className="agency-pkg-wizard__btn agency-pkg-wizard__btn--secondary"
+                      onClick={() => {
+                        setWizardOpen(false);
+                        setSelectedSlot(null);
+                      }}
+                    >
+                      Change template
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="agency-pkg-wizard__btn agency-pkg-wizard__btn--primary"
@@ -1678,7 +2035,13 @@ export function PackageBuildWizard({
                     disabled={!canCreate}
                     onClick={() => void createPackage()}
                   >
-                    {createBusy ? "Creating…" : "Create package"}
+                    {createBusy
+                      ? editingPackageId
+                        ? "Saving…"
+                        : "Creating…"
+                      : editingPackageId
+                        ? "Save package"
+                        : "Create package"}
                   </button>
                 </>
               )}
@@ -1706,7 +2069,11 @@ export function PackageBuildWizard({
               <div className="agency-pkg-label-modal__head-copy">
                 <p className="agency-pkg-label-modal__eyebrow">Solution component</p>
                 <h3 id="agency-pkg-label-title" className="agency-pkg-label-modal__title">
-                  Client Facing Label
+                  {labelPrompt.mode === "add" && labelPrompt.instanceIndex > 0
+                    ? `Client Facing Label (${labelPrompt.instanceIndex + 1})`
+                    : labelPrompt.mode === "edit" && labelPrompt.instanceIndex > 0
+                      ? `Client Facing Label (${labelPrompt.instanceIndex + 1})`
+                      : "Client Facing Label"}
                 </h3>
                 <p className="agency-pkg-label-modal__sub">
                   {labelPrompt.solutionName}
@@ -1742,8 +2109,9 @@ export function PackageBuildWizard({
                 />
               </label>
               <p className="agency-pkg-label-modal__hint">
-                Defaults to the solution name. Change it if you want a different client-facing title for this
-                package component.
+                {labelPrompt.mode === "add" && labelPrompt.instanceIndex > 0
+                  ? `This is unit ${labelPrompt.instanceIndex + 1} of the same solution. Give it its own client-facing title.`
+                  : "Defaults to the solution name. Change it if you want a different client-facing title for this package component."}
               </p>
             </div>
             <footer className="agency-pkg-label-modal__footer">

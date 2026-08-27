@@ -52,6 +52,8 @@ type Props = {
   formatUsd: (n: number | null | undefined) => string;
   addedLines: ProposalAddedLine[];
   onRemoveAdded: (key: string) => void;
+  onEditAdded?: (key: string) => void;
+  onDuplicateAdded?: (key: string) => void;
   onAddAddOns?: (parentKey: string, tierIds: string[]) => void;
   addonGroups?: ModuleAddOnGroup[];
   copyFromScenarios?: ScenarioCopySource[];
@@ -85,6 +87,8 @@ export function ProposalConfigurablePackagesPanel({
   formatUsd,
   addedLines,
   onRemoveAdded,
+  onEditAdded,
+  onDuplicateAdded,
   onAddAddOns,
   addonGroups,
   copyFromScenarios,
@@ -222,6 +226,8 @@ export function ProposalConfigurablePackagesPanel({
           targetPhaseTitle={targetPhaseTitle}
           lines={addedLines}
           onRemove={onRemoveAdded}
+          onEdit={onEditAdded}
+          onDuplicate={onDuplicateAdded}
           copyFromScenarios={copyFromScenarios}
           onCopyFromScenario={onCopyFromScenario}
           addonGroups={addonGroups}

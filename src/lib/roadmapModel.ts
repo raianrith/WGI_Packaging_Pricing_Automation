@@ -197,6 +197,62 @@ export function budgetVsScenarioStatus(subtotal: number, budget: number): Budget
 
 export type ReorderCardDirection = "up" | "down";
 
+/**
+ * Keep package module add-ons immediately after their parent solution in phase order.
+ * Parent order follows `orderedKeys` (from drag); sibling add-on order also follows `orderedKeys`.
+ */
+export function clusterPhaseCardKeysWithAddons(
+  phaseCards: readonly RoadmapCard[],
+  orderedKeys: readonly string[]
+): string[] {
+  if (phaseCards.length === 0) return [];
+  const byKey = new Map(phaseCards.map((c) => [c.key, c]));
+  const phaseKeySet = new Set(byKey.keys());
+
+  const childrenByParent = new Map<string, string[]>();
+  for (const key of orderedKeys) {
+    const c = byKey.get(key);
+    if (!c) continue;
+    const parentKey = c.addonOfCardKey;
+    if (!parentKey || !phaseKeySet.has(parentKey)) continue;
+    const list = childrenByParent.get(parentKey) ?? [];
+    list.push(key);
+    childrenByParent.set(parentKey, list);
+  }
+  // Any add-ons missing from orderedKeys (shouldn't happen) — append in prior phase order
+  for (const c of phaseCards) {
+    const parentKey = c.addonOfCardKey;
+    if (!parentKey || !phaseKeySet.has(parentKey)) continue;
+    const list = childrenByParent.get(parentKey) ?? [];
+    if (!list.includes(c.key)) {
+      list.push(c.key);
+      childrenByParent.set(parentKey, list);
+    }
+  }
+
+  const used = new Set<string>();
+  const out: string[] = [];
+  for (const key of orderedKeys) {
+    if (used.has(key)) continue;
+    const c = byKey.get(key);
+    if (!c) continue;
+    if (c.addonOfCardKey && phaseKeySet.has(c.addonOfCardKey)) continue;
+    out.push(key);
+    used.add(key);
+    for (const childKey of childrenByParent.get(key) ?? []) {
+      if (used.has(childKey)) continue;
+      out.push(childKey);
+      used.add(childKey);
+    }
+  }
+  for (const c of phaseCards) {
+    if (used.has(c.key)) continue;
+    out.push(c.key);
+    used.add(c.key);
+  }
+  return out;
+}
+
 /** Apply a new key order for all lines in one scenario phase; other cards stay put. */
 export function reorderPhaseCardsByKeys(
   cards: RoadmapCard[],
@@ -213,8 +269,11 @@ export function reorderPhaseCardsByKeys(
     if (!phaseKeySet.has(key)) return cards;
   }
 
+  const clusteredKeys = clusterPhaseCardKeysWithAddons(phaseCards, orderedKeys);
+  if (clusteredKeys.length !== phaseCards.length) return cards;
+
   const byKey = new Map(phaseCards.map((c) => [c.key, c]));
-  const reordered = orderedKeys.map((key) => byKey.get(key)!);
+  const reordered = clusteredKeys.map((key) => byKey.get(key)!);
   let idx = 0;
   return cards.map((c) => {
     if (c.scenarioId !== scenarioId || c.phaseId !== phaseId) return c;

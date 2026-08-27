@@ -53,6 +53,7 @@ import {
   resourceStructuredFieldsForSave,
 } from "../lib/tierResourceFields";
 import { InlineActionFeedback, pickInlineFeedback } from "./InlineActionFeedback";
+import { useToast } from "../context/ToastContext";
 import { PricingPanel } from "./PricingPanel";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
@@ -434,6 +435,7 @@ export function SolutionsBuilderPanel({
   styles: BuilderStyles;
 }) {
   const { panel, formGrid, lbl, input, textarea, btn, btnPrimary, btnSm, btnDangerSm, tbl, th, td, h2, muted } = s;
+  const { runWithProgress, endProgress, clearOpOk, clearOpErr } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const vaultSearchRef = useRef<HTMLInputElement | null>(null);
 
@@ -456,11 +458,11 @@ export function SolutionsBuilderPanel({
 
   const showSbInline = useCallback(
     (zone: SBInlineZone, message: string, variant: "ok" | "err" = "ok") => {
-      setOpOk(null);
-      setOpErr(null);
+      clearOpOk();
+      clearOpErr();
       setSbInlineFb({ zone, message, variant });
     },
-    [setOpOk, setOpErr]
+    [clearOpOk, clearOpErr]
   );
 
   /** Keep solution_tier_pricing hours + sell math aligned with vault tasks. */
@@ -2345,24 +2347,34 @@ export function SolutionsBuilderPanel({
     const lines = (taskGroupLines ?? [])
       .filter((l) => l.task_group_id === applyTemplateGroupId)
       .sort((a, b) => a.sort_order - b.sort_order);
-    const res = await applyTaskGroupToTier({
-      solution_tier_id: updTierFocus,
-      task_group_id: applyTemplateGroupId,
-      lines,
-      allTasks: tasks,
-      logAudit,
+    const res = await runWithProgress("Applying task group to tier…", async (report) => {
+      const result = await applyTaskGroupToTier({
+        solution_tier_id: updTierFocus,
+        task_group_id: applyTemplateGroupId,
+        lines,
+        allTasks: tasks,
+        logAudit,
+        onProgress: report,
+      });
+      if (result.ok) {
+        report({ label: "Refreshing solutions…" });
+        await onSaved();
+      }
+      return result;
     });
     if (!res.ok) {
+      endProgress();
       showSbInline("upd_apply_tg", res.message, "err");
       return;
     }
     showSbInline("upd_apply_tg", `Added ${res.created} task(s) from the template.`, "ok");
     setApplyTemplateGroupId("");
-    await onSaved();
   }, [
     applyTemplateGroupId,
+    endProgress,
     logAudit,
     onSaved,
+    runWithProgress,
     showSbInline,
     taskGroupLines,
     tasks,
@@ -2510,25 +2522,45 @@ export function SolutionsBuilderPanel({
       );
       return;
     }
-    const res = await insertCopiedVaultTasksFromTier({
-      targetTierId: updTierFocus.trim(),
-      sourceTierId: updCopyTierPick.trim(),
-      allTasks: tasks,
-      tiers,
-      logAudit,
+    const targetTierId = updTierFocus.trim();
+    const sourceTierId = updCopyTierPick.trim();
+    const res = await runWithProgress("Copying vault tasks…", async (report) => {
+      const result = await insertCopiedVaultTasksFromTier({
+        targetTierId,
+        sourceTierId,
+        allTasks: tasks,
+        tiers,
+        logAudit,
+        onProgress: report,
+      });
+      if (result.ok) {
+        report({ label: "Refreshing solutions…" });
+        await onSaved();
+      }
+      return result;
     });
     if (!res.ok) {
+      endProgress();
       showSbInline("upd_copy_db", res.message, "err");
       return;
     }
     showSbInline(
       "upd_copy_db",
-      `Copied ${res.created} vault task(s) onto ${updTierFocus.trim()} from ${updCopyTierPick.trim()}.`,
+      `Copied ${res.created} vault task(s) onto ${targetTierId} from ${sourceTierId}.`,
       "ok"
     );
     setUpdCopyTierPick("");
-    await onSaved();
-  }, [updTierFocus, updCopyTierPick, tiers, tasks, logAudit, onSaved, showSbInline]);
+  }, [
+    endProgress,
+    updTierFocus,
+    updCopyTierPick,
+    tiers,
+    tasks,
+    logAudit,
+    onSaved,
+    runWithProgress,
+    showSbInline,
+  ]);
 
   const appendTierTasksToUpdateNewDrafts = useCallback(() => {
     if (!updCopyTierPick.trim()) {
@@ -2968,8 +3000,8 @@ export function SolutionsBuilderPanel({
                     onClick={() => {
                       setCreateBranch("full");
                       setCreatePhase("foundation");
-                      setOpErr(null);
-                      setOpOk(null);
+                      clearOpErr();
+                      clearOpOk();
                     }}
                   >
                     <strong>New solution</strong>
@@ -2992,8 +3024,8 @@ export function SolutionsBuilderPanel({
                       setCreateBranch("tier_only");
                       setCreatePhase("tier");
                       setTierOnlySolId(solutions[0]?.solution_id ?? "");
-                      setOpErr(null);
-                      setOpOk(null);
+                      clearOpErr();
+                      clearOpOk();
                     }}
                   >
                     <strong>New tier on existing solution</strong>

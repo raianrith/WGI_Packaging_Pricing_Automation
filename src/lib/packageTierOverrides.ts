@@ -42,6 +42,17 @@ export function parseTierOverrides(raw: unknown): PackageTierOverrides {
       (out as Record<string, unknown>)[k] = v;
     }
   }
+  if ("client_facing_labels" in o) {
+    const rawLabels = o.client_facing_labels;
+    if (rawLabels === null) {
+      out.client_facing_labels = null;
+    } else if (Array.isArray(rawLabels)) {
+      out.client_facing_labels = rawLabels
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
   return out;
 }
 
@@ -103,15 +114,69 @@ export function overrideFormStringsToPartial(
   return out;
 }
 
-export function sanitizeOverridesForDb(o: PackageTierOverrides): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
+export function sanitizeOverridesForDb(
+  o: PackageTierOverrides
+): Record<string, string | string[] | null> {
+  const out: Record<string, string | string[] | null> = {};
   for (const k of PACKAGE_TIER_OVERRIDE_KEYS) {
     if (!(k in o)) continue;
     const v = o[k as keyof PackageTierOverrides];
     if (v === null) out[k] = null;
     else if (typeof v === "string") out[k] = v;
   }
+  if ("client_facing_labels" in o) {
+    const labels = o.client_facing_labels;
+    if (labels == null) {
+      out.client_facing_labels = null;
+    } else {
+      const cleaned = labels
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      out.client_facing_labels = cleaned.length > 0 ? cleaned : null;
+    }
+  }
   return out;
+}
+
+/** Resolve one label per quantity unit from package tier overrides. */
+export function clientFacingLabelsForQuantity(
+  overrides: PackageTierOverrides | null | undefined,
+  quantity: number,
+  fallback: string
+): string[] {
+  const qty = Math.max(0, Math.floor(quantity));
+  if (qty <= 0) return [];
+  const fb = fallback.trim() || "Component";
+  const fromArr = overrides?.client_facing_labels;
+  const labels: string[] = [];
+  if (Array.isArray(fromArr) && fromArr.length > 0) {
+    for (const s of fromArr) {
+      if (typeof s === "string" && s.trim()) labels.push(s.trim());
+    }
+  } else {
+    const single = overrides?.solution_tier_name?.trim();
+    if (single) labels.push(single);
+  }
+  while (labels.length < qty) labels.push(fb);
+  return labels.slice(0, qty);
+}
+
+/** Write primary + multi labels onto overrides (keeps other override fields). */
+export function withClientFacingLabels(
+  overrides: PackageTierOverrides,
+  labels: readonly string[]
+): PackageTierOverrides {
+  const cleaned = labels.map((s) => s.trim()).filter(Boolean);
+  const next: PackageTierOverrides = { ...overrides };
+  if (cleaned.length === 0) {
+    delete next.solution_tier_name;
+    next.client_facing_labels = null;
+    return next;
+  }
+  next.solution_tier_name = cleaned[0]!;
+  next.client_facing_labels = cleaned.length > 1 ? cleaned : null;
+  return next;
 }
 
 /** Labels for Package Builder (same concepts as Solutions Builder tier template). */

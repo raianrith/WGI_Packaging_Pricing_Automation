@@ -22,6 +22,18 @@ const VARIABLE_TIER_SET = new Set<string>(VARIABLE_TIER_REF_IDS);
 export type AddVariableTierOpts = {
   travelHours?: number;
   paidAdsSpendUsd?: number;
+  /** e.g. `Sep 2026` — appended to the card headline for monthly paid-ads lines. */
+  paidAdsMonthLabel?: string;
+  /**
+   * When set (Paid Campaign Management), add one card per month with its own
+   * spend + date range instead of a single total.
+   */
+  paidAdsMonths?: Array<{
+    spendUsd: number;
+    startDate: string;
+    endDate: string;
+    monthLabel: string;
+  }>;
   linkedTierRefId?: string;
 };
 

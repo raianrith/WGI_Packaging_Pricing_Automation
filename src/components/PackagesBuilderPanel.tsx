@@ -403,6 +403,13 @@ export function PackagesBuilderPanel({
   const selectedTierIds = useMemo(() => tierIdsFromQuantities(selectedTierQty), [selectedTierQty]);
   const selectedTierLineCount = totalTierLineCount(selectedTierQty);
 
+  const addedTierRows = useMemo(() => {
+    return selectedTierIds
+      .map((id) => tiers.find((t) => t.solution_tier_id === id))
+      .filter((t): t is SolutionTier => Boolean(t))
+      .sort((a, b) => sortId(a.solution_tier_id, b.solution_tier_id));
+  }, [selectedTierIds, tiers]);
+
   const sparseOverridesForSave = useCallback(
     (wanted: string[], hourPct: number, packageIdForLinks: string | null): PackagePricingOverrides => {
       const linksByTierId = new Map<string, PackageSolutionTier>();
@@ -896,13 +903,81 @@ export function PackagesBuilderPanel({
       ? "Set quantity for each solution component to include. You can add the same component multiple times (e.g. 3× Customer Interviews - Basic). The same component can appear in multiple packages."
       : "Manage tier membership and quantities for this package. Set quantity to 0 to remove a tier link on save.";
 
+  const addedTiersBox =
+    subTab === "update" && pkgEditId ? (
+      <div className="admin-packages-builder__added-tiers" aria-label="Solution tiers added to this package">
+        <div className="admin-packages-builder__added-tiers-head">
+          <h3 className="admin-packages-builder__added-tiers-title">Solution tiers added</h3>
+          <p className="admin-packages-builder__added-tiers-lead">
+            {selectedTierLineCount > 0
+              ? `${selectedTierLineCount} line${selectedTierLineCount === 1 ? "" : "s"} across ${addedTierRows.length} component${addedTierRows.length === 1 ? "" : "s"} in this package.`
+              : "No solution tiers linked yet. Increase quantity in the catalog below to add them."}
+          </p>
+        </div>
+        {addedTierRows.length === 0 ? (
+          <p className="admin-packages-builder__added-tiers-empty">Nothing added yet.</p>
+        ) : (
+          <div className="admin-table-scroll admin-packages-builder__added-tiers-scroll">
+            <table className="admin-data-table" style={{ ...tbl, marginTop: 0 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...th, width: "6.5rem" }}>Qty</th>
+                  <th style={th}>Solution</th>
+                  <th style={th}>Tier</th>
+                  <th style={th}>Tier id</th>
+                </tr>
+              </thead>
+              <tbody>
+                {addedTierRows.map((t) => {
+                  const sol = solutionById.get(t.solution_id);
+                  const qty = selectedTierQty[t.solution_tier_id] ?? 0;
+                  return (
+                    <tr key={`added-${t.solution_tier_id}`}>
+                      <td style={td}>
+                        <div className="agency-pkg-wizard__qty">
+                          <button
+                            type="button"
+                            className="agency-pkg-wizard__qty-btn"
+                            aria-label={`Decrease quantity for ${t.solution_tier_name}`}
+                            disabled={qty <= 0}
+                            onClick={() => changeTierQty(t.solution_tier_id, -1)}
+                          >
+                            −
+                          </button>
+                          <span className="agency-pkg-wizard__qty-value">{qty}</span>
+                          <button
+                            type="button"
+                            className="agency-pkg-wizard__qty-btn"
+                            aria-label={`Increase quantity for ${t.solution_tier_name}`}
+                            onClick={() => changeTierQty(t.solution_tier_id, 1)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </td>
+                      <td style={td}>{sol?.solution_name ?? t.solution_id}</td>
+                      <td style={td}>{t.solution_tier_name}</td>
+                      <td style={td}>
+                        <code style={{ fontSize: "0.85em" }}>{t.solution_tier_id}</code>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   const tierPickerBlock = (
     <>
+      {addedTiersBox}
       <p className="admin-intro" style={{ ...muted, marginTop: "0.75rem" }}>
         {tierPickerIntro}
       </p>
       <label style={{ ...lbl, marginTop: 8 }}>
-        <FieldCaption>Filter tiers</FieldCaption>
+        <FieldCaption>{subTab === "update" ? "Browse all tiers" : "Filter tiers"}</FieldCaption>
         <input
           style={input}
           value={tierSearch}
@@ -944,7 +1019,10 @@ export function PackagesBuilderPanel({
                       ? `${packageNameById.get(pid) ?? "—"} (${pid}) — editing`
                       : `${packageNameById.get(pid) ?? "—"} (${pid})`;
                 return (
-                  <tr key={t.solution_tier_id}>
+                  <tr
+                    key={t.solution_tier_id}
+                    className={qty > 0 ? "admin-packages-builder__tier-row--added" : undefined}
+                  >
                     <td style={td}>
                       <div className="agency-pkg-wizard__qty">
                         <button

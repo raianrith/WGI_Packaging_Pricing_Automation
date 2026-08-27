@@ -1,15 +1,19 @@
 import type { CatalogCtxLike, RoadmapCard } from "./roadmapModel";
 import { cardHoursForScenarioRollup } from "./roadmapModel";
 import { isVariableTierRefId } from "./proposalVariableTiers";
-import { ACCOUNT_MGMT_HOURS_ADDON_RATE } from "./tierPricingMath";
+import {
+  ACCOUNT_MGMT_HOURS_ADDON_RATE,
+  CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE,
+} from "./tierPricingMath";
 
 export type ProposalAccountMgmtRollup = {
   resourceHours: number;
   accountMgmtHours: number;
+  continuousImprovementHours: number;
   includedLineCount: number;
 };
 
-/** 18% of included resource hours across all scenarios (excludes variable extras). */
+/** Derived add-on hours from included resource hours across all scenarios (excludes variable extras). */
 export function computeProposalAccountMgmtRollup(
   cards: RoadmapCard[],
   ctx: CatalogCtxLike | null
@@ -25,5 +29,12 @@ export function computeProposalAccountMgmtRollup(
   }
   const accountMgmtHours =
     Math.round(resourceHours * ACCOUNT_MGMT_HOURS_ADDON_RATE * 100) / 100;
-  return { resourceHours, accountMgmtHours, includedLineCount };
+  const continuousImprovementHours =
+    Math.round(resourceHours * CONTINUOUS_IMPROVEMENT_HOURS_ADDON_RATE * 100) / 100;
+  return {
+    resourceHours,
+    accountMgmtHours,
+    continuousImprovementHours,
+    includedLineCount,
+  };
 }

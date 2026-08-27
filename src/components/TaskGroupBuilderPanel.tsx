@@ -13,6 +13,7 @@ import {
 } from "../lib/taskGroupTemplatePicker";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { syncTaskGroupTemplateToAppliedTiers } from "../lib/syncTaskGroupTemplateToAppliedTiers";
+import { useToast, useToastBusy } from "../context/ToastContext";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 import type {
@@ -242,6 +243,8 @@ export function TaskGroupBuilderPanel({
   td,
 }: Props) {
   const [saving, setSaving] = useState(false);
+  useToastBusy(saving, "Saving…");
+  const { runWithProgress, clearOpOk, clearOpErr } = useToast();
   const groupDatalistId = useId();
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
@@ -866,12 +869,19 @@ export function TaskGroupBuilderPanel({
     setOpErr(null);
     setOpOk(null);
     try {
-      const res = await syncTaskGroupTemplateToAppliedTiers({
-        task_group_id: g.id,
-        lines,
-        allTasks: tasks,
-        logAudit,
-        solutionTierIds: syncTemplateSelectedTierIds,
+      const res = await runWithProgress("Syncing template to tiers…", async (report) => {
+        report({
+          current: 0,
+          total: syncTemplateSelectedTierIds.length,
+          label: `Syncing ${syncTemplateSelectedTierIds.length} tier(s)…`,
+        });
+        return syncTaskGroupTemplateToAppliedTiers({
+          task_group_id: g.id,
+          lines,
+          allTasks: tasks,
+          logAudit,
+          solutionTierIds: syncTemplateSelectedTierIds,
+        });
       });
       if (!res.ok) {
         setOpErr(res.message);
@@ -895,6 +905,7 @@ export function TaskGroupBuilderPanel({
     tasks,
     logAudit,
     onRefresh,
+    runWithProgress,
     setOpErr,
     setOpOk,
   ]);
@@ -1254,8 +1265,8 @@ export function TaskGroupBuilderPanel({
                           onClick={() => {
                             setSelectedGroupId(g.id);
                             setEditLineId(null);
-                            setOpErr(null);
-                            setOpOk(null);
+                            clearOpErr();
+                            clearOpOk();
                           }}
                           disabled={saving}
                         >

@@ -5,6 +5,7 @@ import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { notifyPackagingDataChanged } from "../lib/packagingEvents";
 import { PRICING_HOUR_GROUP_KEYS, pricingHourGroupLabel } from "../lib/pricingHourGroups";
 import type { ImplementerHourGroupRow, PricingHourGroupKey } from "../types";
+import { useToast, useToastBusy } from "../context/ToastContext";
 
 type Props = {
   rows: ImplementerHourGroupRow[];
@@ -45,10 +46,12 @@ export function ImplementerMappingPanel({
   th,
   td,
 }: Props) {
+  const { clearOpOk, clearOpErr } = useToast();
   const [nameField, setNameField] = useState("");
   const [groupField, setGroupField] = useState<PricingHourGroupKey>("client_services");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  useToastBusy(saving, "Saving…");
 
   const resetForm = useCallback(() => {
     setNameField("");
@@ -57,8 +60,8 @@ export function ImplementerMappingPanel({
   }, []);
 
   const startEdit = (r: ImplementerHourGroupRow) => {
-    setOpErr(null);
-    setOpOk(null);
+    clearOpErr();
+    clearOpOk();
     setEditingId(r.id);
     setNameField(r.implementer_name);
     setGroupField(r.hour_group);

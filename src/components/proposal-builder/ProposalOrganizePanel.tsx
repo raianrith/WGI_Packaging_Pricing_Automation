@@ -215,6 +215,7 @@ export function ProposalOrganizePanel({
       {accountMgmtRollup.includedLineCount > 0 ? (
         <ProposalOrganizeAccountMgmtCard
           accountMgmtHours={accountMgmtRollup.accountMgmtHours}
+          continuousImprovementHours={accountMgmtRollup.continuousImprovementHours}
           resourceHours={accountMgmtRollup.resourceHours}
           formatHoursShort={formatHoursShort}
         />

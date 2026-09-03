@@ -217,6 +217,8 @@ export function ProposalOrganizePanel({
           accountMgmtHours={accountMgmtRollup.accountMgmtHours}
           continuousImprovementHours={accountMgmtRollup.continuousImprovementHours}
           resourceHours={accountMgmtRollup.resourceHours}
+          flexBudgetUsd={accountMgmtRollup.flexBudgetUsd}
+          hourlyRate={accountMgmtRollup.hourlyRate}
           formatHoursShort={formatHoursShort}
         />
       ) : null}

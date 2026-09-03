@@ -107,6 +107,7 @@ import {
   variableTierAppliedToLabel,
   type AddVariableTierOpts,
 } from "../lib/proposalVariableTiers";
+import { formatProposalUsdValue } from "../lib/proposalCardTasks";
 import type {
   ImplementerHourGroupRow,
   Package,
@@ -2383,9 +2384,19 @@ export function RoadmapPlanningView() {
           setPackageSwitchPromptPath(packageAddPath);
         }
       }}
-      onAddTier={(t, dates, clientFacingLabel, addonTiers) => {
+      onAddTier={(t, dates, clientFacingLabel, addonTiers, opts) => {
         if (!canAddToTarget) return;
         const parent = cardForTier(t, ctx, targetScenarioId, targetPhaseId, dates, clientFacingLabel);
+        const flexUsd = opts?.flexBudgetPriceUsd;
+        const pricedParent =
+          flexUsd != null && Number.isFinite(flexUsd) && flexUsd >= 0
+            ? {
+                ...parent,
+                price: formatProposalUsdValue(flexUsd),
+                priceOverride: formatProposalUsdValue(flexUsd),
+                isFlexBudget: true,
+              }
+            : parent;
         const extras = (addonTiers ?? []).map((a) => ({
           ...cardForTier(
             a,
@@ -2395,9 +2406,9 @@ export function RoadmapPlanningView() {
             dates,
             a.solution_tier_name.trim() || a.solution_tier_id
           ),
-          addonOfCardKey: parent.key,
+          addonOfCardKey: pricedParent.key,
         }));
-        setCardsSynced((prev) => [...prev, parent, ...extras]);
+        setCardsSynced((prev) => [...prev, pricedParent, ...extras]);
       }}
       onAddVariableTier={(t, dates, opts) => {
         if (!canAddToTarget) return;

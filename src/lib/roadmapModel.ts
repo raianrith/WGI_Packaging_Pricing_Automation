@@ -48,6 +48,8 @@ export type RoadmapCard = {
   variablePaidAdsSpendUsd?: number | null;
   /** Percent-based variable tiers: catalog refId of the tier whose sell price drives the calculation */
   variableLinkedTierRefId?: string | null;
+  /** Flex Budget: proposal-only sell entered at add time; drives AM/CI 18%/1% hour equivalents */
+  isFlexBudget?: boolean;
   /** When set, this card is an add-on nested under the parent solution tier with this `key`. */
   addonOfCardKey?: string | null;
   /**

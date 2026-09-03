@@ -105,6 +105,8 @@ export function ProposalExportPreviewTables({
           accountMgmtHours={accountMgmt.accountMgmtHours}
           continuousImprovementHours={accountMgmt.continuousImprovementHours}
           resourceHours={accountMgmt.resourceHours}
+          flexBudgetUsd={accountMgmt.flexBudgetUsd}
+          hourlyRate={accountMgmt.hourlyRate}
           formatHoursShort={formatHoursShort}
         />
       ) : null}

@@ -19,6 +19,12 @@ import {
   type VariableTierLinkTarget,
 } from "../../lib/proposalVariableTiers";
 import { buildSolutionDirectoryRowsFromTier, buildModuleAddOnGroups, isSolutionModuleName } from "../../lib/buildCatalogDirectoryRows";
+import {
+  isFlexBudgetName,
+  isFlexBudgetTier,
+  parseFlexBudgetPriceInput,
+} from "../../lib/proposalFlexBudget";
+import { formatProposalUsdValue } from "../../lib/proposalCardTasks";
 import { ProposalAddOnsModal } from "./ProposalAddOnsModal";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
@@ -77,7 +83,8 @@ type Props = {
     t: SolutionTier,
     dates: ProposalOfferingDates,
     clientFacingLabel?: string,
-    addonTiers?: SolutionTier[]
+    addonTiers?: SolutionTier[],
+    opts?: { flexBudgetPriceUsd?: number }
   ) => void;
   onAddVariableTier: (t: SolutionTier, dates: ProposalOfferingDates, opts?: AddVariableTierOpts) => void;
   previewVariableTierPriceUsd: (refId: string, opts?: AddVariableTierOpts) => number | null;
@@ -175,7 +182,13 @@ export function ProposalCatalogPanel({
   const [expandedSolutionIds, setExpandedSolutionIds] = useState<Set<string>>(() => new Set());
 
   type PendingOfferingAdd =
-    | { kind: "tier"; tier: SolutionTier; clientFacingLabel: string; addonTiers?: SolutionTier[] }
+    | {
+        kind: "tier";
+        tier: SolutionTier;
+        clientFacingLabel: string;
+        addonTiers?: SolutionTier[];
+        flexBudgetPriceUsd?: number;
+      }
     | { kind: "package"; pkg: Package }
     | { kind: "scratch" }
     | { kind: "variable"; tier: SolutionTier; opts: AddVariableTierOpts };
@@ -187,11 +200,19 @@ export function ProposalCatalogPanel({
     draft: string;
     addOnsAllowed: boolean;
   } | null>(null);
+  const [flexPricePrompt, setFlexPricePrompt] = useState<{
+    tier: SolutionTier;
+    solutionName: string;
+    clientFacingLabel: string;
+    addOnsAllowed: boolean;
+    draft: string;
+  } | null>(null);
   const [addOnsPrompt, setAddOnsPrompt] = useState<{
     tier: SolutionTier;
     solutionName: string;
     clientFacingLabel: string;
     selectedIds: Set<string>;
+    flexBudgetPriceUsd?: number;
   } | null>(null);
 
   const targetPhases = useMemo(
@@ -427,7 +448,9 @@ export function ProposalCatalogPanel({
     let justAdded: string | null = null;
     switch (pending.kind) {
       case "tier":
-        onAddTier(pending.tier, dates, pending.clientFacingLabel, pending.addonTiers);
+        onAddTier(pending.tier, dates, pending.clientFacingLabel, pending.addonTiers, {
+          flexBudgetPriceUsd: pending.flexBudgetPriceUsd,
+        });
         justAdded = `tier:${pending.tier.solution_tier_id}`;
         break;
       case "package":
@@ -485,13 +508,51 @@ export function ProposalCatalogPanel({
     });
   };
 
-  const openDatesForTier = (tier: SolutionTier, clientFacingLabel: string, addonTiers?: SolutionTier[]) => {
+  const openDatesForTier = (
+    tier: SolutionTier,
+    clientFacingLabel: string,
+    addonTiers?: SolutionTier[],
+    flexBudgetPriceUsd?: number
+  ) => {
     setDatesModalPending({
       kind: "tier",
       tier,
       clientFacingLabel,
       addonTiers: addonTiers && addonTiers.length > 0 ? addonTiers : undefined,
+      flexBudgetPriceUsd,
     });
+  };
+
+  const continueAfterLabel = (
+    tier: SolutionTier,
+    solutionName: string,
+    label: string,
+    addOnsAllowed: boolean
+  ) => {
+    const isFlex =
+      isFlexBudgetTier(tier) ||
+      isFlexBudgetName(solutionName) ||
+      isFlexBudgetName(label);
+    if (isFlex) {
+      setFlexPricePrompt({
+        tier,
+        solutionName,
+        clientFacingLabel: label,
+        addOnsAllowed,
+        draft: "",
+      });
+      return;
+    }
+    if (addOnsAllowed) {
+      setAddOnsPrompt({
+        tier,
+        solutionName,
+        clientFacingLabel: label,
+        selectedIds: new Set(),
+      });
+      return;
+    }
+    openDatesForTier(tier, label);
   };
 
   const confirmLabelPrompt = () => {
@@ -501,21 +562,36 @@ export function ProposalCatalogPanel({
       labelPrompt.solutionName.trim() ||
       labelPrompt.tier.solution_tier_name.trim() ||
       labelPrompt.tier.solution_tier_id;
-    if (labelPrompt.addOnsAllowed) {
-      setAddOnsPrompt({
-        tier: labelPrompt.tier,
-        solutionName: labelPrompt.solutionName,
-        clientFacingLabel: label,
-        selectedIds: new Set(),
-      });
-      setLabelPrompt(null);
-      return;
-    }
-    openDatesForTier(labelPrompt.tier, label);
+    const { tier, solutionName, addOnsAllowed } = labelPrompt;
     setLabelPrompt(null);
+    continueAfterLabel(tier, solutionName, label, addOnsAllowed);
   };
 
   const cancelLabelPrompt = () => setLabelPrompt(null);
+
+  const cancelFlexPricePrompt = () => setFlexPricePrompt(null);
+
+  const confirmFlexPricePrompt = () => {
+    if (!flexPricePrompt || !canAdd) return;
+    const usd = parseFlexBudgetPriceInput(flexPricePrompt.draft);
+    if (usd == null) {
+      window.alert("Enter a Flex Budget sell price (for example 15000 or $15,000).");
+      return;
+    }
+    const { tier, solutionName, clientFacingLabel, addOnsAllowed } = flexPricePrompt;
+    setFlexPricePrompt(null);
+    if (addOnsAllowed) {
+      setAddOnsPrompt({
+        tier,
+        solutionName,
+        clientFacingLabel,
+        selectedIds: new Set(),
+        flexBudgetPriceUsd: usd,
+      });
+      return;
+    }
+    openDatesForTier(tier, clientFacingLabel, undefined, usd);
+  };
 
   const cancelAddOnsPrompt = () => setAddOnsPrompt(null);
 
@@ -534,7 +610,12 @@ export function ProposalCatalogPanel({
     const addonTiers = [...addOnsPrompt.selectedIds]
       .map((id) => tierById.get(id))
       .filter((t): t is SolutionTier => t != null);
-    openDatesForTier(addOnsPrompt.tier, addOnsPrompt.clientFacingLabel, addonTiers);
+    openDatesForTier(
+      addOnsPrompt.tier,
+      addOnsPrompt.clientFacingLabel,
+      addonTiers,
+      addOnsPrompt.flexBudgetPriceUsd
+    );
     setAddOnsPrompt(null);
   };
 
@@ -1353,6 +1434,100 @@ export function ProposalCatalogPanel({
                 Cancel
               </button>
               <button type="button" className="roadmap-btn roadmap-btn--primary" onClick={confirmLabelPrompt}>
+                Continue
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {flexPricePrompt ? (
+        <div
+          className="agency-pkg-label-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelFlexPricePrompt();
+          }}
+        >
+          <div
+            className="agency-pkg-label-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="proposal-flex-price-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="agency-pkg-label-modal__header">
+              <div className="agency-pkg-label-modal__head-copy">
+                <p className="agency-pkg-label-modal__eyebrow">Flex Budget</p>
+                <h3 id="proposal-flex-price-title" className="agency-pkg-label-modal__title">
+                  Flex Budget price
+                </h3>
+                <p className="agency-pkg-label-modal__sub">
+                  {flexPricePrompt.clientFacingLabel}
+                  {flexPricePrompt.solutionName.trim() &&
+                  flexPricePrompt.solutionName.trim() !== flexPricePrompt.clientFacingLabel
+                    ? ` · ${flexPricePrompt.solutionName}`
+                    : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="agency-pkg-label-modal__close"
+                aria-label="Close"
+                onClick={cancelFlexPricePrompt}
+              >
+                ×
+              </button>
+            </header>
+            <div className="agency-pkg-label-modal__body">
+              <label className="agency-pkg-label-modal__field">
+                <span className="agency-pkg-label-modal__field-label">Sell price for this proposal</span>
+                <input
+                  className="agency-pkg-label-modal__input"
+                  inputMode="decimal"
+                  value={flexPricePrompt.draft}
+                  onChange={(e) =>
+                    setFlexPricePrompt((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmFlexPricePrompt();
+                    }
+                  }}
+                  autoFocus
+                  placeholder="e.g. 15000 or $15,000"
+                />
+              </label>
+              <p className="agency-pkg-label-modal__hint">
+                This amount is the proposal sell for Flex Budget only. Of that price, 18% counts toward account
+                management and 1% toward continuous improvement (shown as derived hours in Organize / Preview).
+                {(() => {
+                  const preview = parseFlexBudgetPriceInput(flexPricePrompt.draft);
+                  if (preview == null) return null;
+                  return (
+                    <>
+                      {" "}
+                      Preview: {formatProposalUsdValue(preview)} sell ·{" "}
+                      {formatProposalUsdValue(preview * 0.18)} AM · {formatProposalUsdValue(preview * 0.01)} CI.
+                    </>
+                  );
+                })()}
+              </p>
+            </div>
+            <footer className="agency-pkg-label-modal__footer">
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--ghost"
+                onClick={cancelFlexPricePrompt}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="roadmap-btn roadmap-btn--primary"
+                onClick={confirmFlexPricePrompt}
+              >
                 Continue
               </button>
             </footer>

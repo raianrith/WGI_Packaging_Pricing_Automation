@@ -319,6 +319,8 @@ export function AgencyPackagesHub() {
   const [packageListSort, setPackageListSort] = useState<PackageListSort>({ col: "package", dir: "asc" });
   const [packageCreatorFilter, setPackageCreatorFilter] = useState("all");
   const [editPackageId, setEditPackageId] = useState<string | null>(null);
+  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
 
   const logAudit = useCallback(
     async (client: SupabaseClient, params: Parameters<typeof insertAuditLog>[1]) => {
@@ -520,6 +522,38 @@ export function AgencyPackagesHub() {
     clearOpOk();
   }, [clearOpErr, clearOpOk]);
 
+  const deletePackageByIdCore = useCallback(
+    async (
+      client: NonNullable<ReturnType<typeof getSupabase>>,
+      packageId: string
+    ): Promise<{ ok: true; label: string } | { ok: false; message: string }> => {
+      const beforePkg = packages.find((p) => p.package_id === packageId) ?? null;
+      const label = beforePkg?.package_name?.trim() || packageId;
+      const beforeTierIds = packageTiers
+        .filter((x) => x.package_id === packageId)
+        .map((x) => x.solution_tier_id);
+
+      const { error: d1 } = await client.from("package_solution_tiers").delete().eq("package_id", packageId);
+      if (d1) return { ok: false, message: d1.message };
+      const { error: d2 } = await client.from("packages").delete().eq("package_id", packageId);
+      if (d2) return { ok: false, message: d2.message };
+      await logAudit(client, {
+        entityType: "packages",
+        entityId: packageId,
+        action: "delete",
+        before: beforePkg
+          ? {
+              ...(beforePkg as unknown as Record<string, unknown>),
+              solution_tier_ids: beforeTierIds,
+            }
+          : null,
+        after: null,
+      });
+      return { ok: true, label };
+    },
+    [logAudit, packageTiers, packages]
+  );
+
   const deletePackageById = useCallback(
     async (packageId: string, packageName: string) => {
       const label = packageName.trim() || packageId;
@@ -536,40 +570,99 @@ export function AgencyPackagesHub() {
         return;
       }
       beginProgress("Deleting package…");
-      const beforePkg = packages.find((p) => p.package_id === packageId) ?? null;
-      const beforeTierIds = packageTiers
-        .filter((x) => x.package_id === packageId)
-        .map((x) => x.solution_tier_id);
-
-      const { error: d1 } = await client.from("package_solution_tiers").delete().eq("package_id", packageId);
-      if (d1) {
-        toastError(d1.message);
-        return;
-      }
-      const { error: d2 } = await client.from("packages").delete().eq("package_id", packageId);
-      if (d2) {
-        toastError(d2.message);
+      const res = await deletePackageByIdCore(client, packageId);
+      if (!res.ok) {
+        toastError(res.message);
         await load();
         return;
       }
-      await logAudit(client, {
-        entityType: "packages",
-        entityId: packageId,
-        action: "delete",
-        before: beforePkg
-          ? {
-              ...(beforePkg as unknown as Record<string, unknown>),
-              solution_tier_ids: beforeTierIds,
-            }
-          : null,
-        after: null,
-      });
       if (editPackageId === packageId) setEditPackageId(null);
-      setOpOk(`Package ${label} deleted.`);
+      setSelectedPackageIds((prev) => {
+        if (!prev.has(packageId)) return prev;
+        const next = new Set(prev);
+        next.delete(packageId);
+        return next;
+      });
+      setOpOk(`Package ${res.label} deleted.`);
       await load();
     },
-    [beginProgress, editPackageId, load, logAudit, packageTiers, packages, setOpOk, toastError]
+    [beginProgress, deletePackageByIdCore, editPackageId, load, setOpOk, toastError]
   );
+
+  const deleteSelectedPackages = useCallback(async () => {
+    const ids = [...selectedPackageIds].filter((id) => packages.some((p) => p.package_id === id));
+    if (ids.length === 0) return;
+    const names = ids.map((id) => {
+      const p = packages.find((x) => x.package_id === id);
+      return p?.package_name?.trim() || id;
+    });
+    const preview =
+      names.length <= 5
+        ? names.map((n) => `“${n}”`).join(", ")
+        : `${names
+            .slice(0, 3)
+            .map((n) => `“${n}”`)
+            .join(", ")} and ${names.length - 3} more`;
+    if (
+      !globalThis.confirm(
+        `Delete ${ids.length} package${ids.length === 1 ? "" : "s"} (${preview}) and all their solution links? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    const client = getSupabase();
+    if (!client) {
+      toastError("Supabase client is not available.");
+      return;
+    }
+    setBulkDeleteBusy(true);
+    beginProgress(
+      ids.length === 1 ? "Deleting package…" : `Deleting ${ids.length} packages…`
+    );
+    let deleted = 0;
+    let lastErr: string | null = null;
+    for (const id of ids) {
+      const res = await deletePackageByIdCore(client, id);
+      if (!res.ok) {
+        lastErr = res.message;
+        break;
+      }
+      deleted += 1;
+      if (editPackageId === id) setEditPackageId(null);
+    }
+    setSelectedPackageIds(new Set());
+    await load();
+    setBulkDeleteBusy(false);
+    if (lastErr) {
+      toastError(
+        deleted > 0
+          ? `Deleted ${deleted} package${deleted === 1 ? "" : "s"}, then failed: ${lastErr}`
+          : lastErr
+      );
+      return;
+    }
+    setOpOk(
+      deleted === 1 ? `Package ${names[0]} deleted.` : `${deleted} packages deleted.`
+    );
+  }, [
+    beginProgress,
+    deletePackageByIdCore,
+    editPackageId,
+    load,
+    packages,
+    selectedPackageIds,
+    setOpOk,
+    toastError,
+  ]);
+
+  const togglePackageSelected = useCallback((packageId: string) => {
+    setSelectedPackageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(packageId)) next.delete(packageId);
+      else next.add(packageId);
+      return next;
+    });
+  }, []);
 
   const setLayoutMode = useCallback((mode: PackageLayoutMode) => {
     setPackageLayoutMode(mode);
@@ -615,6 +708,48 @@ export function AgencyPackagesHub() {
     pkgWorkspaceById,
     packageCreatorById,
   ]);
+
+  const visiblePackageIdSet = useMemo(
+    () => new Set(sortedListPackages.map((p) => p.package_id)),
+    [sortedListPackages]
+  );
+
+  const selectedVisibleCount = useMemo(() => {
+    let n = 0;
+    for (const id of selectedPackageIds) {
+      if (visiblePackageIdSet.has(id)) n += 1;
+    }
+    return n;
+  }, [selectedPackageIds, visiblePackageIdSet]);
+
+  const allVisibleSelected =
+    sortedListPackages.length > 0 && selectedVisibleCount === sortedListPackages.length;
+
+  useEffect(() => {
+    setSelectedPackageIds((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (packages.some((p) => p.package_id === id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [packages]);
+
+  const toggleSelectAllVisible = useCallback(() => {
+    setSelectedPackageIds((prev) => {
+      if (allVisibleSelected) {
+        const next = new Set(prev);
+        for (const p of sortedListPackages) next.delete(p.package_id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const p of sortedListPackages) next.add(p.package_id);
+      return next;
+    });
+  }, [allVisibleSelected, sortedListPackages]);
 
   return (
     <div className="agency-view-shell" style={shell}>
@@ -742,9 +877,57 @@ export function AgencyPackagesHub() {
               </p>
             ) : packageLayoutMode === "list" ? (
               <div className="agency-pkg-hub__list-wrap">
+                <div className="agency-pkg-hub__bulk-bar" role="region" aria-label="Bulk package actions">
+                  <p className="agency-pkg-hub__bulk-bar-copy">
+                    {selectedVisibleCount > 0
+                      ? `${selectedVisibleCount} selected`
+                      : "Select packages to delete in bulk"}
+                  </p>
+                  <div className="agency-pkg-hub__bulk-bar-actions">
+                    {selectedVisibleCount > 0 ? (
+                      <button
+                        type="button"
+                        className="agency-pkg-hub__bulk-clear"
+                        disabled={bulkDeleteBusy}
+                        onClick={() => setSelectedPackageIds(new Set())}
+                      >
+                        Clear selection
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="agency-pkg-hub__bulk-delete"
+                      disabled={selectedVisibleCount === 0 || bulkDeleteBusy}
+                      onClick={() => void deleteSelectedPackages()}
+                    >
+                      {bulkDeleteBusy
+                        ? "Deleting…"
+                        : selectedVisibleCount > 0
+                          ? `Delete selected (${selectedVisibleCount})`
+                          : "Delete selected"}
+                    </button>
+                  </div>
+                </div>
                 <table className="agency-pkg-hub__list" aria-label="Packages">
                   <thead>
                     <tr>
+                      <th scope="col" className="agency-pkg-hub__list-th--check">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          ref={(el) => {
+                            if (el) {
+                              el.indeterminate =
+                                selectedVisibleCount > 0 && !allVisibleSelected;
+                            }
+                          }}
+                          onChange={toggleSelectAllVisible}
+                          disabled={bulkDeleteBusy || sortedListPackages.length === 0}
+                          aria-label={
+                            allVisibleSelected ? "Deselect all visible packages" : "Select all visible packages"
+                          }
+                        />
+                      </th>
                       <PackageListSortTh col="package" label="Package" sort={packageListSort} onToggle={togglePackageListSort} />
                       <PackageListSortTh
                         col="tiers"
@@ -783,8 +966,25 @@ export function AgencyPackagesHub() {
                         packageCreatorById
                       );
                       const workspacePath = `/package/${encodeURIComponent(p.package_id)}`;
+                      const selected = selectedPackageIds.has(p.package_id);
                       return (
-                        <tr key={p.package_id} className="agency-pkg-hub__list-row">
+                        <tr
+                          key={p.package_id}
+                          className={
+                            selected
+                              ? "agency-pkg-hub__list-row agency-pkg-hub__list-row--selected"
+                              : "agency-pkg-hub__list-row"
+                          }
+                        >
+                          <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--check">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={bulkDeleteBusy}
+                              onChange={() => togglePackageSelected(p.package_id)}
+                              aria-label={`Select ${p.package_name.trim() || p.package_id}`}
+                            />
+                          </td>
                           <td className="agency-pkg-hub__list-cell agency-pkg-hub__list-cell--name">
                             <div className="agency-pkg-hub__list-name-wrap">
                               <span className="agency-pkg-hub__list-name">{p.package_name}</span>
@@ -830,6 +1030,7 @@ export function AgencyPackagesHub() {
                               <button
                                 type="button"
                                 className="agency-pkg-hub__card-delete agency-pkg-hub__list-delete"
+                                disabled={bulkDeleteBusy}
                                 onClick={() => void deletePackageById(p.package_id, p.package_name)}
                               >
                                 Delete

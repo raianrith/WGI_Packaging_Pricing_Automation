@@ -52,6 +52,10 @@ import {
   type PackageTierQuantities,
 } from "../lib/packageTierQuantities";
 import { buildImplementerToGroupMap, rollUpTaskTimesByPricingGroup } from "../lib/taskHoursRollup";
+import {
+  autoDurationAfterHoursChange,
+  durationFromHoursOrExisting,
+} from "../lib/taskDurationFromHours";
 import { PricingPanel } from "./PricingPanel";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
@@ -797,7 +801,7 @@ export function PackagesBuilderPanel({
           task_name: value,
           task_implementer: m.task_implementer ?? null,
           task_time: m.task_time ?? null,
-          task_duration: m.task_duration ?? null,
+          task_duration: durationFromHoursOrExisting(m.task_time, m.task_duration),
           task_dependencies: m.task_dependencies ?? null,
           task_notes: m.task_notes ?? null,
         });
@@ -1307,9 +1311,27 @@ export function PackagesBuilderPanel({
                                   inputMode="decimal"
                                   value={timeStr}
                                   onChange={(e) => {
-                                    const t = optNum(e.target.value);
-                                    if (isExtra) patchUnifiedExtra(tr.task_id, { task_time: t });
-                                    else patchVaultTask(tr.solution_tier_id, tr.task_id, { task_time: t });
+                                    const raw = e.target.value;
+                                    const t = optNum(raw);
+                                    const prevTime =
+                                      tr.task_time != null && Number.isFinite(Number(tr.task_time))
+                                        ? String(tr.task_time)
+                                        : "";
+                                    const prevDur =
+                                      tr.task_duration != null && Number.isFinite(Number(tr.task_duration))
+                                        ? String(tr.task_duration)
+                                        : "";
+                                    const autoDur = autoDurationAfterHoursChange(raw, prevTime, prevDur);
+                                    const durPatch =
+                                      autoDur != null ? { task_duration: optNum(autoDur) } : {};
+                                    if (isExtra) {
+                                      patchUnifiedExtra(tr.task_id, { task_time: t, ...durPatch });
+                                    } else {
+                                      patchVaultTask(tr.solution_tier_id, tr.task_id, {
+                                        task_time: t,
+                                        ...durPatch,
+                                      });
+                                    }
                                   }}
                                 />
                               </td>,
@@ -1404,7 +1426,12 @@ export function PackagesBuilderPanel({
                                 value={d.time}
                                 onChange={(e) =>
                                   setPkgNewDrafts((list) =>
-                                    list.map((r) => (r.key === d.key ? { ...r, time: e.target.value } : r))
+                                    list.map((r) => {
+                                      if (r.key !== d.key) return r;
+                                      const time = e.target.value;
+                                      const auto = autoDurationAfterHoursChange(time, r.time, r.dur);
+                                      return auto != null ? { ...r, time, dur: auto } : { ...r, time };
+                                    })
                                   )
                                 }
                               />

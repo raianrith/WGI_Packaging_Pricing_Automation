@@ -34,12 +34,15 @@ import {
   draftFieldsFromTierVaultTasks,
   insertCopiedVaultTasksFromTier,
   sourceTierMeta,
-  tierCopySourceLabelFromNotes,
 } from "../lib/tierTaskCopy";
 import { nextAutoSolutionId, nextAutoTierId } from "../lib/entityIdSequences";
 import { fetchAllTaskIdRows, nextAutoTaskId } from "../lib/taskIds";
 import { persistTaskSortOrdersForTier } from "../lib/persistTaskSortOrdersForTier";
 import { compareTasksByOrder, tierMaxSortOrder } from "../lib/taskOrder";
+import {
+  autoDurationAfterHoursChange,
+  durationFromHoursOrExisting,
+} from "../lib/taskDurationFromHours";
 import {
   type TierPricingMathConfig,
 } from "../lib/tierPricingMath";
@@ -170,10 +173,12 @@ function firstTaskMatchingName(tasks: TaskRow[], name: string): TaskRow | null {
 }
 
 function autofillFromTask(t: TaskRow) {
+  const time = t.task_time != null ? String(t.task_time) : "";
+  const durNum = durationFromHoursOrExisting(t.task_time, t.task_duration);
   return {
     impl: t.task_implementer ?? "",
-    time: t.task_time != null ? String(t.task_time) : "",
-    dur: t.task_duration != null ? String(t.task_duration) : "",
+    time,
+    dur: durNum != null ? String(durNum) : "",
     dep: t.task_dependencies ?? "",
     notes: t.task_notes ?? "",
   };
@@ -221,12 +226,24 @@ function draftRowsFromTaskGroupLines(
       const src = allTasks.find((t) => t.task_id === line.source_task_id);
       if (src) {
         const af = autofillFromTask(src);
+        const time =
+          line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : af.time;
+        const hoursNum =
+          line.hours != null && Number.isFinite(line.hours)
+            ? line.hours
+            : src.task_time != null && Number.isFinite(Number(src.task_time))
+              ? Number(src.task_time)
+              : null;
+        const durNum = durationFromHoursOrExisting(
+          hoursNum,
+          line.duration != null && Number.isFinite(line.duration) ? line.duration : src.task_duration
+        );
         out.push({
           key,
           name: (line.task_name ?? "").trim() || src.task_name,
           impl: (line.task_implementer ?? "").trim() || af.impl,
-          time: line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : af.time,
-          dur: line.duration != null && Number.isFinite(line.duration) ? String(line.duration) : af.dur,
+          time,
+          dur: durNum != null ? String(durNum) : "",
           dep: af.dep,
           notes: af.notes,
           source: `From Task Group: ${sourceTaskGroupName}`,
@@ -239,7 +256,13 @@ function draftRowsFromTaskGroupLines(
       name: (line.task_name ?? "").trim(),
       impl: (line.task_implementer ?? "").trim(),
       time: line.hours != null && Number.isFinite(line.hours) ? String(line.hours) : "",
-      dur: line.duration != null && Number.isFinite(line.duration) ? String(line.duration) : "",
+      dur: (() => {
+        const d = durationFromHoursOrExisting(
+          line.hours != null && Number.isFinite(line.hours) ? line.hours : null,
+          line.duration != null && Number.isFinite(line.duration) ? line.duration : null
+        );
+        return d != null ? String(d) : "";
+      })(),
       dep: "",
       notes: "",
       source: `From Task Group: ${sourceTaskGroupName}`,
@@ -1006,7 +1029,17 @@ export function SolutionsBuilderPanel({
   };
 
   const updateDraftRow = (key: string, patch: Partial<DraftTaskRow>) => {
-    setDraftTasks((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+    setDraftTasks((list) =>
+      list.map((r) => {
+        if (r.key !== key) return r;
+        const next = { ...r, ...patch };
+        if (patch.time !== undefined && patch.dur === undefined) {
+          const auto = autoDurationAfterHoursChange(patch.time, r.time, r.dur);
+          if (auto != null) next.dur = auto;
+        }
+        return next;
+      })
+    );
   };
 
   const onDraftTaskNameChange = (key: string, value: string) => {
@@ -1236,28 +1269,6 @@ export function SolutionsBuilderPanel({
   useEffect(() => {
     setSbInlineFb(null);
   }, [subTab, updTierFocus]);
-
-  const taskGroupById = useMemo(() => new Map(taskGroups.map((g) => [g.id, g])), [taskGroups]);
-  const taskGroupLineById = useMemo(
-    () => new Map(taskGroupLines.map((l) => [l.id, l])),
-    [taskGroupLines]
-  );
-
-  const sourceLabelForTask = (t: TaskRow): string => {
-    const tierCopy = tierCopySourceLabelFromNotes(t.task_notes);
-    if (tierCopy) return tierCopy;
-    const lineId = t.spawned_from_task_group_line_id ?? null;
-    if (lineId) {
-      const line = taskGroupLineById.get(lineId);
-      if (line) {
-        const group = taskGroupById.get(line.task_group_id);
-        return group?.name ? `From "${group.name}"` : "From task group";
-      }
-      return "From task group";
-    }
-    return "Created Task (manual)";
-  };
-
 
   const implementerToGroup = useMemo(
     () => buildImplementerToGroupMap(implementerHourGroups),
@@ -2854,7 +2865,17 @@ export function SolutionsBuilderPanel({
   );
 
   const updateUpdNewDraft = (key: string, patch: Partial<DraftTaskRow>) => {
-    setUpdNewTaskDrafts((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+    setUpdNewTaskDrafts((list) =>
+      list.map((r) => {
+        if (r.key !== key) return r;
+        const next = { ...r, ...patch };
+        if (patch.time !== undefined && patch.dur === undefined) {
+          const auto = autoDurationAfterHoursChange(patch.time, r.time, r.dur);
+          if (auto != null) next.dur = auto;
+        }
+        return next;
+      })
+    );
   };
 
   const onUpdNewTaskNameChange = (key: string, value: string) => {
@@ -2933,7 +2954,16 @@ export function SolutionsBuilderPanel({
       </label>
       <label style={lbl}>
         <AdminFieldCaption>Time</AdminFieldCaption>
-        <input style={input} value={updKTime} onChange={(e) => setUpdKTime(e.target.value)} />
+        <input
+          style={input}
+          value={updKTime}
+          onChange={(e) => {
+            const nextTime = e.target.value;
+            setUpdKTime(nextTime);
+            const auto = autoDurationAfterHoursChange(nextTime, updKTime, updKDur);
+            if (auto != null) setUpdKDur(auto);
+          }}
+        />
       </label>
       <label style={lbl}>
         <AdminFieldCaption>Duration</AdminFieldCaption>
@@ -3280,7 +3310,6 @@ export function SolutionsBuilderPanel({
                         </th>
                         <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                         <th style={th}>Task name</th>
-                        <th style={th}>SOURCE</th>
                         <th style={th}>Implementer</th>
                         <th style={th}>Time</th>
                         <th style={th}>Duration</th>
@@ -3289,7 +3318,11 @@ export function SolutionsBuilderPanel({
                         <th style={{ ...th, width: 140 }} />
                       </tr>
                     </thead>
-                    <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
+                    <TaskSortableList
+                      itemIds={draftTasks.map((d) => d.key)}
+                      selectedIds={draftTaskBulkSelectedKeys}
+                      onReorder={reorderDraftTasksByKeys}
+                    >
                       <tbody>
                         {draftTasks.map((d) => (
                           <SortableTableRowTr
@@ -3320,9 +3353,6 @@ export function SolutionsBuilderPanel({
                                   value={d.name}
                                   onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                                 />
-                              </td>,
-                              <td style={td} key="src">
-                                {d.source}
                               </td>,
                               <td style={td} key="impl">
                                 <TaskImplementerSelect
@@ -3638,7 +3668,6 @@ export function SolutionsBuilderPanel({
                           </th>
                           <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                           <th style={th}>Task name</th>
-                          <th style={th}>SOURCE</th>
                           <th style={th}>Implementer</th>
                           <th style={th}>Time</th>
                           <th style={th}>Duration</th>
@@ -3651,7 +3680,7 @@ export function SolutionsBuilderPanel({
                             <tbody>
                               <tr>
                                 <td
-                                  colSpan={10}
+                                  colSpan={9}
                                   style={{
                                     ...td,
                                     background: "rgba(13, 92, 77, 0.06)",
@@ -3676,9 +3705,6 @@ export function SolutionsBuilderPanel({
                                       <strong>{k.task_name}</strong>
                                       <div style={{ ...muted, fontSize: "0.76rem" }}>{k.task_id}</div>
                                     </td>
-                                    <td style={{ ...td, fontSize: "0.78rem", color: "var(--muted)" }}>
-                                      {sourceLabelForTask(k)}
-                                    </td>
                                     <td style={td}>{k.task_implementer?.trim() ? k.task_implementer : "—"}</td>
                                     <td style={td}>
                                       {k.task_time != null && Number.isFinite(Number(k.task_time))
@@ -3700,7 +3726,11 @@ export function SolutionsBuilderPanel({
                               })}
                             </tbody>
                           ) : null}
-                          <TaskSortableList itemIds={draftTasks.map((d) => d.key)} onReorder={reorderDraftTasksByKeys}>
+                          <TaskSortableList
+                      itemIds={draftTasks.map((d) => d.key)}
+                      selectedIds={draftTaskBulkSelectedKeys}
+                      onReorder={reorderDraftTasksByKeys}
+                    >
                             <tbody>
                               {draftTasks.map((d) => (
                                 <SortableTableRowTr
@@ -3731,9 +3761,6 @@ export function SolutionsBuilderPanel({
                                         value={d.name}
                                         onChange={(e) => onDraftTaskNameChange(d.key, e.target.value)}
                                       />
-                                    </td>,
-                                    <td style={td} key="src">
-                                      {d.source}
                                     </td>,
                                     <td style={td} key="impl">
                                       <TaskImplementerSelect
@@ -4655,7 +4682,7 @@ export function SolutionsBuilderPanel({
                       <p style={formSectionHeading}>Copy vault tasks from another tier</p>
                       <p style={{ ...muted, margin: "0 0 0.6rem", fontSize: "0.86rem", maxWidth: "56ch" }}>
                         Clones <strong>vault</strong> checklist items (names, fields, notes) from a different tier. Notes
-                        begin with a short &quot;Copied from tier…&quot; line (also shown in SOURCE). Or append the same snapshot
+                        begin with a short &quot;Copied from tier…&quot; line in notes. Or append the same snapshot
                         to the bulk new-task draft table lower on this page.
                       </p>
                       <label style={{ ...lbl, maxWidth: 480, display: "block" }}>
@@ -4734,7 +4761,7 @@ export function SolutionsBuilderPanel({
                           <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                           <th style={th}>Id</th>
                           <th style={th}>Name</th>
-                          <th style={th}>SOURCE</th>
+                          <th style={th}>Implementer</th>
                           <th style={th}>Hours</th>
                           <th style={th}>Duration</th>
                           <th style={th} />
@@ -4743,6 +4770,7 @@ export function SolutionsBuilderPanel({
                       <TaskSortableList
                         itemIds={tasksOfFocusTier.map((t) => t.task_id)}
                         disabled={!!updTaskEditId || updTaskBulkBusy || updTaskReorderBusy}
+                        selectedIds={updTaskBulkSelectedIds}
                         onReorder={applyFocusTierTaskOrder}
                       >
                         <tbody>
@@ -4778,8 +4806,8 @@ export function SolutionsBuilderPanel({
                                 <td style={td} key="nm">
                                   {k.task_name}
                                 </td>,
-                                <td style={td} key="src">
-                                  {sourceLabelForTask(k)}
+                                <td style={td} key="impl">
+                                  {k.task_implementer?.trim() ? k.task_implementer : "—"}
                                 </td>,
                                 <td style={td} key="hrs">
                                   {k.task_time == null || !Number.isFinite(Number(k.task_time))
@@ -4809,8 +4837,8 @@ export function SolutionsBuilderPanel({
                           <td style={td} />
                           <td style={td} />
                           <td style={td} />
-                          <td style={td} />
                           <td style={{ ...td, fontWeight: 700 }}>TOTAL</td>
+                          <td style={td} />
                           <td style={{ ...td, fontWeight: 700 }}>{updTierTotalTaskHours}</td>
                           <td style={{ ...td, fontWeight: 700 }}>{updTierTotalTaskDuration}</td>
                           <td style={td} />
@@ -4861,7 +4889,6 @@ export function SolutionsBuilderPanel({
                             <tr>
                               <th style={{ ...th, width: 48 }} aria-label="Drag to reorder" />
                               <th style={th}>Task name</th>
-                              <th style={th}>SOURCE</th>
                               <th style={th}>Implementer</th>
                               <th style={th}>Time</th>
                               <th style={th}>Duration</th>
@@ -4890,12 +4917,6 @@ export function SolutionsBuilderPanel({
                                         value={d.name}
                                         onChange={(e) => onUpdNewTaskNameChange(d.key, e.target.value)}
                                       />
-                                    </td>,
-                                    <td
-                                      style={{ ...td, fontSize: "0.78rem", color: "var(--muted)" }}
-                                      key="src"
-                                    >
-                                      {d.source}
                                     </td>,
                                     <td style={td} key="impl">
                                       <TaskImplementerSelect

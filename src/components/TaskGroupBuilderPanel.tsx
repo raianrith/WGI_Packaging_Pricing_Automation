@@ -13,6 +13,7 @@ import {
 } from "../lib/taskGroupTemplatePicker";
 import { friendlyMutationMessage } from "../lib/supabaseErrors";
 import { syncTaskGroupTemplateToAppliedTiers } from "../lib/syncTaskGroupTemplateToAppliedTiers";
+import { autoDurationAfterHoursChange, suggestedTaskDurationDays } from "../lib/taskDurationFromHours";
 import { useToast, useToastBusy } from "../context/ToastContext";
 import { TaskImplementerSelect } from "./TaskImplementerSelect";
 import { SortableTableRowTr, TaskSortableList } from "./TaskTableSortable";
@@ -497,7 +498,13 @@ export function TaskGroupBuilderPanel({
           name: archName.trim(),
           implementer: archImpl,
           hours: archHours,
-          duration: archDuration,
+          duration:
+            archDuration.trim() ||
+            (() => {
+              const h = Number(archHours.trim());
+              if (!archHours.trim() || !Number.isFinite(h) || h < 0) return "";
+              return String(suggestedTaskDurationDays(h));
+            })(),
         },
       ]);
       setArchName("");
@@ -1374,7 +1381,16 @@ export function TaskGroupBuilderPanel({
                 </label>
                 <label className="admin-tg-field" style={lbl}>
                   <span className="admin-field-caption">Hours</span>
-                  <input style={input} value={archHours} onChange={(e) => setArchHours(e.target.value)} />
+                  <input
+                    style={input}
+                    value={archHours}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setArchHours(next);
+                      const auto = autoDurationAfterHoursChange(next, archHours, archDuration);
+                      if (auto != null) setArchDuration(auto);
+                    }}
+                  />
                 </label>
                 <label className="admin-tg-field" style={lbl}>
                   <span className="admin-field-caption">Duration</span>
@@ -1452,7 +1468,16 @@ export function TaskGroupBuilderPanel({
                   </label>
                   <label className="admin-tg-field" style={lbl}>
                     <span className="admin-field-caption">Hours</span>
-                    <input style={input} value={editHours} onChange={(e) => setEditHours(e.target.value)} />
+                    <input
+                      style={input}
+                      value={editHours}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setEditHours(next);
+                        const auto = autoDurationAfterHoursChange(next, editHours, editDuration);
+                        if (auto != null) setEditDuration(auto);
+                      }}
+                    />
                   </label>
                   <label className="admin-tg-field" style={lbl}>
                     <span className="admin-field-caption">Duration</span>
@@ -1604,7 +1629,16 @@ export function TaskGroupBuilderPanel({
                 </label>
                 <label className="admin-tg-field" style={lbl}>
                   <span className="admin-field-caption">Hours</span>
-                  <input style={input} value={archHours} onChange={(e) => setArchHours(e.target.value)} />
+                  <input
+                    style={input}
+                    value={archHours}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setArchHours(next);
+                      const auto = autoDurationAfterHoursChange(next, archHours, archDuration);
+                      if (auto != null) setArchDuration(auto);
+                    }}
+                  />
                 </label>
                 <label className="admin-tg-field" style={lbl}>
                   <span className="admin-field-caption">Duration</span>

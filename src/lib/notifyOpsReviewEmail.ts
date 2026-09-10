@@ -1,10 +1,12 @@
 import { getSupabase } from "./supabase";
+import type { OpsReviewSubmissionMeta } from "./opsReviewSubmission";
 
 export type OpsReviewNotifyPayload = {
   proposalId?: string | null;
   clientLabel: string;
   roadmapTitle: string;
   submittedByEmail?: string | null;
+  opsReview?: OpsReviewSubmissionMeta | null;
 };
 
 /**
@@ -25,6 +27,7 @@ export async function notifyOpsReviewSubmitted(
         roadmapTitle: payload.roadmapTitle,
         submittedByEmail: payload.submittedByEmail ?? null,
         appUrl: typeof window !== "undefined" ? window.location.origin : null,
+        opsReview: payload.opsReview ?? null,
       },
     });
 

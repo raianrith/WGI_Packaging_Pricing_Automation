@@ -86,6 +86,8 @@ import { catalogSolutionKind, buildModuleAddOnGroups } from "../lib/buildCatalog
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { notifyOpsReviewSubmitted } from "../lib/notifyOpsReviewEmail";
+import type { OpsReviewSubmissionMeta } from "../lib/opsReviewSubmission";
+import { ProposalOpsReviewSubmitModal } from "../components/proposal-builder/ProposalOpsReviewSubmitModal";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import { fetchAllTaskRows } from "../lib/taskIds";
 import { filterConfigurablePackages } from "../lib/presetPackages";
@@ -867,6 +869,8 @@ export function RoadmapPlanningView() {
   useToastBusy(reviewingProposalId != null, "Updating review status…");
   const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const [proposalReviewStatus, setProposalReviewStatus] = useState<ProposalReviewStatus>("draft");
+  const [opsReviewMeta, setOpsReviewMeta] = useState<OpsReviewSubmissionMeta | null>(null);
+  const [opsReviewModalOpen, setOpsReviewModalOpen] = useState(false);
   const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
   const savedProposalErrSeen = useRef<string | null>(null);
@@ -1055,6 +1059,7 @@ export function RoadmapPlanningView() {
       proposalEndDate,
       proposalKind,
       reviewStatus: proposalReviewStatus,
+      ...(opsReviewMeta ? { opsReview: opsReviewMeta } : {}),
       scenarios,
       phases,
       cards,
@@ -1064,6 +1069,7 @@ export function RoadmapPlanningView() {
       clientBudget,
       clientLabel,
       horizon,
+      opsReviewMeta,
       phases,
       proposalEndDate,
       proposalKind,
@@ -1076,6 +1082,7 @@ export function RoadmapPlanningView() {
 
   const saveCurrentProposal = useCallback(async (opts?: {
     reviewStatus?: ProposalReviewStatus;
+    opsReview?: OpsReviewSubmissionMeta;
     successMessage?: string;
   }): Promise<RoadmapProposalRow | null> => {
     const client = getSupabase();
@@ -1094,9 +1101,11 @@ export function RoadmapPlanningView() {
     const userId = user?.id ?? null;
     const email = user?.email ?? null;
     const nextReviewStatus = opts?.reviewStatus ?? proposalReviewStatus;
+    const nextOpsReview = opts?.opsReview ?? opsReviewMeta ?? undefined;
     const snapshot: RoadmapProposalSnapshot = {
       ...currentProposalSnapshot(),
       reviewStatus: nextReviewStatus,
+      ...(nextOpsReview ? { opsReview: nextOpsReview } : {}),
     };
     const payload = {
       client_label: clientName,
@@ -1131,6 +1140,7 @@ export function RoadmapPlanningView() {
     const saved = result.data as RoadmapProposalRow | null;
     if (saved?.id) setActiveProposalId(saved.id);
     setProposalReviewStatus(nextReviewStatus);
+    if (opts?.opsReview) setOpsReviewMeta(opts.opsReview);
     setLastSavedFingerprint(proposalSnapshotFingerprint(snapshot));
     toastSuccess(opts?.successMessage ?? `Saved "${title}" under ${clientName}.`);
     await loadSavedProposals();
@@ -1142,6 +1152,7 @@ export function RoadmapPlanningView() {
     currentProposalSnapshot,
     horizon,
     loadSavedProposals,
+    opsReviewMeta,
     proposalReviewStatus,
     roadmapTitle,
     toastError,
@@ -1150,24 +1161,30 @@ export function RoadmapPlanningView() {
     user?.id,
   ]);
 
-  const submitForOpsReview = useCallback(async () => {
-    const clientName = clientLabel.trim();
-    const title = roadmapTitle.trim();
-    const saved = await saveCurrentProposal({
-      reviewStatus: "awaiting_ops_review",
-      successMessage: `Submitted "${title}" for Ops Review.`,
-    });
-    if (!saved) return;
-    void notifyOpsReviewSubmitted({
-      proposalId: saved.id,
-      clientLabel: saved.client_label || clientName,
-      roadmapTitle: saved.roadmap_title || title,
-      submittedByEmail: user?.email ?? saved.updated_by_email ?? saved.created_by_email,
-    });
-    setActiveProposalId(null);
-    setBuilderMode("awaiting_ops");
-    setBuilderStep("setup");
-  }, [clientLabel, roadmapTitle, saveCurrentProposal, user?.email]);
+  const submitForOpsReview = useCallback(
+    async (meta: OpsReviewSubmissionMeta) => {
+      const clientName = clientLabel.trim();
+      const title = roadmapTitle.trim();
+      const saved = await saveCurrentProposal({
+        reviewStatus: "awaiting_ops_review",
+        opsReview: meta,
+        successMessage: `Submitted "${title}" for Ops Review.`,
+      });
+      if (!saved) return;
+      setOpsReviewModalOpen(false);
+      void notifyOpsReviewSubmitted({
+        proposalId: saved.id,
+        clientLabel: saved.client_label || clientName,
+        roadmapTitle: saved.roadmap_title || title,
+        submittedByEmail: user?.email ?? saved.updated_by_email ?? saved.created_by_email,
+        opsReview: meta,
+      });
+      setActiveProposalId(null);
+      setBuilderMode("awaiting_ops");
+      setBuilderStep("setup");
+    },
+    [clientLabel, roadmapTitle, saveCurrentProposal, user?.email]
+  );
 
   const markReviewedByOps = useCallback(async () => {
     const saved = await saveCurrentProposal({
@@ -1256,6 +1273,8 @@ export function RoadmapPlanningView() {
     setTargetScenarioId(init.scenarios[0]!.id);
     setActiveProposalId(null);
     setProposalReviewStatus("draft");
+    setOpsReviewMeta(null);
+    setOpsReviewModalOpen(false);
     setLastSavedFingerprint(proposalSnapshotFingerprint(emptySnapshot));
     setDetailsModalKey(null);
     setScratchDraft(null);
@@ -1315,6 +1334,8 @@ export function RoadmapPlanningView() {
       setProposalEndDate(snapshot.proposalEndDate);
       setProposalKind(snapshot.proposalKind ?? "program");
       setProposalReviewStatus(snapshot.reviewStatus ?? "draft");
+      setOpsReviewMeta(snapshot.opsReview ?? null);
+      setOpsReviewModalOpen(false);
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -2860,7 +2881,7 @@ export function RoadmapPlanningView() {
                   onStepChange={setBuilderStep}
                   includeOpsPath={includeOpsPath}
                   nextLabel={includeOpsPath ? "Ops Review" : "Submit for Ops Review"}
-                  onNext={includeOpsPath ? undefined : () => void submitForOpsReview()}
+                  onNext={includeOpsPath ? undefined : () => setOpsReviewModalOpen(true)}
                   {...proposalStepSaveProps}
                 />
               </>
@@ -2917,6 +2938,15 @@ export function RoadmapPlanningView() {
                         }
                       : null
                   }
+                  taxCtx={
+                    catalogCtx
+                      ? {
+                          packageTiers: catalogCtx.packageTiers,
+                          pricingByTierId: catalogCtx.pricingMap,
+                        }
+                      : null
+                  }
+                  opsReview={opsReviewMeta}
                   computeScratchSellPrice={computeScratchSellPrice}
                   formatUsd={formatUsd}
                   formatHoursShort={formatHoursShort}
@@ -3306,6 +3336,15 @@ export function RoadmapPlanningView() {
           </div>
         </div>
       ) : null}
+      <ProposalOpsReviewSubmitModal
+        open={opsReviewModalOpen}
+        busy={savingProposal}
+        defaultProjectOwner=""
+        onCancel={() => {
+          if (!savingProposal) setOpsReviewModalOpen(false);
+        }}
+        onConfirm={(meta) => void submitForOpsReview(meta)}
+      />
     </div>
   );
 }

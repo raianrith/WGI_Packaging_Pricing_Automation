@@ -10,24 +10,28 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const SLACK_WEBHOOK_URL = Deno.env.get("SLACK_WEBHOOK_URL")?.trim() ?? "";
 
-const corsHeaders: Record<string, string> = {
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type NotifyBody = {
-  proposalId?: string | null;
-  clientLabel?: string | null;
-  roadmapTitle?: string | null;
-  submittedByEmail?: string | null;
-  appUrl?: string | null;
-};
-
-function json(status: number, body: Record<string, unknown>) {
+function json(status: number, body: object) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function truncate(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1).trimEnd() + "…";
+}
+
+function displayModeLabel(mode: string): string {
+  if (mode === "section_totals") return "Section totals";
+  if (mode === "proposal_total") return "One-line Proposal Total";
+  return mode.trim() || "Not specified";
 }
 
 Deno.serve(async (req) => {
@@ -45,25 +49,39 @@ Deno.serve(async (req) => {
     });
   }
 
-  let body: NotifyBody;
+  let body: Record<string, unknown>;
   try {
-    body = (await req.json()) as NotifyBody;
+    body = (await req.json()) as Record<string, unknown>;
   } catch {
     return json(400, { error: "Invalid JSON body" });
   }
 
-  const clientLabel = (body.clientLabel ?? "").trim() || "Unknown client";
-  const roadmapTitle = (body.roadmapTitle ?? "").trim() || "Untitled proposal";
-  const submittedBy = (body.submittedByEmail ?? "").trim() || "Unknown submitter";
-  const appUrl = (body.appUrl ?? "").trim();
-  const proposalId = (body.proposalId ?? "").trim();
+  const clientLabel = String(body.clientLabel ?? "").trim() || "Unknown client";
+  const roadmapTitle = String(body.roadmapTitle ?? "").trim() || "Untitled proposal";
+  const submittedBy = String(body.submittedByEmail ?? "").trim() || "Unknown submitter";
+  const appUrl = String(body.appUrl ?? "").trim();
+  const proposalId = String(body.proposalId ?? "").trim();
   const openLink = appUrl ? appUrl.replace(/\/$/, "") + "/roadmap" : "";
+  const ops = (body.opsReview && typeof body.opsReview === "object"
+    ? body.opsReview
+    : null) as Record<string, unknown> | null;
 
   const lines = [
     "*Client:* " + clientLabel,
     "*Roadmap:* " + roadmapTitle,
     "*Submitted by:* " + submittedBy,
   ];
+  const projectOwner = ops ? String(ops.projectOwner ?? "").trim() : "";
+  if (projectOwner) {
+    lines.push("*Project owner:* " + projectOwner);
+  }
+  if (ops && typeof ops.wisconsinBasedClient === "boolean") {
+    lines.push("*Wisconsin-based client:* " + (ops.wisconsinBasedClient ? "Yes" : "No"));
+  }
+  const displayMode = ops ? String(ops.displayMode ?? "").trim() : "";
+  if (displayMode) {
+    lines.push("*Client display:* " + displayModeLabel(displayMode));
+  }
   if (proposalId) {
     lines.push("*Proposal ID:* `" + proposalId + "`");
   }
@@ -71,25 +89,57 @@ Deno.serve(async (req) => {
     lines.push("*<" + openLink + "|Open Proposal Builder - Awaiting Ops Review>*");
   }
 
+  const blocks: object[] = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Proposal submitted for Ops Review",
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: lines.join("\n"),
+      },
+    },
+  ];
+
+  const summary = ops ? String(ops.claudeChatSummary ?? "").trim() : "";
+  if (summary) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Claude chat summary:*\n" + truncate(summary, 2800),
+      },
+    });
+  }
+
+  const sectionsRaw = ops && Array.isArray(ops.sections) ? ops.sections : [];
+  if (displayMode === "section_totals" && sectionsRaw.length !== 0) {
+    const sectionLines = sectionsRaw.map((raw, i) => {
+      const s = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const name = String(s.name ?? "").trim() || `Section ${i + 1}`;
+      const notes = String(s.notes ?? "").trim();
+      return notes
+        ? `*${i + 1}. ${name}*\n${truncate(notes, 500)}`
+        : `*${i + 1}. ${name}*`;
+    });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Proposal sections:*\n" + truncate(sectionLines.join("\n\n"), 2800),
+      },
+    });
+  }
+
   const payload = {
     text: "Proposal submitted for Ops Review: " + roadmapTitle + " (" + clientLabel + ")",
-    blocks: [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "Proposal submitted for Ops Review",
-          emoji: true,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: lines.join("\n"),
-        },
-      },
-    ],
+    blocks,
   };
 
   const res = await fetch(SLACK_WEBHOOK_URL, {

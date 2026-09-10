@@ -3,6 +3,10 @@ import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "./roadmapModel"
 
 import { normalizeIsoDateInput } from "./proposalDates";
 import { isProposalKind, type ProposalKind } from "./proposalKindPresets";
+import {
+  parseOpsReviewSubmissionMeta,
+  type OpsReviewSubmissionMeta,
+} from "./opsReviewSubmission";
 
 export type RoadmapHorizon = "3" | "4" | "6" | "12" | "custom";
 
@@ -32,6 +36,8 @@ export type RoadmapProposalSnapshot = {
   proposalKind?: ProposalKind;
   /** Strategist → Ops → Client Ready handoff. */
   reviewStatus?: ProposalReviewStatus;
+  /** Filled when submitting for Ops Review. */
+  opsReview?: OpsReviewSubmissionMeta;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
@@ -75,6 +81,7 @@ export function parseProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalS
     proposalEndDate: normalizeIsoDateInput(raw.proposalEndDate),
     proposalKind: isProposalKind(raw.proposalKind) ? raw.proposalKind : undefined,
     reviewStatus: isProposalReviewStatus(raw.reviewStatus) ? raw.reviewStatus : undefined,
+    opsReview: parseOpsReviewSubmissionMeta(raw.opsReview) ?? undefined,
     scenarios: raw.scenarios as RoadmapScenario[],
     phases: raw.phases as RoadmapPhase[],
     cards: raw.cards as RoadmapCard[],

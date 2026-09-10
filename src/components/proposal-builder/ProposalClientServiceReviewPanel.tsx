@@ -102,6 +102,11 @@ function CsrCard({
       : null,
   ].filter(Boolean);
 
+  const currentPriceLabel =
+    metrics.currentPriceUsd != null
+      ? formatProposalUsdValue(metrics.currentPriceUsd)
+      : effectivePriceForCard(card).trim() || "—";
+
   return (
     <article
       className={`proposal-csr-card proposal-csr-card--${kindClass}${expanded ? " is-expanded" : ""}${
@@ -126,33 +131,54 @@ function CsrCard({
             {changed ? <span className="proposal-csr-card__changed-pill">Updated</span> : null}
           </span>
           <span className="proposal-csr-card__meta">{metaBits.join(" · ")}</span>
-          <div className="proposal-csr-metrics" aria-label="Hours and price comparison">
-            <MetricCell
-              label="Original hours"
-              value={formatProposalHoursValue(metrics.originalHours)}
-              tone="muted"
-            />
-            <MetricCell
-              label="Original price"
-              value={formatProposalUsdValue(metrics.originalPriceUsd)}
-              tone="muted"
-            />
-            <MetricCell
-              label="Current hours"
-              value={formatProposalHoursValue(metrics.currentHours)}
-              tone={metrics.hoursChanged ? "changed" : "current"}
-            />
-            <MetricCell
-              label="Current price"
-              value={
-                metrics.currentPriceUsd != null
-                  ? formatProposalUsdValue(metrics.currentPriceUsd)
-                  : effectivePriceForCard(card).trim() || "—"
-              }
-              tone={metrics.priceChanged ? "changed" : "current"}
-            />
-          </div>
+          {expanded ? (
+            <div className="proposal-csr-metrics" aria-label="Hours and price comparison">
+              <MetricCell
+                label="Original hours"
+                value={formatProposalHoursValue(metrics.originalHours)}
+                tone="muted"
+              />
+              <MetricCell
+                label="Original price"
+                value={formatProposalUsdValue(metrics.originalPriceUsd)}
+                tone="muted"
+              />
+              <MetricCell
+                label="Current hours"
+                value={formatProposalHoursValue(metrics.currentHours)}
+                tone={metrics.hoursChanged ? "changed" : "current"}
+              />
+              <MetricCell
+                label="Current price"
+                value={currentPriceLabel}
+                tone={metrics.priceChanged ? "changed" : "current"}
+              />
+            </div>
+          ) : null}
         </span>
+        {!expanded ? (
+          <span className="proposal-csr-card__compact" aria-label="Hours and price">
+            <span className="proposal-csr-card__compact-item">
+              <strong>{formatProposalHoursValue(metrics.currentHours)}</strong>
+              {metrics.hoursChanged ? (
+                <span className="proposal-csr-card__compact-was">
+                  was {formatProposalHoursValue(metrics.originalHours)}
+                </span>
+              ) : null}
+            </span>
+            <span className="proposal-csr-card__compact-sep" aria-hidden>
+              ·
+            </span>
+            <span className="proposal-csr-card__compact-item">
+              <strong>{currentPriceLabel}</strong>
+              {metrics.priceChanged ? (
+                <span className="proposal-csr-card__compact-was">
+                  was {formatProposalUsdValue(metrics.originalPriceUsd)}
+                </span>
+              ) : null}
+            </span>
+          </span>
+        ) : null}
       </button>
 
       {expanded ? (
@@ -335,35 +361,13 @@ function Section({
     <section className={`proposal-csr-section proposal-csr-section--${tone}`} aria-label={title}>
       <header className="proposal-csr-section__head">
         <div className="proposal-csr-section__intro">
-          <span className={`proposal-csr-section__icon proposal-csr-section__icon--${tone}`} aria-hidden>
-            {tone === "package" ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5v-7Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                />
-                <path d="M12 12v8M3.5 9 12 13.5 20.5 9" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-                <path d="M8 9.5h8M8 13h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            )}
-          </span>
           <div>
             <h3 className="proposal-csr-section__title">{title}</h3>
             <p className="proposal-csr-section__hint">{hint}</p>
           </div>
         </div>
         <span className={`proposal-csr-section__count proposal-csr-section__count--${tone}`}>
-          {count} item{count === 1 ? "" : "s"}
+          {count}
           {extraCount ? ` · ${extraCount}` : ""}
         </span>
       </header>
@@ -519,8 +523,7 @@ export function ProposalClientServiceReviewPanel({
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">
-          Review packages and solutions separately. Change task hours to update the proposal price —
-          original catalog values stay visible for comparison.
+          Adjust task hours to refine price. Original catalog values stay for comparison.
         </p>
       </header>
 
@@ -549,40 +552,38 @@ export function ProposalClientServiceReviewPanel({
           aria-label="Overall proposal comparison"
         >
           <div className="proposal-csr-totals__intro">
-            <p className="proposal-csr-totals__eyebrow">Overall proposal</p>
             <h3 className="proposal-csr-totals__title">
               {proposalTotals.usedIncludedOnly ? "Included total" : "Scenario total"}
             </h3>
             <p className="proposal-csr-totals__hint">
-              {proposalTotals.lineCount} included line
-              {proposalTotals.lineCount === 1 ? "" : "s"}
+              {proposalTotals.lineCount} line{proposalTotals.lineCount === 1 ? "" : "s"}
               {proposalTotals.priceChanged && proposalTotals.priceDelta != null
                 ? ` · ${proposalTotals.priceDelta > 0 ? "+" : ""}${formatProposalUsdValue(
                     proposalTotals.priceDelta
-                  )} after task edits`
-                : " · same as original until you edit tasks"}
+                  )} vs original`
+                : null}
             </p>
           </div>
           <div className="proposal-csr-totals__grid">
             <MetricCell
-              label="Original hours"
-              value={formatProposalHoursValue(proposalTotals.originalHours)}
-              tone="muted"
-            />
-            <MetricCell
-              label="Original price"
-              value={formatProposalUsdValue(proposalTotals.originalPrice)}
-              tone="muted"
-            />
-            <MetricCell
-              label="Current hours"
+              label="Hours"
               value={formatProposalHoursValue(proposalTotals.currentHours)}
               tone={proposalTotals.hoursChanged ? "changed" : "current"}
             />
             <MetricCell
-              label="Current price"
+              label="Price"
               value={formatProposalUsdValue(proposalTotals.currentPrice)}
               tone={proposalTotals.priceChanged ? "changed" : "current"}
+            />
+            <MetricCell
+              label="Orig. hours"
+              value={formatProposalHoursValue(proposalTotals.originalHours)}
+              tone="muted"
+            />
+            <MetricCell
+              label="Orig. price"
+              value={formatProposalUsdValue(proposalTotals.originalPrice)}
+              tone="muted"
             />
           </div>
         </div>
@@ -590,14 +591,14 @@ export function ProposalClientServiceReviewPanel({
 
       {scenarioCards.length === 0 ? (
         <p className="proposal-csr__empty">
-          No solutions or packages in this scenario yet. Add them in earlier steps, then come back to
-          refine tasks.
+          No solutions or packages in this scenario yet. Add them earlier, then return here to refine
+          tasks.
         </p>
       ) : (
         <div className="proposal-csr__sections">
           <Section
             title="Packages"
-            hint="Bundled offerings — edit hours and see price update"
+            hint="Edit hours to update package price"
             count={packageCards.length}
             tone="package"
           >
@@ -607,7 +608,7 @@ export function ProposalClientServiceReviewPanel({
           </Section>
           <Section
             title="Solutions"
-            hint="Solution tiers with add-ons nested underneath"
+            hint="Add-ons nest under their parent"
             count={solutionGroups.length}
             extraCount={
               nestedAddonCount > 0

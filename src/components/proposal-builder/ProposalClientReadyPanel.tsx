@@ -11,6 +11,15 @@ import {
   buildImplementerWeekLoad,
   buildProposalScheduleBars,
 } from "../../lib/proposalScheduleCharts";
+import {
+  opsReviewDisplayModeLabel,
+  wisconsinBasedClientLabel,
+  type OpsReviewSubmissionMeta,
+} from "../../lib/opsReviewSubmission";
+import {
+  computeProposalDealTotals,
+  type ProposalTaxabilityCtx,
+} from "../../lib/proposalTaxableTotals";
 import { proposalStepDef } from "./ProposalBuilderSteps";
 import { ProposalExportPreviewTables } from "./ProposalExportPreviewTables";
 
@@ -25,6 +34,8 @@ type Props = {
   cards: RoadmapCard[];
   ctx: CatalogCtxLike | null;
   tasksCtx: ProposalCardTasksCtx | null;
+  taxCtx?: ProposalTaxabilityCtx | null;
+  opsReview?: OpsReviewSubmissionMeta | null;
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike | null) => string;
   formatUsd: (n: number | null | undefined) => string;
   formatHoursShort: (n: number) => string;
@@ -226,6 +237,64 @@ function ProposalImplementerLoadChart({
   );
 }
 
+function formatSegmentPct(part: number, total: number): string {
+  if (!(total > 0) || !Number.isFinite(part)) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+function DealSegmentDonut({
+  title,
+  totalLabel,
+  taxable,
+  nonTaxable,
+  formatValue,
+}: {
+  title: string;
+  totalLabel: string;
+  taxable: number;
+  nonTaxable: number;
+  formatValue: (n: number) => string;
+}) {
+  const total = Math.max(0, taxable) + Math.max(0, nonTaxable);
+  const taxableSafe = Math.max(0, taxable);
+  const nonTaxSafe = Math.max(0, nonTaxable);
+  const taxablePct = total > 0 ? (taxableSafe / total) * 100 : 0;
+  const gradient =
+    total <= 0
+      ? "conic-gradient(#ddd6fe 0deg 360deg)"
+      : `conic-gradient(#7c3aed 0 ${taxablePct}%, #c4b5fd ${taxablePct}% 100%)`;
+
+  return (
+    <div className="proposal-deal-info__chart" role="img" aria-label={title}>
+      <div className="proposal-deal-info__chart-visual">
+        <div className="proposal-deal-info__donut" style={{ background: gradient }}>
+          <div className="proposal-deal-info__donut-hole">
+            <span className="proposal-deal-info__donut-total-label">Total</span>
+            <strong className="proposal-deal-info__donut-total">{totalLabel}</strong>
+          </div>
+        </div>
+      </div>
+      <div className="proposal-deal-info__chart-copy">
+        <h4 className="proposal-deal-info__chart-title">{title}</h4>
+        <ul className="proposal-deal-info__legend">
+          <li className="proposal-deal-info__legend-item">
+            <span className="proposal-deal-info__swatch proposal-deal-info__swatch--taxable" aria-hidden />
+            <span className="proposal-deal-info__legend-label">Taxable</span>
+            <strong className="proposal-deal-info__legend-value">{formatValue(taxableSafe)}</strong>
+            <span className="proposal-deal-info__legend-pct">{formatSegmentPct(taxableSafe, total)}</span>
+          </li>
+          <li className="proposal-deal-info__legend-item">
+            <span className="proposal-deal-info__swatch proposal-deal-info__swatch--nontax" aria-hidden />
+            <span className="proposal-deal-info__legend-label">Non-taxable</span>
+            <strong className="proposal-deal-info__legend-value">{formatValue(nonTaxSafe)}</strong>
+            <span className="proposal-deal-info__legend-pct">{formatSegmentPct(nonTaxSafe, total)}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export function ProposalClientReadyPanel({
   roadmapTitle,
   clientLabel,
@@ -235,6 +304,8 @@ export function ProposalClientReadyPanel({
   cards,
   ctx,
   tasksCtx,
+  taxCtx = null,
+  opsReview = null,
   computeScratchSellPrice,
   formatUsd,
   formatHoursShort,
@@ -277,6 +348,17 @@ export function ProposalClientReadyPanel({
     }
     return sum;
   }, [cards, scenarios.length, activeScenarioId, ctx, computeScratchSellPrice]);
+
+  const dealTotals = useMemo(
+    () =>
+      computeProposalDealTotals({
+        cards: chartCards,
+        ctx,
+        taxCtx,
+        computeScratchSellPrice,
+      }),
+    [chartCards, ctx, taxCtx, computeScratchSellPrice]
+  );
 
   const ganttBars = useMemo(
     () => buildProposalScheduleBars(chartCards, chartScenarios, phases),
@@ -379,6 +461,100 @@ export function ProposalClientReadyPanel({
           ))}
         </div>
       ) : null}
+
+      <section
+        className="proposal-client-ready-chart proposal-deal-info"
+        aria-labelledby="proposal-deal-info-title"
+      >
+        <header className="proposal-client-ready-chart__head">
+          <h3 id="proposal-deal-info-title" className="proposal-client-ready-chart__title">
+            Productive Deal and Proposal Information
+          </h3>
+          <p className="proposal-client-ready-chart__hint">
+            Ops handoff details from submission, plus included pricing and taxability totals
+            {scenarios.length > 1 ? " for the selected scenario" : ""}.
+          </p>
+        </header>
+
+        <div className="proposal-deal-info__charts">
+          <DealSegmentDonut
+            title="Price mix"
+            totalLabel={formatUsd(dealTotals.totalPrice)}
+            taxable={dealTotals.taxablePrice}
+            nonTaxable={dealTotals.nonTaxablePrice}
+            formatValue={formatUsd}
+          />
+          <DealSegmentDonut
+            title="Hours mix"
+            totalLabel={formatHoursShort(dealTotals.totalHours)}
+            taxable={dealTotals.taxableHours}
+            nonTaxable={dealTotals.nonTaxableHours}
+            formatValue={(n) => formatHoursShort(n)}
+          />
+        </div>
+        <p className="proposal-deal-info__tax-note">
+          Packages count as taxable when at least 10% of their component solutions are taxable.
+        </p>
+
+        {opsReview ? (
+          <div className="proposal-deal-info__handoff">
+            <div className="proposal-deal-info__grid">
+              <div className="proposal-deal-info__field">
+                <span className="proposal-deal-info__field-label">Project owner</span>
+                <p className="proposal-deal-info__field-value">
+                  {opsReview.projectOwner || "—"}
+                </p>
+              </div>
+              <div className="proposal-deal-info__field">
+                <span className="proposal-deal-info__field-label">Wisconsin-based client</span>
+                <p className="proposal-deal-info__field-value">
+                  {wisconsinBasedClientLabel(opsReview.wisconsinBasedClient)}
+                </p>
+              </div>
+              <div className="proposal-deal-info__field">
+                <span className="proposal-deal-info__field-label">Client presentation</span>
+                <p className="proposal-deal-info__field-value">
+                  {opsReviewDisplayModeLabel(opsReview.displayMode)}
+                </p>
+              </div>
+            </div>
+
+            <div className="proposal-deal-info__field">
+              <span className="proposal-deal-info__field-label">Claude conversation summary</span>
+              <p className="proposal-deal-info__field-value proposal-deal-info__field-value--body">
+                {opsReview.claudeChatSummary || "—"}
+              </p>
+            </div>
+
+            {opsReview.displayMode === "section_totals" && opsReview.sections.length > 0 ? (
+              <div className="proposal-deal-info__sections">
+                <h4 className="proposal-deal-info__sections-title">Proposal sections</h4>
+                <ul className="proposal-deal-info__section-list">
+                  {opsReview.sections.map((section, index) => (
+                    <li key={section.id} className="proposal-deal-info__section">
+                      <div className="proposal-deal-info__section-head">
+                        <span className="proposal-deal-info__section-index">Section {index + 1}</span>
+                        <strong className="proposal-deal-info__section-name">
+                          {section.name.trim() || "Untitled section"}
+                        </strong>
+                      </div>
+                      {section.notes.trim() ? (
+                        <p className="proposal-deal-info__section-notes">{section.notes.trim()}</p>
+                      ) : (
+                        <p className="proposal-deal-info__section-notes is-empty">No notes</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="proposal-deal-info__empty">
+            No Ops Review handoff details were saved with this proposal yet.
+          </p>
+        )}
+      </section>
 
       <section className="roadmap-panel roadmap-panel--export proposal-client-ready__export">
         <div className="roadmap-export__head">

@@ -148,6 +148,7 @@ export function ProposalSavedProposalsPanel({
   variant = "saved",
 }: Props) {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [clientQuery, setClientQuery] = useState("");
   const copy = VARIANT_COPY[variant];
   const showReviewedToggle = variant === "awaiting_ops" || variant === "client_ready";
   const reviewedByOpsOn = variant === "client_ready";
@@ -161,6 +162,12 @@ export function ProposalSavedProposalsPanel({
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [proposals]);
+
+  const filteredClientEntries = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return clientEntries;
+    return clientEntries.filter(([client]) => client.toLowerCase().includes(q));
+  }, [clientEntries, clientQuery]);
 
   const visibleProposals = useMemo(() => {
     const sorted = [...proposals].sort(
@@ -216,6 +223,23 @@ export function ProposalSavedProposalsPanel({
         <div className="proposal-saved__layout">
           <aside className="proposal-saved__sidebar" aria-label="Clients">
             <p className="proposal-saved__sidebar-label">Clients</p>
+            <label className="proposal-saved__client-search">
+              <span className="proposal-saved__client-search-icon" aria-hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
+                  <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </span>
+              <span className="visually-hidden">Search clients</span>
+              <input
+                type="search"
+                className="proposal-saved__client-search-input"
+                value={clientQuery}
+                onChange={(e) => setClientQuery(e.target.value)}
+                placeholder="Search clients…"
+                autoComplete="off"
+              />
+            </label>
             <ul className="proposal-saved__client-list">
               <li>
                 <button
@@ -230,21 +254,25 @@ export function ProposalSavedProposalsPanel({
                   <span className="proposal-saved__client-count">{proposals.length}</span>
                 </button>
               </li>
-              {clientEntries.map(([client, count]) => (
-                <li key={client}>
-                  <button
-                    type="button"
-                    className={`proposal-saved__client-btn${selectedClient === client ? " is-active" : ""}`}
-                    onClick={() => setSelectedClient(client)}
-                  >
-                    <span className="proposal-saved__client-avatar" aria-hidden>
-                      {clientInitials(client)}
-                    </span>
-                    <span className="proposal-saved__client-name">{client}</span>
-                    <span className="proposal-saved__client-count">{count}</span>
-                  </button>
-                </li>
-              ))}
+              {filteredClientEntries.length === 0 ? (
+                <li className="proposal-saved__client-empty">No matching clients</li>
+              ) : (
+                filteredClientEntries.map(([client, count]) => (
+                  <li key={client}>
+                    <button
+                      type="button"
+                      className={`proposal-saved__client-btn${selectedClient === client ? " is-active" : ""}`}
+                      onClick={() => setSelectedClient(client)}
+                    >
+                      <span className="proposal-saved__client-avatar" aria-hidden>
+                        {clientInitials(client)}
+                      </span>
+                      <span className="proposal-saved__client-name">{client}</span>
+                      <span className="proposal-saved__client-count">{count}</span>
+                    </button>
+                  </li>
+                ))
+              )}
             </ul>
           </aside>
 

@@ -16,11 +16,13 @@ import {
   wisconsinBasedClientLabel,
   type OpsReviewSubmissionMeta,
 } from "../../lib/opsReviewSubmission";
+import type { CustomScopingState } from "../../lib/customScopingRequest";
 import {
   computeProposalDealTotals,
   type ProposalTaxabilityCtx,
 } from "../../lib/proposalTaxableTotals";
 import { proposalStepDef } from "./ProposalBuilderSteps";
+import { ProposalCustomScopingSummary } from "./ProposalCustomScopingSummary";
 import { ProposalExportPreviewTables } from "./ProposalExportPreviewTables";
 
 type PdfKind = "client" | "ops";
@@ -36,6 +38,7 @@ type Props = {
   tasksCtx: ProposalCardTasksCtx | null;
   taxCtx?: ProposalTaxabilityCtx | null;
   opsReview?: OpsReviewSubmissionMeta | null;
+  customScoping?: CustomScopingState | null;
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike | null) => string;
   formatUsd: (n: number | null | undefined) => string;
   formatHoursShort: (n: number) => string;
@@ -306,6 +309,7 @@ export function ProposalClientReadyPanel({
   tasksCtx,
   taxCtx = null,
   opsReview = null,
+  customScoping = null,
   computeScratchSellPrice,
   formatUsd,
   formatHoursShort,
@@ -555,6 +559,8 @@ export function ProposalClientReadyPanel({
           </p>
         )}
       </section>
+
+      <ProposalCustomScopingSummary state={customScoping} />
 
       <section className="roadmap-panel roadmap-panel--export proposal-client-ready__export">
         <div className="roadmap-export__head">

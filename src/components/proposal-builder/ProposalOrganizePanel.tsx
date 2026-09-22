@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "../../lib/roadmapModel";
 import { budgetVsScenarioStatus, cardHoursForScenarioRollup, cardPriceUsdForRollup, sortedPhasesForScenario } from "../../lib/roadmapModel";
 import { computeProposalAccountMgmtRollup } from "../../lib/proposalAccountMgmt";
+import type { CustomScopingState } from "../../lib/customScopingRequest";
 import { TaskSortableList } from "../TaskTableSortable";
+import { ProposalCustomScopingSummary } from "./ProposalCustomScopingSummary";
 import { ProposalOrganizeAccountMgmtCard } from "./ProposalOrganizeAccountMgmtCard";
 import { ProposalOrganizeLineCard } from "./ProposalOrganizeLineCard";
 import type { ScenarioBudgetBarRow } from "./ProposalScenarioBudgetBars";
 import { ProposalScenarioBudgetBars } from "./ProposalScenarioBudgetBars";
+import { proposalStepDef } from "./ProposalBuilderSteps";
 
 type CatalogCtxLike = Parameters<typeof cardPriceUsdForRollup>[1];
 
@@ -38,6 +41,7 @@ type Props = {
   onEditStructure: () => void;
   onClearScenarioItems: (scenarioId: string) => void;
   onUpdateScenarioNarrative: (scenarioId: string, narrative: string) => void;
+  customScoping?: CustomScopingState | null;
 };
 
 export function ProposalOrganizePanel({
@@ -58,7 +62,9 @@ export function ProposalOrganizePanel({
   onEditStructure,
   onClearScenarioItems,
   onUpdateScenarioNarrative,
+  customScoping = null,
 }: Props) {
+  const stepMeta = proposalStepDef("board");
   const [viewScenarioId, setViewScenarioId] = useState(initialScenarioId);
 
   useEffect(() => {
@@ -121,10 +127,12 @@ export function ProposalOrganizePanel({
     <div className="proposal-step-panel proposal-organize">
       <header className="proposal-organize__hero">
         <div className="proposal-organize__hero-text">
-          <p className="proposal-step-panel__eyebrow">Step 4</p>
-          <h2 className="proposal-step-panel__title">Organize Proposal</h2>
+          <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
+          <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         </div>
       </header>
+
+      <ProposalCustomScopingSummary state={customScoping} compact />
 
       <div className="proposal-organize__toolbar">
         <div className="proposal-organize__tabs" role="tablist" aria-label="Scenarios">

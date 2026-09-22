@@ -137,6 +137,38 @@ Deno.serve(async (req) => {
     });
   }
 
+  const customScoping =
+    body.customScoping && typeof body.customScoping === "object"
+      ? (body.customScoping as Record<string, unknown>)
+      : null;
+  const customRequests = customScoping && Array.isArray(customScoping.requests)
+    ? customScoping.requests
+    : [];
+  if (customScoping?.required === true && customRequests.length > 0) {
+    const requestLines = customRequests.map((raw, i) => {
+      const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const name = String(r.name ?? "").trim() || `Request ${i + 1}`;
+      const dtype = String(r.deliverableType ?? "").trim();
+      const other = String(r.deliverableTypeOther ?? "").trim();
+      const typeLabel = dtype === "Other" ? other || "Other" : dtype || "Unspecified";
+      const overview = String(r.overviewAndGoal ?? "").trim();
+      const deadline = String(r.deadline ?? "").trim();
+      const budget = String(r.budget ?? "").trim();
+      const bits = [`*${i + 1}. ${name}* (${typeLabel})`];
+      if (overview) bits.push(truncate(overview, 400));
+      if (budget) bits.push(`Budget: ${truncate(budget, 160)}`);
+      if (deadline) bits.push(`Deadline: ${truncate(deadline, 160)}`);
+      return bits.join("\n");
+    });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Custom scoping requests:*\n" + truncate(requestLines.join("\n\n"), 2800),
+      },
+    });
+  }
+
   const payload = {
     text: "Proposal submitted for Ops Review: " + roadmapTitle + " (" + clientLabel + ")",
     blocks,

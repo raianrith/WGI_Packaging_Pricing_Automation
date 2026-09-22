@@ -1,6 +1,10 @@
 import type { RoadmapProposalRow } from "../types";
 import type { RoadmapCard, RoadmapPhase, RoadmapScenario } from "./roadmapModel";
 
+import {
+  parseCustomScopingState,
+  type CustomScopingState,
+} from "./customScopingRequest";
 import { normalizeIsoDateInput } from "./proposalDates";
 import { isProposalKind, type ProposalKind } from "./proposalKindPresets";
 import {
@@ -38,6 +42,8 @@ export type RoadmapProposalSnapshot = {
   reviewStatus?: ProposalReviewStatus;
   /** Filled when submitting for Ops Review. */
   opsReview?: OpsReviewSubmissionMeta;
+  /** Custom out-of-catalog scoping requests captured in the builder. */
+  customScoping?: CustomScopingState;
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   cards: RoadmapCard[];
@@ -82,6 +88,10 @@ export function parseProposalSnapshot(row: RoadmapProposalRow): RoadmapProposalS
     proposalKind: isProposalKind(raw.proposalKind) ? raw.proposalKind : undefined,
     reviewStatus: isProposalReviewStatus(raw.reviewStatus) ? raw.reviewStatus : undefined,
     opsReview: parseOpsReviewSubmissionMeta(raw.opsReview) ?? undefined,
+    customScoping: (() => {
+      const parsed = parseCustomScopingState(raw.customScoping);
+      return parsed.required || parsed.requests.length > 0 ? parsed : undefined;
+    })(),
     scenarios: raw.scenarios as RoadmapScenario[],
     phases: raw.phases as RoadmapPhase[],
     cards: raw.cards as RoadmapCard[],

@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase";
+import type { CustomScopingState } from "./customScopingRequest";
 import type { OpsReviewSubmissionMeta } from "./opsReviewSubmission";
 
 export type OpsReviewNotifyPayload = {
@@ -7,6 +8,7 @@ export type OpsReviewNotifyPayload = {
   roadmapTitle: string;
   submittedByEmail?: string | null;
   opsReview?: OpsReviewSubmissionMeta | null;
+  customScoping?: CustomScopingState | null;
 };
 
 /**
@@ -28,6 +30,7 @@ export async function notifyOpsReviewSubmitted(
         submittedByEmail: payload.submittedByEmail ?? null,
         appUrl: typeof window !== "undefined" ? window.location.origin : null,
         opsReview: payload.opsReview ?? null,
+        customScoping: payload.customScoping ?? null,
       },
     });
 

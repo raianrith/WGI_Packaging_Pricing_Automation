@@ -12,6 +12,7 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminView } from "./views/AdminView";
 import { AuthPage } from "./views/AuthPage";
 import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
+import { SolutionRequestsView } from "./views/SolutionRequestsView";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/catalog" element={<Navigate to="/solutions" replace />} />
           <Route path="/roadmap" element={<RoadmapPlanningView />} />
           <Route path="/package-builder" element={<AgencyPackageBuilderView />} />
+          <Route path="/solution-requests" element={<SolutionRequestsView />} />
           <Route path="/" element={<AgencyTabsShell />}>
             <Route index element={<AgencyHomeView />} />
             <Route path="solutions" element={<AgencyView mode="catalog" catalogSubview="directory" />} />

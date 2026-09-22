@@ -2,6 +2,7 @@ export type ProposalBuilderStep =
   | "setup"
   | "packages"
   | "catalog"
+  | "custom_scoping"
   | "board"
   | "review"
   | "client_service"
@@ -24,17 +25,23 @@ const STEPS: ProposalStepDef[] = [
     hint: "Optional · Build or Pre-Built",
   },
   { id: "catalog", number: 3, label: "Add Solutions", hint: "Tiers & Extras" },
-  { id: "board", number: 4, label: "Organize Proposal", hint: "Scope & Compare" },
-  { id: "review", number: 5, label: "Preview Proposal", hint: "Save & Export" },
+  {
+    id: "custom_scoping",
+    number: 4,
+    label: "Custom Scoping Request",
+    hint: "Out-of-catalog work",
+  },
+  { id: "board", number: 5, label: "Organize Proposal", hint: "Scope & Compare" },
+  { id: "review", number: 6, label: "Preview Proposal", hint: "Save & Export" },
   {
     id: "client_service",
-    number: 6,
+    number: 7,
     label: "Ops Review",
     hint: "Tasks & Hours",
   },
   {
     id: "client_ready",
-    number: 7,
+    number: 8,
     label: "Client Ready Proposal",
     hint: "Final View & PDF",
   },
@@ -44,6 +51,7 @@ const EARLY_STEP_IDS = new Set<ProposalBuilderStep>([
   "setup",
   "packages",
   "catalog",
+  "custom_scoping",
   "board",
   "review",
 ]);

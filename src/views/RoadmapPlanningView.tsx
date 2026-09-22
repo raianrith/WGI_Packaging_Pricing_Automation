@@ -19,9 +19,11 @@ import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { ProposalBuilderModeTabs, type ProposalBuilderMode } from "../components/proposal-builder/ProposalBuilderModeTabs";
 import { PROPOSAL_DURATION_LABEL } from "../branding";
 import { ProposalSavedProposalsPanel } from "../components/proposal-builder/ProposalSavedProposalsPanel";
-import { ProposalBuilderSteps, type ProposalBuilderStep } from "../components/proposal-builder/ProposalBuilderSteps";
+import { ProposalBuilderSteps, proposalStepDef, type ProposalBuilderStep } from "../components/proposal-builder/ProposalBuilderSteps";
 import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav";
 import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOrganizePanel";
+import { ProposalCustomScopingPanel } from "../components/proposal-builder/ProposalCustomScopingPanel";
+import { ProposalCustomScopingSummary } from "../components/proposal-builder/ProposalCustomScopingSummary";
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
 import type { ProposalAddedLine } from "../components/proposal-builder/ProposalAddedItemsPanel";
@@ -80,6 +82,10 @@ import {
   type RoadmapHorizon,
   type RoadmapProposalSnapshot,
 } from "../lib/roadmapProposalSnapshot";
+import {
+  emptyCustomScopingState,
+  type CustomScopingState,
+} from "../lib/customScopingRequest";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
 import { ProposalSaveReminderBanner } from "../components/proposal-builder/ProposalSaveReminderBanner";
 import { catalogSolutionKind, buildModuleAddOnGroups } from "../lib/buildCatalogDirectoryRows";
@@ -871,6 +877,9 @@ export function RoadmapPlanningView() {
   const [proposalReviewStatus, setProposalReviewStatus] = useState<ProposalReviewStatus>("draft");
   const [opsReviewMeta, setOpsReviewMeta] = useState<OpsReviewSubmissionMeta | null>(null);
   const [opsReviewModalOpen, setOpsReviewModalOpen] = useState(false);
+  const [customScoping, setCustomScoping] = useState<CustomScopingState>(() =>
+    emptyCustomScopingState()
+  );
   const [lastSavedFingerprint, setLastSavedFingerprint] = useState<string | null>(null);
   const roadmapLoadErrSeen = useRef<string | null>(null);
   const savedProposalErrSeen = useRef<string | null>(null);
@@ -1060,6 +1069,9 @@ export function RoadmapPlanningView() {
       proposalKind,
       reviewStatus: proposalReviewStatus,
       ...(opsReviewMeta ? { opsReview: opsReviewMeta } : {}),
+      ...(customScoping.required || customScoping.requests.length > 0
+        ? { customScoping }
+        : {}),
       scenarios,
       phases,
       cards,
@@ -1068,6 +1080,7 @@ export function RoadmapPlanningView() {
       cards,
       clientBudget,
       clientLabel,
+      customScoping,
       horizon,
       opsReviewMeta,
       phases,
@@ -1178,12 +1191,13 @@ export function RoadmapPlanningView() {
         roadmapTitle: saved.roadmap_title || title,
         submittedByEmail: user?.email ?? saved.updated_by_email ?? saved.created_by_email,
         opsReview: meta,
+        customScoping,
       });
       setActiveProposalId(null);
       setBuilderMode("awaiting_ops");
       setBuilderStep("setup");
     },
-    [clientLabel, roadmapTitle, saveCurrentProposal, user?.email]
+    [clientLabel, customScoping, roadmapTitle, saveCurrentProposal, user?.email]
   );
 
   const markReviewedByOps = useCallback(async () => {
@@ -1275,6 +1289,7 @@ export function RoadmapPlanningView() {
     setProposalReviewStatus("draft");
     setOpsReviewMeta(null);
     setOpsReviewModalOpen(false);
+    setCustomScoping(emptyCustomScopingState());
     setLastSavedFingerprint(proposalSnapshotFingerprint(emptySnapshot));
     setDetailsModalKey(null);
     setScratchDraft(null);
@@ -1336,6 +1351,7 @@ export function RoadmapPlanningView() {
       setProposalReviewStatus(snapshot.reviewStatus ?? "draft");
       setOpsReviewMeta(snapshot.opsReview ?? null);
       setOpsReviewModalOpen(false);
+      setCustomScoping(snapshot.customScoping ?? emptyCustomScopingState());
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -1352,6 +1368,7 @@ export function RoadmapPlanningView() {
           proposalEndDate: snapshot.proposalEndDate,
           proposalKind: snapshot.proposalKind ?? "program",
           reviewStatus: snapshot.reviewStatus ?? "draft",
+          ...(snapshot.customScoping ? { customScoping: snapshot.customScoping } : {}),
           scenarios: nextScenarios,
           phases: nextPhases,
           cards: snapshot.cards,
@@ -2791,6 +2808,19 @@ export function RoadmapPlanningView() {
                   step="catalog"
                   onStepChange={setBuilderStep}
                   includeOpsPath={includeOpsPath}
+                  nextLabel="Custom Scoping Request"
+                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {builderStep === "custom_scoping" ? (
+              <>
+                <ProposalCustomScopingPanel value={customScoping} onChange={setCustomScoping} />
+                <ProposalStepNav
+                  step="custom_scoping"
+                  onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
                   nextLabel="Organize Proposal"
                   {...proposalStepSaveProps}
                 />
@@ -2819,6 +2849,7 @@ export function RoadmapPlanningView() {
                   onUpdateScenarioNarrative={(id, narrative) =>
                     setScenarios((prev) => prev.map((s) => (s.id === id ? { ...s, narrative } : s)))
                   }
+                  customScoping={customScoping}
                 />
               </>
             ) : null}
@@ -2837,8 +2868,12 @@ export function RoadmapPlanningView() {
               <>
                 <section className="roadmap-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">Step 5</p>
-                    <h2 className="proposal-step-panel__title">Preview Proposal</h2>
+                    <p className="proposal-step-panel__eyebrow">
+                      Step {proposalStepDef("review").number}
+                    </p>
+                    <h2 className="proposal-step-panel__title">
+                      {proposalStepDef("review").label}
+                    </h2>
                     <p className="proposal-step-panel__lead">
                       {roadmapTitle.trim() || "Untitled roadmap"}
                       {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""}
@@ -2851,6 +2886,8 @@ export function RoadmapPlanningView() {
                     </p>
                   </header>
                 </section>
+
+                <ProposalCustomScopingSummary state={customScoping} />
 
         <section className="roadmap-panel roadmap-panel--export">
           <div className="roadmap-export__head">
@@ -2889,6 +2926,7 @@ export function RoadmapPlanningView() {
 
             {includeOpsPath && builderStep === "client_service" ? (
               <>
+                <ProposalCustomScopingSummary state={customScoping} compact />
                 {catalogCtx ? (
                   <ProposalClientServiceReviewPanel
                     scenarios={scenarios}
@@ -2947,6 +2985,7 @@ export function RoadmapPlanningView() {
                       : null
                   }
                   opsReview={opsReviewMeta}
+                  customScoping={customScoping}
                   computeScratchSellPrice={computeScratchSellPrice}
                   formatUsd={formatUsd}
                   formatHoursShort={formatHoursShort}

@@ -55,11 +55,13 @@ function GuardedNavLink({
   end,
   className,
   children,
+  title,
 }: {
   to: string;
   end?: boolean;
   className: string | ((props: { isActive: boolean }) => string);
   children: ReactNode;
+  title?: string;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,6 +72,7 @@ function GuardedNavLink({
       end={end}
       to={to}
       className={className}
+      title={title}
       onClick={(e) => {
         if (location.pathname !== "/roadmap") return;
         if (to === "/roadmap") return;
@@ -225,6 +228,20 @@ export function ProtectedLayout() {
 
           <div className="app-top-bar__account">
             <div className="app-top-bar__account-controls">
+              <GuardedNavLink
+                to="/solution-requests"
+                className={({ isActive }) =>
+                  `app-new-solution-request${isActive ? " is-active" : ""}`
+                }
+                title="New Solution Request queue"
+              >
+                <span className="app-new-solution-request__label app-new-solution-request__label--full">
+                  New Solution Request
+                </span>
+                <span className="app-new-solution-request__label app-new-solution-request__label--short">
+                  New Request
+                </span>
+              </GuardedNavLink>
               <div className="app-user-menu">
                 <span className="app-user-menu__avatar" aria-hidden>
                   {(email || "?").slice(0, 1).toUpperCase()}

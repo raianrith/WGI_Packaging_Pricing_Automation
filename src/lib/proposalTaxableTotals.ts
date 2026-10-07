@@ -77,6 +77,16 @@ export function cardIsTaxable(card: RoadmapCard, taxCtx: ProposalTaxabilityCtx |
   if (card.kind === "tier" || card.kind === "custom_tier") {
     return vaultTierTaxable(card.refId, taxCtx.pricingByTierId);
   }
+  if (card.kind === "playbook") {
+    const comps = card.playbookComponents ?? [];
+    if (comps.length === 0) return false;
+    const taxableCount = comps.filter((c) =>
+      c.kind === "package"
+        ? packageIsTaxable(c.refId, taxCtx.packageTiers, taxCtx.pricingByTierId)
+        : vaultTierTaxable(c.refId, taxCtx.pricingByTierId)
+    ).length;
+    return taxableCount / comps.length >= PACKAGE_TAXABLE_SOLUTION_THRESHOLD;
+  }
   // Solutions / tasks / groups: no direct pricing taxable flag — treat as non-taxable.
   return false;
 }

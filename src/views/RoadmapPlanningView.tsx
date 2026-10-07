@@ -4,15 +4,18 @@ import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
   cardHoursForScenarioRollup,
   cardPriceUsdForRollup,
+  effectiveHoursStr,
   effectivePriceStr,
   type CatalogCtxLike,
   type RoadmapCard,
   type RoadmapCardKind,
+  type RoadmapPlaybookComponent,
   type RoadmapPhase,
   type RoadmapScenario,
   reorderPhaseCardsByKeys,
   sortedPhasesForScenario,
   scratchEffectiveHoursBreakdown,
+  tryParseRoadmapHours,
   tryParseUsdRough,
 } from "../lib/roadmapModel";
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
@@ -95,9 +98,19 @@ import { notifyOpsReviewSubmitted } from "../lib/notifyOpsReviewEmail";
 import type { OpsReviewSubmissionMeta } from "../lib/opsReviewSubmission";
 import { ProposalOpsReviewSubmitModal } from "../components/proposal-builder/ProposalOpsReviewSubmitModal";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
+import {
+  fetchPlaybookPackageConfig,
+  playbookAllowsPackageType,
+  playbookAllowsSolutionTier,
+  type PlaybookPackageConfig,
+} from "../lib/playbookPackageConfig";
 import { fetchAllTaskRows } from "../lib/taskIds";
 import { filterConfigurablePackages } from "../lib/presetPackages";
 import { ProposalConfigurablePackagesPanel } from "../components/proposal-builder/ProposalConfigurablePackagesPanel";
+import {
+  ProposalPlaybookPackagePanel,
+  type PlaybookPackageDraft,
+} from "../components/proposal-builder/ProposalPlaybookPackagePanel";
 import {
   ProposalPackagesChoice,
   ProposalPackagesPathBar,
@@ -115,7 +128,7 @@ import {
   variableTierAppliedToLabel,
   type AddVariableTierOpts,
 } from "../lib/proposalVariableTiers";
-import { formatProposalUsdValue } from "../lib/proposalCardTasks";
+import { formatProposalHoursValue, formatProposalUsdValue } from "../lib/proposalCardTasks";
 import type {
   ImplementerHourGroupRow,
   Package,
@@ -147,6 +160,7 @@ type LoadState =
       implementerHourGroups: ImplementerHourGroupRow[];
       packageTypes: PackageBuilderPackageType[];
       packageBuilderSlots: PackageBuilderSlotTemplate[];
+      playbookConfig: PlaybookPackageConfig;
     };
 
 type CatalogCtx = {
@@ -583,6 +597,8 @@ function kindLabel(k: RoadmapCardKind): string {
       return "Task group";
     case "custom_tier":
       return "Scratch tier";
+    case "playbook":
+      return "Playbook package";
     default:
       return k;
   }
@@ -743,6 +759,38 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
             </dd>
             <dt className="roadmap-details-dt">Linked tiers</dt>
             <dd className="roadmap-details-dd">{tierNames.length ? tierNames.join(", ") : "—"}</dd>
+          </dl>
+          {card.description.trim() ? (
+            <>
+              <h3 className="roadmap-details-h3">Notes on card</h3>
+              <p className="roadmap-details-dd--prose">{card.description}</p>
+            </>
+          ) : null}
+        </div>
+      );
+    }
+    case "playbook": {
+      const comps = card.playbookComponents ?? [];
+      const pkgs = comps.filter((c) => c.kind === "package");
+      const sols = comps.filter((c) => c.kind === "tier");
+      const line = (list: typeof comps) =>
+        list.length
+          ? list.map((c) => `${c.headline} (${c.hours || "—"} · ${c.price || "—"})`).join(", ")
+          : "—";
+      return (
+        <div className="roadmap-details-scroll">
+          <h3 className="roadmap-details-h3">Playbook package</h3>
+          <dl className="roadmap-details-dl">
+            <dt className="roadmap-details-dt">Name</dt>
+            <dd className="roadmap-details-dd">{card.headline}</dd>
+            <dt className="roadmap-details-dt">Packages</dt>
+            <dd className="roadmap-details-dd">{line(pkgs)}</dd>
+            <dt className="roadmap-details-dt">Solutions</dt>
+            <dd className="roadmap-details-dd">{line(sols)}</dd>
+            <dt className="roadmap-details-dt">Bundle</dt>
+            <dd className="roadmap-details-dd">
+              {effectiveHoursStr(card) || "—"} · {card.priceOverride?.trim() || card.price || "—"}
+            </dd>
           </dl>
           {card.description.trim() ? (
             <>
@@ -956,7 +1004,7 @@ export function RoadmapPlanningView() {
     }
     if (preserveCurrentProposal) setCatalogReloading(true);
     else setState({ status: "loading" });
-    const [pRes, sRes, tRes, tasksPack, ptRes, tgRes, prRes, tglRes, implRes, builderPack] = await Promise.all([
+    const [pRes, sRes, tRes, tasksPack, ptRes, tgRes, prRes, tglRes, implRes, builderPack, playbookCfg] = await Promise.all([
       client.from("packages").select("*").order("package_id"),
       client.from("solutions").select("*").order("solution_id"),
       client.from("solution_tiers").select("*").order("solution_tier_id"),
@@ -967,6 +1015,7 @@ export function RoadmapPlanningView() {
       client.from("task_group_lines").select("*").order("sort_order"),
       client.from("implementer_pricing_hour_groups").select("*").order("implementer_name"),
       fetchPackageBuilderCatalog(client),
+      fetchPlaybookPackageConfig(client),
     ]);
     const err =
       pRes.error ||
@@ -1022,6 +1071,7 @@ export function RoadmapPlanningView() {
       implementerHourGroups,
       packageTypes: builderPack.catalog.types,
       packageBuilderSlots: builderPack.catalog.slots,
+      playbookConfig: playbookCfg.config,
     });
     if (preserveCurrentProposal) {
       setCatalogReloading(false);
@@ -1934,6 +1984,32 @@ export function RoadmapPlanningView() {
       .sort(sortLines);
   }, [cards, catalogCtx, phases, targetScenarioId, targetPhaseId]);
 
+  const playbookAddedLines = useMemo(
+    () => catalogAddedLines.filter((l) => l.kind === "playbook"),
+    [catalogAddedLines]
+  );
+
+  const resolvePlaybookComponent = useCallback(
+    (c: RoadmapPlaybookComponent): RoadmapPlaybookComponent => {
+      if (!catalogCtx) return c;
+      let hours = c.hours;
+      let price = c.price;
+      if (c.kind === "package") {
+        const p = catalogCtx.packages.find((x) => x.package_id === c.refId);
+        if (!p) return c;
+        ({ hours, price } = packageHoursPriceForCatalog(p, catalogCtx));
+      } else {
+        const t = catalogCtx.tiers.find((x) => x.solution_tier_id === c.refId);
+        if (!t) return c;
+        const pr = catalogCtx.pricingMap.get(t.solution_tier_id) ?? null;
+        hours = tierHoursLine(t.solution_tier_id, pr, catalogCtx.tasks);
+        price = sellPriceLine(pr);
+      }
+      return hours === c.hours && price === c.price ? c : { ...c, hours, price };
+    },
+    [catalogCtx]
+  );
+
   const moduleAddOnGroups = useMemo(
     () => buildModuleAddOnGroups(playbookCatalogTierTableRows),
     [playbookCatalogTierTableRows]
@@ -2394,6 +2470,77 @@ export function RoadmapPlanningView() {
     );
   };
 
+  const addPlaybookPackage = (draft: PlaybookPackageDraft) => {
+    if (!canAddToTarget) return;
+    const comps = draft.components;
+    let hours = 0;
+    let price = 0;
+    for (const c of comps) {
+      hours += tryParseRoadmapHours(c.hours) ?? 0;
+      price += tryParseUsdRough(c.price) ?? 0;
+    }
+    const pkgNames = comps.filter((c) => c.kind === "package").map((c) => c.headline);
+    const solNames = comps.filter((c) => c.kind === "tier").map((c) => c.headline);
+    const desc = [
+      draft.notes,
+      pkgNames.length ? `Packages: ${pkgNames.join(", ")}.` : "",
+      solNames.length ? `Solutions: ${solNames.join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const card = makeCard(
+      "playbook",
+      `playbook-${newRoadmapCardKey()}`,
+      targetScenarioId,
+      targetPhaseId,
+      draft.name,
+      desc,
+      formatProposalHoursValue(hours),
+      formatProposalUsdValue(price),
+      undefined,
+      draft.dates
+    );
+    addCard({ ...card, playbookComponents: comps });
+  };
+
+  const renderPlaybookPackagePanel = () => {
+    if (!data) return null;
+    const cfg = data.playbookConfig;
+    return (
+      <ProposalPlaybookPackagePanel
+        packageTypes={data.packageTypes.filter((t) => playbookAllowsPackageType(cfg, t.id))}
+        slots={data.packageBuilderSlots}
+        packages={ctx.packages}
+        solutions={ctx.solutions}
+        tiers={ctx.tiers}
+        tasks={ctx.tasks}
+        pricing={[...ctx.pricingMap.values()]}
+        solutionRows={playbookCatalogTierTableRows.filter((r) => playbookAllowsSolutionTier(cfg, r.tierId))}
+        scenarios={scenarios}
+        phases={phases}
+        targetScenarioId={targetScenarioId}
+        targetPhaseId={targetPhaseId}
+        onTargetScenarioChange={setTargetScenarioId}
+        onTargetPhaseChange={setTargetPhaseId}
+        targetScenarioTitle={targetScenarioTitle}
+        targetPhaseTitle={targetPhaseTitle}
+        proposalStartDate={proposalStartDate}
+        proposalEndDate={proposalEndDate}
+        canAdd={canAddToTarget}
+        catalogReloading={catalogReloading}
+        onReloadCatalog={async () => {
+          await load(true);
+        }}
+        formatUsd={formatUsd}
+        resolveComponent={resolvePlaybookComponent}
+        onAddPlaybook={addPlaybookPackage}
+        addedPlaybooks={playbookAddedLines}
+        onEditAdded={openAddedEdit}
+        onRemoveAdded={removeCard}
+      />
+    );
+  };
+
   const renderCatalogPanel = (
     panelVariant: "offerings" | "preset_packages" | "configurable_packages" | "variable_tiers",
     filteredPackages: Package[]
@@ -2788,7 +2935,9 @@ export function RoadmapPlanningView() {
                     ) : null}
                     {packageAddPath === "build"
                       ? renderConfigurablePackagesPanel()
-                      : renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
+                      : packageAddPath === "playbook"
+                        ? renderPlaybookPackagePanel()
+                        : renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
                   </>
                 )}
                 <ProposalStepNav

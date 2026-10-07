@@ -412,7 +412,7 @@ export function ProposalClientServiceReviewPanel({
   }, [cards, phases, activeScenarioId]);
 
   const packageCards = useMemo(
-    () => scenarioCards.filter((c) => c.kind === "package"),
+    () => scenarioCards.filter((c) => c.kind === "package" || c.kind === "playbook"),
     [scenarioCards]
   );
   const solutionCards = useMemo(

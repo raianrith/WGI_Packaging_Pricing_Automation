@@ -1,6 +1,6 @@
 import { proposalStepDef } from "./ProposalBuilderSteps";
 
-export type PackageAddPath = "build" | "prebuilt";
+export type PackageAddPath = "build" | "prebuilt" | "playbook";
 
 type Props = {
   onChoose: (path: PackageAddPath) => void;
@@ -71,6 +71,30 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
             Continue →
           </span>
         </button>
+
+        <button
+          type="button"
+          className="proposal-packages-choice__card"
+          onClick={() => onChoose("playbook")}
+        >
+          <span className="proposal-packages-choice__icon proposal-packages-choice__icon--playbook" aria-hidden>
+            <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+              <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
+              <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
+              <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
+              <path d="M17 14v6M14 17h6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="proposal-packages-choice__card-text">
+            <span className="proposal-packages-choice__card-title">Build New Playbook Package</span>
+            <span className="proposal-packages-choice__card-desc">
+              Bundle several built packages and solutions into one playbook with combined hours and pricing.
+            </span>
+          </span>
+          <span className="proposal-packages-choice__card-cta" aria-hidden>
+            Continue →
+          </span>
+        </button>
       </div>
     </div>
   );
@@ -82,6 +106,12 @@ type PathBarProps = {
   onBackToOptions: () => void;
 };
 
+const PATH_TABS: Array<{ id: PackageAddPath; label: string }> = [
+  { id: "build", label: "Build new" },
+  { id: "prebuilt", label: "Re-Use Past Packages" },
+  { id: "playbook", label: "Playbook Package" },
+];
+
 export function ProposalPackagesPathBar({ path, onSelectPath, onBackToOptions }: PathBarProps) {
   return (
     <div className="proposal-packages-path">
@@ -89,24 +119,18 @@ export function ProposalPackagesPathBar({ path, onSelectPath, onBackToOptions }:
         ← All options
       </button>
       <div className="proposal-packages-path__tabs" role="tablist" aria-label="Package add method">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={path === "build"}
-          className={`proposal-packages-path__tab${path === "build" ? " is-active" : ""}`}
-          onClick={() => onSelectPath("build")}
-        >
-          Build new
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={path === "prebuilt"}
-          className={`proposal-packages-path__tab${path === "prebuilt" ? " is-active" : ""}`}
-          onClick={() => onSelectPath("prebuilt")}
-        >
-          Re-Use Past Packages
-        </button>
+        {PATH_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={path === tab.id}
+            className={`proposal-packages-path__tab${path === tab.id ? " is-active" : ""}`}
+            onClick={() => onSelectPath(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -124,7 +148,9 @@ export function ProposalPackagesSwitchPrompt({ fromPath, onSwitch, onDismiss }: 
   return (
     <aside className="proposal-packages-switch" aria-live="polite">
       <div className="proposal-packages-switch__copy">
-        <p className="proposal-packages-switch__eyebrow">Package added</p>
+        <p className="proposal-packages-switch__eyebrow">
+          {fromPath === "playbook" ? "Playbook package added" : "Package added"}
+        </p>
         <p className="proposal-packages-switch__title">
           {goingToPrebuilt
             ? "Want to add a pre-built package too?"

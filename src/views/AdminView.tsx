@@ -45,6 +45,7 @@ import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { ImplementerMappingPanel } from "../components/ImplementerMappingPanel";
 import { SolutionsBuilderPanel } from "../components/SolutionsBuilderPanel";
 import { TaskGroupBuilderPanel } from "../components/TaskGroupBuilderPanel";
+import { PlaybookPackageConfigPanel } from "../components/PlaybookPackageConfigPanel";
 import { PackagesBuilderPanel } from "../components/PackagesBuilderPanel";
 import { PackageBuilderSlotLimitsPanel } from "../components/PackageBuilderSlotLimitsPanel";
 import { ChangeHistoryPanel } from "../components/ChangeHistoryPanel";
@@ -709,6 +710,15 @@ export function AdminView() {
               tbl={tbl}
               th={th}
               td={td}
+            />
+          )}
+          {section === "playbook-packages" && (
+            <PlaybookPackageConfigPanel
+              solutions={solutions}
+              tiers={tiers}
+              setOpErr={setOpErr}
+              setOpOk={setOpOk}
+              styles={{ panel, h2, muted, input, btn, btnPrimary }}
             />
           )}
           {section === "pricing" && (

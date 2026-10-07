@@ -80,65 +80,97 @@ function packageComponentMeta(
   return { solutionName, solutionTierName, componentLabel };
 }
 
-function baseTasksForCard(card: RoadmapCard, ctx: ProposalCardTasksCtx): ProposalEditableTask[] {
-  if (card.kind === "tier") {
-    const tier = ctx.tiers?.find((t) => t.solution_tier_id === card.refId);
-    const solutionName =
-      (tier
-        ? ctx.solutions?.find((s) => s.solution_id === tier.solution_id)?.solution_name?.trim()
-        : null) || null;
-    const solutionTierName = tier?.solution_tier_name?.trim() || card.headline.trim() || null;
-    const componentLabel = card.headline.trim() || solutionName || solutionTierName;
-    return tasksOnTierSorted(ctx.tasks, card.refId).map((t) => {
+function tierBaseTasks(
+  tierId: string,
+  headline: string,
+  ctx: ProposalCardTasksCtx
+): ProposalEditableTask[] {
+  const tier = ctx.tiers?.find((t) => t.solution_tier_id === tierId);
+  const solutionName =
+    (tier
+      ? ctx.solutions?.find((s) => s.solution_id === tier.solution_id)?.solution_name?.trim()
+      : null) || null;
+  const solutionTierName = tier?.solution_tier_name?.trim() || headline.trim() || null;
+  const componentLabel = headline.trim() || solutionName || solutionTierName;
+  return tasksOnTierSorted(ctx.tasks, tierId).map((t) => {
+    const name = t.task_name?.trim() || t.task_id;
+    return {
+      id: t.task_id,
+      name,
+      catalogName: name,
+      hours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
+      catalogHours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
+      implementer: t.task_implementer,
+      source: "catalog" as const,
+      groupLabel: null,
+      solutionName,
+      solutionTierName,
+      componentLabel,
+      isExtra: false,
+    };
+  });
+}
+
+function packageBaseTasks(packageId: string, ctx: ProposalCardTasksCtx): ProposalEditableTask[] {
+  const links = ctx.packageTiers.filter((l) => l.package_id === packageId);
+  const out: ProposalEditableTask[] = [];
+  const seen = new Set<string>();
+  for (const link of links) {
+    const meta = packageComponentMeta(link, ctx);
+    const rows = buildMergedTaskRowsForPackageTier({
+      tierId: link.solution_tier_id,
+      vaultTasks: ctx.tasks,
+      taskOverrides: link.task_overrides,
+      taskExtensions: link.task_extensions,
+      packageExtrasAnchorTierId: links[0]?.solution_tier_id ?? null,
+    });
+    for (const t of rows) {
+      if (seen.has(t.task_id)) continue;
+      seen.add(t.task_id);
       const name = t.task_name?.trim() || t.task_id;
-      return {
+      out.push({
         id: t.task_id,
         name,
         catalogName: name,
         hours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
         catalogHours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
         implementer: t.task_implementer,
-        source: "catalog" as const,
-        groupLabel: null,
-        solutionName,
-        solutionTierName,
-        componentLabel,
+        source: t.task_id.startsWith("pkg-extra-") ? "package" : "catalog",
+        groupLabel: link.solution_tier_id,
+        solutionName: meta.solutionName,
+        solutionTierName: meta.solutionTierName,
+        componentLabel: meta.componentLabel,
         isExtra: false,
-      };
-    });
+      });
+    }
+  }
+  return out;
+}
+
+function baseTasksForCard(card: RoadmapCard, ctx: ProposalCardTasksCtx): ProposalEditableTask[] {
+  if (card.kind === "tier") {
+    return tierBaseTasks(card.refId, card.headline, ctx);
   }
 
   if (card.kind === "package") {
-    const links = ctx.packageTiers.filter((l) => l.package_id === card.refId);
+    return packageBaseTasks(card.refId, ctx);
+  }
+
+  if (card.kind === "playbook") {
     const out: ProposalEditableTask[] = [];
     const seen = new Set<string>();
-    for (const link of links) {
-      const meta = packageComponentMeta(link, ctx);
-      const rows = buildMergedTaskRowsForPackageTier({
-        tierId: link.solution_tier_id,
-        vaultTasks: ctx.tasks,
-        taskOverrides: link.task_overrides,
-        taskExtensions: link.task_extensions,
-        packageExtrasAnchorTierId: links[0]?.solution_tier_id ?? null,
-      });
+    for (const comp of card.playbookComponents ?? []) {
+      const rows =
+        comp.kind === "package"
+          ? packageBaseTasks(comp.refId, ctx).map((t) => ({
+              ...t,
+              componentLabel: comp.headline.trim() || t.componentLabel,
+            }))
+          : tierBaseTasks(comp.refId, comp.headline, ctx);
       for (const t of rows) {
-        if (seen.has(t.task_id)) continue;
-        seen.add(t.task_id);
-        const name = t.task_name?.trim() || t.task_id;
-        out.push({
-          id: t.task_id,
-          name,
-          catalogName: name,
-          hours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
-          catalogHours: t.task_time != null && Number.isFinite(Number(t.task_time)) ? Number(t.task_time) : null,
-          implementer: t.task_implementer,
-          source: t.task_id.startsWith("pkg-extra-") ? "package" : "catalog",
-          groupLabel: link.solution_tier_id,
-          solutionName: meta.solutionName,
-          solutionTierName: meta.solutionTierName,
-          componentLabel: meta.componentLabel,
-          isExtra: false,
-        });
+        if (seen.has(t.id)) continue;
+        seen.add(t.id);
+        out.push(t);
       }
     }
     return out;
@@ -571,5 +603,10 @@ export function renameProposalExtraTask(
 }
 
 export function cardSupportsTaskReview(card: RoadmapCard): boolean {
-  return card.kind === "tier" || card.kind === "package" || card.kind === "custom_tier";
+  return (
+    card.kind === "tier" ||
+    card.kind === "package" ||
+    card.kind === "custom_tier" ||
+    card.kind === "playbook"
+  );
 }

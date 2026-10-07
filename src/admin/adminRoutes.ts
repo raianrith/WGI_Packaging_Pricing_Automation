@@ -4,6 +4,7 @@ export type AdminSectionId =
   | "vault"
   | "packages"
   | "task-groups"
+  | "playbook-packages"
   | "taxonomy"
   | "implementers"
   | "pricing"
@@ -52,6 +53,11 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         id: "task-groups",
         label: "Task groups",
         hint: "Reusable task templates and sync to tiers",
+      },
+      {
+        id: "playbook-packages",
+        label: "Playbook Packages",
+        hint: "Which custom packages and solutions can go into Playbook Packages",
       },
     ],
   },
@@ -128,6 +134,7 @@ export function parseAdminLocation(pathname: string): {
     "vault",
     "packages",
     "task-groups",
+    "playbook-packages",
     "taxonomy",
     "implementers",
     "pricing",

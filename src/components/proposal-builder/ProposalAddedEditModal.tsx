@@ -135,7 +135,11 @@ export function ProposalAddedEditModal({
         <header className="proposal-added-edit-modal__head">
           <div>
             <p className="proposal-added-edit-modal__eyebrow">
-              {card.kind === "package" ? "Edit package" : "Edit solution"}
+              {card.kind === "package"
+                ? "Edit package"
+                : card.kind === "playbook"
+                  ? "Edit playbook package"
+                  : "Edit solution"}
             </p>
             <h2 id="proposal-added-edit-title" className="proposal-added-edit-modal__title">
               {card.headline.trim() || "Untitled"}

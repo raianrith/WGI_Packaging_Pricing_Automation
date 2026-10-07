@@ -27,6 +27,8 @@ function kindShort(card: RoadmapCard): string {
       return "Custom";
     case "package":
       return "Package";
+    case "playbook":
+      return "Playbook";
     default:
       return "Item";
   }

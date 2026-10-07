@@ -41,7 +41,7 @@ function isTierKind(kind: RoadmapCardKind): boolean {
 }
 
 function isPackageKind(kind: RoadmapCardKind): boolean {
-  return kind === "package";
+  return kind === "package" || kind === "playbook";
 }
 
 function kindShortLabel(line: ProposalAddedLine): string {
@@ -53,6 +53,8 @@ function kindShortLabel(line: ProposalAddedLine): string {
       return "Custom";
     case "package":
       return "Package";
+    case "playbook":
+      return "Playbook";
     default:
       return "Item";
   }

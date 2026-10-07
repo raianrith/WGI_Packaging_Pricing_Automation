@@ -2,7 +2,24 @@
 
 export type RoadmapLineScope = "included" | "optional" | "deferred";
 
-export type RoadmapCardKind = "package" | "solution" | "tier" | "task" | "task_group" | "custom_tier";
+export type RoadmapCardKind =
+  | "package"
+  | "solution"
+  | "tier"
+  | "task"
+  | "task_group"
+  | "custom_tier"
+  | "playbook";
+
+/** One package or solution bundled inside a Playbook Package line. */
+export type RoadmapPlaybookComponent = {
+  key: string;
+  kind: "package" | "tier";
+  refId: string;
+  headline: string;
+  hours: string;
+  price: string;
+};
 
 export type RoadmapScenario = {
   id: string;
@@ -52,6 +69,8 @@ export type RoadmapCard = {
   isFlexBudget?: boolean;
   /** When set, this card is an add-on nested under the parent solution tier with this `key`. */
   addonOfCardKey?: string | null;
+  /** Playbook Package: bundled packages + solutions (hours/price on the card are the bundle totals). */
+  playbookComponents?: RoadmapPlaybookComponent[] | null;
   /**
    * Proposal-only task edits for Client Service Review.
    * Does not mutate vault `tasks` or package link rows — sparse overlay on catalog tasks.

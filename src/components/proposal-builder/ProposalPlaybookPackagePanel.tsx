@@ -51,6 +51,8 @@ type Props = {
   tasks: TaskRow[];
   pricing: SolutionTierPricing[];
   solutionRows: CatalogTierTableRow[];
+  /** Admin-required solution tiers; auto-included and not removable. */
+  mandatoryTierIds: string[];
   scenarios: RoadmapScenario[];
   phases: RoadmapPhase[];
   targetScenarioId: string;
@@ -103,6 +105,7 @@ export function ProposalPlaybookPackagePanel({
   tasks,
   pricing,
   solutionRows,
+  mandatoryTierIds,
   scenarios,
   phases,
   targetScenarioId,
@@ -141,7 +144,34 @@ export function ProposalPlaybookPackagePanel({
   const [datesOpen, setDatesOpen] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
-  const components = useMemo(() => staged.map(resolveComponent), [staged, resolveComponent]);
+  const requiredComps = useMemo((): RoadmapPlaybookComponent[] => {
+    const rowById = new Map(solutionRows.map((r) => [r.tierId, r]));
+    return mandatoryTierIds.flatMap((id) => {
+      const r = rowById.get(id);
+      if (!r) return [];
+      return [
+        {
+          key: `pb-required-${id}`,
+          kind: "tier" as const,
+          refId: id,
+          headline: r.tierName.trim() || id,
+          hours: r.hoursDisplay,
+          price: r.priceDisplay,
+        },
+      ];
+    });
+  }, [mandatoryTierIds, solutionRows]);
+  const requiredKeys = useMemo(() => new Set(requiredComps.map((c) => c.key)), [requiredComps]);
+  const requiredTierIds = useMemo(() => new Set(requiredComps.map((c) => c.refId)), [requiredComps]);
+
+  const components = useMemo(
+    () =>
+      [
+        ...requiredComps,
+        ...staged.filter((c) => !(c.kind === "tier" && requiredTierIds.has(c.refId))),
+      ].map(resolveComponent),
+    [requiredComps, requiredTierIds, staged, resolveComponent]
+  );
   const packageComps = useMemo(() => components.filter((c) => c.kind === "package"), [components]);
   const solutionComps = useMemo(() => components.filter((c) => c.kind === "tier"), [components]);
   const totals = useMemo(() => sumComponents(components), [components]);
@@ -238,26 +268,35 @@ export function ProposalPlaybookPackagePanel({
 
   const stageIndex = STAGES.findIndex((s) => s.id === stage);
 
-  const renderComponentRow = (c: RoadmapPlaybookComponent) => (
-    <li key={c.key} className="proposal-playbook__item">
-      <span className={`proposal-playbook__item-kind proposal-playbook__item-kind--${c.kind}`}>
-        {c.kind === "package" ? "Package" : "Solution"}
-      </span>
-      <span className="proposal-playbook__item-name">{c.headline}</span>
-      <span className="proposal-playbook__item-metric">{c.hours || "—"}</span>
-      <span className="proposal-playbook__item-metric proposal-playbook__item-metric--price">
-        {c.price || "—"}
-      </span>
-      <button
-        type="button"
-        className="proposal-playbook__item-remove"
-        onClick={() => removeComponent(c.key)}
-        aria-label={`Remove ${c.headline}`}
-      >
-        Remove
-      </button>
-    </li>
-  );
+  const renderComponentRow = (c: RoadmapPlaybookComponent) => {
+    const required = requiredKeys.has(c.key);
+    return (
+      <li key={c.key} className={`proposal-playbook__item${required ? " is-required" : ""}`}>
+        <span className={`proposal-playbook__item-kind proposal-playbook__item-kind--${c.kind}`}>
+          {c.kind === "package" ? "Package" : "Solution"}
+        </span>
+        <span className="proposal-playbook__item-name">{c.headline}</span>
+        <span className="proposal-playbook__item-metric">{c.hours || "—"}</span>
+        <span className="proposal-playbook__item-metric proposal-playbook__item-metric--price">
+          {c.price || "—"}
+        </span>
+        {required ? (
+          <span className="proposal-playbook__required-tag" title="Required by your admin in every playbook">
+            Required
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="proposal-playbook__item-remove"
+            onClick={() => removeComponent(c.key)}
+            aria-label={`Remove ${c.headline}`}
+          >
+            Remove
+          </button>
+        )}
+      </li>
+    );
+  };
 
   const renderFooterActions = () => {
     if (stage === "packages") {
@@ -514,6 +553,13 @@ export function ProposalPlaybookPackagePanel({
               ) : (
                 <p className="proposal-playbook__empty">No solutions yet. Search and add them below.</p>
               )}
+              {requiredComps.length > 0 ? (
+                <p className="proposal-playbook__hint">
+                  {requiredComps.length === 1
+                    ? "1 solution is required in every playbook and was added automatically."
+                    : `${requiredComps.length} solutions are required in every playbook and were added automatically.`}
+                </p>
+              ) : null}
 
               <ProposalCatalogListSearch
                 id={searchId}
@@ -533,6 +579,7 @@ export function ProposalPlaybookPackagePanel({
                 <ul className="proposal-playbook__catalog">
                   {filteredSolutions.map((r) => {
                     const added = addedTierIds.has(r.tierId);
+                    const required = requiredTierIds.has(r.tierId);
                     return (
                       <li key={r.tierId} className="proposal-playbook__catalog-row">
                         <span className="proposal-playbook__catalog-main">
@@ -551,7 +598,7 @@ export function ProposalPlaybookPackagePanel({
                           onClick={() => addSolution(r)}
                           disabled={added || !named}
                         >
-                          {added ? "Added" : "Add"}
+                          {required ? "Required" : added ? "Added" : "Add"}
                         </button>
                       </li>
                     );
@@ -585,6 +632,9 @@ export function ProposalPlaybookPackagePanel({
                     </span>
                     <span role="cell" className="proposal-playbook__table-name">
                       {c.headline}
+                      {requiredKeys.has(c.key) ? (
+                        <span className="proposal-playbook__required-tag">Required</span>
+                      ) : null}
                     </span>
                     <span role="cell">{c.hours || "—"}</span>
                     <span role="cell">{c.price || "—"}</span>

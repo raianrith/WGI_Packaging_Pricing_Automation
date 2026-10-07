@@ -6,6 +6,8 @@ export type PlaybookPackageConfig = {
   allowedPackageTypeIds: string[];
   limitSolutionTiers: boolean;
   allowedSolutionTierIds: string[];
+  /** Auto-included in every playbook; always allowed even when `limitSolutionTiers` is on. */
+  mandatorySolutionTierIds: string[];
   updatedByEmail: string | null;
   updatedAt: string | null;
 };
@@ -18,6 +20,7 @@ export function defaultPlaybookPackageConfig(): PlaybookPackageConfig {
     allowedPackageTypeIds: [],
     limitSolutionTiers: false,
     allowedSolutionTierIds: [],
+    mandatorySolutionTierIds: [],
     updatedByEmail: null,
     updatedAt: null,
   };
@@ -34,6 +37,7 @@ function fromRow(r: Record<string, unknown>): PlaybookPackageConfig {
     allowedPackageTypeIds: strArray(r.allowed_package_type_ids),
     limitSolutionTiers: Boolean(r.limit_solution_tiers),
     allowedSolutionTierIds: strArray(r.allowed_solution_tier_ids),
+    mandatorySolutionTierIds: strArray(r.mandatory_solution_tier_ids),
     updatedByEmail: r.updated_by_email != null ? String(r.updated_by_email) : null,
     updatedAt: r.updated_at != null ? String(r.updated_at) : null,
   };
@@ -67,6 +71,7 @@ export async function savePlaybookPackageConfig(
         allowed_package_type_ids: strArray(config.allowedPackageTypeIds),
         limit_solution_tiers: config.limitSolutionTiers,
         allowed_solution_tier_ids: strArray(config.allowedSolutionTierIds),
+        mandatory_solution_tier_ids: strArray(config.mandatorySolutionTierIds),
         updated_by_email: updatedByEmail,
       },
       { onConflict: "id" }
@@ -82,5 +87,13 @@ export function playbookAllowsPackageType(config: PlaybookPackageConfig, typeId:
 }
 
 export function playbookAllowsSolutionTier(config: PlaybookPackageConfig, tierId: string): boolean {
-  return !config.limitSolutionTiers || config.allowedSolutionTierIds.includes(tierId);
+  return (
+    !config.limitSolutionTiers ||
+    config.allowedSolutionTierIds.includes(tierId) ||
+    config.mandatorySolutionTierIds.includes(tierId)
+  );
+}
+
+export function playbookRequiresSolutionTier(config: PlaybookPackageConfig, tierId: string): boolean {
+  return config.mandatorySolutionTierIds.includes(tierId);
 }

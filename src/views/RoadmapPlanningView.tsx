@@ -2516,6 +2516,7 @@ export function RoadmapPlanningView() {
         tasks={ctx.tasks}
         pricing={[...ctx.pricingMap.values()]}
         solutionRows={playbookCatalogTierTableRows.filter((r) => playbookAllowsSolutionTier(cfg, r.tierId))}
+        mandatoryTierIds={cfg.mandatorySolutionTierIds}
         scenarios={scenarios}
         phases={phases}
         targetScenarioId={targetScenarioId}

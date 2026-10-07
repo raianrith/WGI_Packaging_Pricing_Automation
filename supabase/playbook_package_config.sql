@@ -15,6 +15,11 @@ create table if not exists public.playbook_package_config (
 comment on table public.playbook_package_config is
   'Allow-lists for Playbook Package building in Proposal Builder (configurable package types + solution tiers).';
 
+-- Solution tiers auto-included in every playbook (cannot be removed by proposal builders).
+-- Mandatory tiers are always treated as allowed, regardless of `limit_solution_tiers`.
+alter table public.playbook_package_config
+  add column if not exists mandatory_solution_tier_ids text[] not null default '{}';
+
 insert into public.playbook_package_config (id) values ('default') on conflict (id) do nothing;
 
 alter table public.playbook_package_config enable row level security;

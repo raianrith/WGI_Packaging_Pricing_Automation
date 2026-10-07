@@ -44,8 +44,21 @@ function configsEqual(a: PlaybookPackageConfig, b: PlaybookPackageConfig): boole
     a.limitPackageTypes === b.limitPackageTypes &&
     a.limitSolutionTiers === b.limitSolutionTiers &&
     sameSet(a.allowedPackageTypeIds, b.allowedPackageTypeIds) &&
-    sameSet(a.allowedSolutionTierIds, b.allowedSolutionTierIds)
+    sameSet(a.allowedSolutionTierIds, b.allowedSolutionTierIds) &&
+    sameSet(a.mandatorySolutionTierIds, b.mandatorySolutionTierIds)
   );
+}
+
+function filterGroups(groups: SolutionGroup[], query: string): SolutionGroup[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return groups;
+  return groups
+    .map((g) => {
+      if (g.solution.solution_name.toLowerCase().includes(q)) return g;
+      const tiersHit = g.tiers.filter((t) => t.solution_tier_name.toLowerCase().includes(q));
+      return tiersHit.length ? { ...g, tiers: tiersHit } : null;
+    })
+    .filter((g): g is SolutionGroup => g != null);
 }
 
 function formatSavedAt(iso: string | null): string {
@@ -66,6 +79,8 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
   const [packageSearch, setPackageSearch] = useState("");
   const [solutionSearch, setSolutionSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [mandatorySearch, setMandatorySearch] = useState("");
+  const [mandatoryExpanded, setMandatoryExpanded] = useState<Set<string>>(() => new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,7 +136,24 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
   );
 
   const allowedTypeSet = useMemo(() => new Set(draft.allowedPackageTypeIds), [draft.allowedPackageTypeIds]);
-  const allowedTierSet = useMemo(() => new Set(draft.allowedSolutionTierIds), [draft.allowedSolutionTierIds]);
+  const mandatoryTierSet = useMemo(
+    () => new Set(draft.mandatorySolutionTierIds),
+    [draft.mandatorySolutionTierIds]
+  );
+  const allowedTierSet = useMemo(
+    () => new Set([...draft.allowedSolutionTierIds, ...draft.mandatorySolutionTierIds]),
+    [draft.allowedSolutionTierIds, draft.mandatorySolutionTierIds]
+  );
+
+  const tierLookup = useMemo(() => {
+    const solutionName = new Map(solutions.map((s) => [s.solution_id, s.solution_name]));
+    return new Map(
+      tiers.map((t) => [
+        t.solution_tier_id,
+        { tierName: t.solution_tier_name || t.solution_tier_id, solutionName: solutionName.get(t.solution_id) ?? "" },
+      ])
+    );
+  }, [solutions, tiers]);
 
   const filteredTypes = useMemo(() => {
     const q = packageSearch.trim().toLowerCase();
@@ -129,17 +161,15 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
     return packageTypes.filter((t) => t.name.toLowerCase().includes(q));
   }, [packageTypes, packageSearch]);
 
-  const filteredGroups = useMemo(() => {
-    const q = solutionSearch.trim().toLowerCase();
-    if (!q) return solutionGroups;
-    return solutionGroups
-      .map((g) => {
-        if (g.solution.solution_name.toLowerCase().includes(q)) return g;
-        const tiersHit = g.tiers.filter((t) => t.solution_tier_name.toLowerCase().includes(q));
-        return tiersHit.length ? { ...g, tiers: tiersHit } : null;
-      })
-      .filter((g): g is SolutionGroup => g != null);
-  }, [solutionGroups, solutionSearch]);
+  const filteredGroups = useMemo(
+    () => filterGroups(solutionGroups, solutionSearch),
+    [solutionGroups, solutionSearch]
+  );
+
+  const filteredMandatoryGroups = useMemo(
+    () => filterGroups(solutionGroups, mandatorySearch),
+    [solutionGroups, mandatorySearch]
+  );
 
   const patch = (p: Partial<PlaybookPackageConfig>) => setDraft((d) => ({ ...d, ...p }));
 
@@ -151,7 +181,7 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
   };
 
   const setTiers = (ids: string[], allowed: boolean) => {
-    const next = new Set(allowedTierSet);
+    const next = new Set(draft.allowedSolutionTierIds);
     for (const id of ids) {
       if (allowed) next.add(id);
       else next.delete(id);
@@ -159,14 +189,103 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
     patch({ allowedSolutionTierIds: [...next] });
   };
 
-  const toggleExpanded = (solutionId: string) => {
-    setExpanded((prev) => {
+  const setMandatory = (ids: string[], mandatory: boolean) => {
+    const next = new Set(draft.mandatorySolutionTierIds);
+    for (const id of ids) {
+      if (mandatory) next.add(id);
+      else next.delete(id);
+    }
+    patch({ mandatorySolutionTierIds: [...next] });
+  };
+
+  const toggleIn = (setter: typeof setExpanded) => (solutionId: string) => {
+    setter((prev) => {
       const next = new Set(prev);
       if (next.has(solutionId)) next.delete(solutionId);
       else next.add(solutionId);
       return next;
     });
   };
+
+  const renderTierGroups = (opts: {
+    groups: SolutionGroup[];
+    selected: Set<string>;
+    locked?: Set<string>;
+    onSet: (ids: string[], on: boolean) => void;
+    expandedSet: Set<string>;
+    onToggle: (solutionId: string) => void;
+    searchActive: boolean;
+    verb: string;
+  }) => (
+    <ul className="playbook-config__list">
+      {opts.groups.map((g) => {
+        const ids = g.tiers.map((t) => t.solution_tier_id);
+        const editable = ids.filter((id) => !opts.locked?.has(id));
+        const on = ids.filter((id) => opts.selected.has(id)).length;
+        const all = on === ids.length;
+        const isOpen = opts.expandedSet.has(g.solution.solution_id) || opts.searchActive;
+        return (
+          <li key={g.solution.solution_id} className="playbook-config__group">
+            <div className={`playbook-config__row playbook-config__row--group${on > 0 ? " is-checked" : ""}`}>
+              <input
+                type="checkbox"
+                checked={all}
+                ref={(el) => {
+                  if (el) el.indeterminate = on > 0 && !all;
+                }}
+                onChange={() => opts.onSet(editable, !all)}
+                disabled={editable.length === 0}
+                aria-label={`${opts.verb} all tiers of ${g.solution.solution_name}`}
+              />
+              <button
+                type="button"
+                className="playbook-config__group-toggle"
+                onClick={() => opts.onToggle(g.solution.solution_id)}
+                aria-expanded={isOpen}
+              >
+                <span className="playbook-config__row-name">{g.solution.solution_name}</span>
+                <span className="playbook-config__row-meta">
+                  {on}/{ids.length} tier{ids.length === 1 ? "" : "s"}
+                </span>
+                <span className="playbook-config__chev" aria-hidden>
+                  {isOpen ? "▾" : "▸"}
+                </span>
+              </button>
+            </div>
+            {isOpen ? (
+              <ul className="playbook-config__tiers">
+                {g.tiers.map((t) => {
+                  const id = t.solution_tier_id;
+                  const checked = opts.selected.has(id);
+                  const isLocked = opts.locked?.has(id) ?? false;
+                  return (
+                    <li key={id}>
+                      <label
+                        className={`playbook-config__row playbook-config__row--tier${checked ? " is-checked" : ""}${isLocked ? " is-locked" : ""}`}
+                        title={isLocked ? "Mandatory solutions are always allowed" : undefined}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isLocked}
+                          onChange={() => opts.onSet([id], !checked)}
+                        />
+                        <span className="playbook-config__row-name">{t.solution_tier_name || id}</span>
+                        {isLocked ? (
+                          <span className="playbook-config__badge">Mandatory</span>
+                        ) : null}
+                        <code className="playbook-config__row-id">{id}</code>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   const save = async () => {
     const client = getSupabase();
@@ -405,67 +524,18 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
               {filteredGroups.length === 0 ? (
                 <p className="playbook-config__empty">No solutions match your search.</p>
               ) : (
-                <ul className="playbook-config__list">
-                  {filteredGroups.map((g) => {
-                    const ids = g.tiers.map((t) => t.solution_tier_id);
-                    const on = ids.filter((id) => allowedTierSet.has(id)).length;
-                    const all = on === ids.length;
-                    const isOpen = expanded.has(g.solution.solution_id) || solutionSearch.trim().length > 0;
-                    return (
-                      <li key={g.solution.solution_id} className="playbook-config__group">
-                        <div className={`playbook-config__row playbook-config__row--group${on > 0 ? " is-checked" : ""}`}>
-                          <input
-                            type="checkbox"
-                            checked={all}
-                            ref={(el) => {
-                              if (el) el.indeterminate = on > 0 && !all;
-                            }}
-                            onChange={() => setTiers(ids, !all)}
-                            aria-label={`Allow all tiers of ${g.solution.solution_name}`}
-                          />
-                          <button
-                            type="button"
-                            className="playbook-config__group-toggle"
-                            onClick={() => toggleExpanded(g.solution.solution_id)}
-                            aria-expanded={isOpen}
-                          >
-                            <span className="playbook-config__row-name">{g.solution.solution_name}</span>
-                            <span className="playbook-config__row-meta">
-                              {on}/{ids.length} tier{ids.length === 1 ? "" : "s"}
-                            </span>
-                            <span className="playbook-config__chev" aria-hidden>
-                              {isOpen ? "▾" : "▸"}
-                            </span>
-                          </button>
-                        </div>
-                        {isOpen ? (
-                          <ul className="playbook-config__tiers">
-                            {g.tiers.map((t) => {
-                              const checked = allowedTierSet.has(t.solution_tier_id);
-                              return (
-                                <li key={t.solution_tier_id}>
-                                  <label className={`playbook-config__row playbook-config__row--tier${checked ? " is-checked" : ""}`}>
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => setTiers([t.solution_tier_id], !checked)}
-                                    />
-                                    <span className="playbook-config__row-name">
-                                      {t.solution_tier_name || t.solution_tier_id}
-                                    </span>
-                                    <code className="playbook-config__row-id">{t.solution_tier_id}</code>
-                                  </label>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
+                renderTierGroups({
+                  groups: filteredGroups,
+                  selected: allowedTierSet,
+                  locked: mandatoryTierSet,
+                  onSet: setTiers,
+                  expandedSet: expanded,
+                  onToggle: toggleIn(setExpanded),
+                  searchActive: solutionSearch.trim().length > 0,
+                  verb: "Allow",
+                })
               )}
-              {draft.allowedSolutionTierIds.length === 0 ? (
+              {allowedTierSet.size === 0 ? (
                 <p className="playbook-config__warn">
                   No solutions selected — playbooks will only be able to include custom packages.
                 </p>
@@ -475,6 +545,84 @@ export function PlaybookPackageConfigPanel({ solutions, tiers, setOpErr, setOpOk
             <p className="playbook-config__empty">
               All {totalTierCount} solution tiers can be added to a playbook.
             </p>
+          )}
+        </article>
+
+        <article className="playbook-config__card playbook-config__card--wide">
+          <div className="playbook-config__card-head">
+            <div>
+              <h3 className="playbook-config__card-title">Mandatory solutions</h3>
+              <p className="playbook-config__card-hint">
+                Automatically included in every playbook package. Proposal builders can&apos;t remove them, and
+                they&apos;re always allowed even if the Solutions list above is limited.
+              </p>
+            </div>
+            <span className="playbook-config__count">
+              {draft.mandatorySolutionTierIds.length} mandatory
+            </span>
+          </div>
+
+          {draft.mandatorySolutionTierIds.length > 0 ? (
+            <ul className="playbook-config__chips" aria-label="Mandatory solutions">
+              {draft.mandatorySolutionTierIds.map((id) => {
+                const info = tierLookup.get(id);
+                return (
+                  <li key={id} className="playbook-config__chip">
+                    <span className="playbook-config__chip-text">
+                      <span className="playbook-config__chip-name">{info?.tierName ?? id}</span>
+                      {info?.solutionName ? (
+                        <span className="playbook-config__chip-sub">{info.solutionName}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      className="playbook-config__chip-remove"
+                      onClick={() => setMandatory([id], false)}
+                      aria-label={`Remove ${info?.tierName ?? id} from mandatory solutions`}
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="playbook-config__empty">
+              No mandatory solutions. Pick any solution tiers below to include them in every playbook.
+            </p>
+          )}
+
+          <div className="playbook-config__toolbar">
+            <input
+              type="search"
+              style={styles.input}
+              value={mandatorySearch}
+              onChange={(e) => setMandatorySearch(e.target.value)}
+              placeholder="Search solutions or tiers to make mandatory…"
+              aria-label="Search solutions to make mandatory"
+            />
+            {draft.mandatorySolutionTierIds.length > 0 ? (
+              <button
+                type="button"
+                className="playbook-config__link"
+                onClick={() => patch({ mandatorySolutionTierIds: [] })}
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+          {filteredMandatoryGroups.length === 0 ? (
+            <p className="playbook-config__empty">No solutions match your search.</p>
+          ) : (
+            renderTierGroups({
+              groups: filteredMandatoryGroups,
+              selected: mandatoryTierSet,
+              onSet: setMandatory,
+              expandedSet: mandatoryExpanded,
+              onToggle: toggleIn(setMandatoryExpanded),
+              searchActive: mandatorySearch.trim().length > 0,
+              verb: "Require",
+            })
           )}
         </article>
       </div>

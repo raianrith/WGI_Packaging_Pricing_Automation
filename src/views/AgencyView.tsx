@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import { AGENCY_HERO_TITLE, AGENCY_VIEW_DESCRIPTION } from "../branding";
 import { insertAuditLog } from "../lib/audit";
 import { formatCatalogHours, formatEffortAndDuration } from "../lib/formatMetrics";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
@@ -1515,16 +1516,23 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   return (
     <div
-      className={`agency-view-shell${mode === "catalog" || mode === "package" ? " agency-view-shell--catalog" : ""}`}
+      className={`agency-view-shell${mode === "catalog" ? " agency-view-shell--catalog" : ""}`}
       style={layout.shell}
     >
-      <p className="agency-catalog-lede">
-        {mode === "package"
-          ? "Pricing, components, and tasks for this package."
-          : catalogViewMode === "all_table"
+      {mode === "catalog" ? (
+        <p className="agency-catalog-lede">
+          {catalogViewMode === "all_table"
             ? "Search solutions and packages, then click a row for details."
             : "Scope, process, tasks, and pricing for this solution."}
-      </p>
+        </p>
+      ) : (
+        <header className="agency-page-header">
+          <h1 style={layout.title}>{AGENCY_HERO_TITLE}</h1>
+          <p className="agency-hero__desc" style={layout.subtitle}>
+            {AGENCY_VIEW_DESCRIPTION}
+          </p>
+        </header>
+      )}
 
       {state.status === "loading" && (
         <div style={loadingBox}>Loading from Supabase…</div>

@@ -38,6 +38,15 @@ export function SolutionRequestModal({
     setError(null);
   }, [open, defaultName, defaultEmail]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy, onCancel]);
+
   if (!open) return null;
 
   const patch = <K extends keyof SolutionRequestFormInput>(
@@ -75,7 +84,7 @@ export function SolutionRequestModal({
       >
         <button
           type="button"
-          className="proposal-travel-modal__close"
+          className="solution-request-modal__close"
           aria-label="Close"
           disabled={busy}
           onClick={onCancel}
@@ -89,8 +98,8 @@ export function SolutionRequestModal({
             Request a new solution
           </h2>
           <p className="solution-request-modal__lead">
-            Tell us what should be productized so Chelsea and the team can review scope,
-            placement, and build readiness.
+            What should we productize? Chelsea and the team will review scope, placement, and
+            build readiness.
           </p>
         </header>
 

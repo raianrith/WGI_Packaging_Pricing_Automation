@@ -61,7 +61,9 @@ Deno.serve(async (req) => {
   const submittedBy = String(body.submittedByEmail ?? "").trim() || "Unknown submitter";
   const appUrl = String(body.appUrl ?? "").trim();
   const proposalId = String(body.proposalId ?? "").trim();
-  const openLink = appUrl ? appUrl.replace(/\/$/, "") + "/roadmap" : "";
+  const openLink = appUrl
+    ? appUrl.replace(/\/$/, "") + (proposalId ? `/roadmap/${encodeURIComponent(proposalId)}` : "/roadmap")
+    : "";
   const ops = (body.opsReview && typeof body.opsReview === "object"
     ? body.opsReview
     : null) as Record<string, unknown> | null;

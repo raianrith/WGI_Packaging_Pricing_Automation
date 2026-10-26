@@ -1,0 +1,13 @@
+# Minimal function config. Deploy with:
+#   npx supabase functions deploy create-productive-solution-tasks --project-ref effztnosfocyrffiwiwa
+
+project_id = "effztnosfocyrffiwiwa"
+
+[functions.notify-solution-request]
+verify_jwt = true
+
+[functions.notify-ops-review]
+verify_jwt = true
+
+[functions.create-productive-solution-tasks]
+verify_jwt = true

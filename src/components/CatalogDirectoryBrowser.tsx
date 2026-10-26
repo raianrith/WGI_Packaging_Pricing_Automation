@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { filterCatalogTierRows, PLAYBOOK_UNSET, type PlaybookFilterValue } from "./CatalogPlaybookBrowser";
 import { compareTierPhaseLabels } from "../lib/tierTaxonomy";
 import { compareTierCategoryLabels } from "../lib/tierCategories";
@@ -12,6 +13,35 @@ import {
 type FilterOption = { value: PlaybookFilterValue; label: string; count: number };
 
 export type CatalogDirectoryTypeFilter = CatalogDirectoryItemType | null;
+
+export type CatalogScopeFilter = "all" | "solutions" | "packages" | "mine";
+
+const SCOPE_OPTIONS: { value: CatalogScopeFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "solutions", label: "Solutions" },
+  { value: "packages", label: "Packages" },
+  { value: "mine", label: "My packages" },
+];
+
+function rowMatchesScope(
+  row: CatalogDirectoryRow,
+  scope: CatalogScopeFilter,
+  currentUserEmail?: string | null,
+  currentDisplayName?: string | null
+): boolean {
+  if (scope === "all") return true;
+  if (scope === "solutions") return isCatalogSolutionType(row.type);
+  if (scope === "packages") return row.type === "preset_package" || row.type === "configurable_package";
+  const hay = `${row.ownerLabel ?? ""} ${row.creatorEmail ?? ""}`.toLowerCase();
+  const email = currentUserEmail?.trim().toLowerCase() ?? "";
+  const name = currentDisplayName?.trim().toLowerCase() ?? "";
+  const local = email.split("@")[0] ?? "";
+  if (row.type !== "preset_package") return false;
+  if (email && hay.includes(email)) return true;
+  if (name && hay.includes(name)) return true;
+  if (local && hay.includes(local)) return true;
+  return false;
+}
 
 type TypeFilterOption = { value: CatalogDirectoryTypeFilter; label: string; count: number };
 
@@ -197,7 +227,10 @@ export function filterCatalogDirectoryRows(
   category: PlaybookFilterValue,
   tactic: PlaybookFilterValue,
   tableSearch: string,
-  solutionsOnly = false
+  solutionsOnly = false,
+  scope: CatalogScopeFilter = "all",
+  currentUserEmail?: string | null,
+  currentDisplayName?: string | null
 ): CatalogDirectoryRow[] {
   const q = tableSearch.trim().toLowerCase();
   const hasTaxonomy = phase !== null || category !== null || tactic !== null;
@@ -208,17 +241,19 @@ export function filterCatalogDirectoryRows(
       if (row.type !== "configured_solution") continue;
     } else if (itemType !== null && row.type !== itemType) {
       continue;
+    } else if (!rowMatchesScope(row, scope, currentUserEmail, currentDisplayName)) {
+      continue;
     }
 
     if (row.type === "configurable_package") {
-      const rowBlob = `${row.name} ${row.meta} ${row.typeLabel}`.toLowerCase().replace(/\$/g, "");
+      const rowBlob = `${row.name} ${row.meta} ${row.typeLabel} ${row.ownerLabel ?? ""}`.toLowerCase().replace(/\$/g, "");
       if (q && !rowBlob.includes(q)) continue;
       out.push(row);
       continue;
     }
 
     const filteredTiers = filterCatalogTierRows(row.tierRows, phase, category, tactic, tableSearch);
-    const rowBlob = `${row.name} ${row.meta} ${row.typeLabel} ${row.packageId ?? ""} ${row.solutionId ?? ""}`
+    const rowBlob = `${row.name} ${row.meta} ${row.typeLabel} ${row.ownerLabel ?? ""} ${row.packageId ?? ""} ${row.solutionId ?? ""}`
       .toLowerCase()
       .replace(/\$/g, "");
     const rowMatchesSearch = !q || rowBlob.includes(q);
@@ -258,7 +293,10 @@ type Props = {
   onOpenPresetPackage: (packageId: string) => void;
   onOpenConfigurablePackage: (packageBuilderTypeId: string) => void;
   hideTypeFilter?: boolean;
+  hideTaxonomyFilters?: boolean;
   hidePackageStats?: boolean;
+  showTypeColumn?: boolean;
+  showTaxonomyColumns?: boolean;
   searchPlaceholder?: string;
   footerHint?: string;
   tierInteraction?: "open" | "add";
@@ -266,6 +304,14 @@ type Props = {
   addedTierRefIds?: ReadonlySet<string>;
   justAddedTierId?: string | null;
   canAdd?: boolean;
+  variant?: "default" | "catalog";
+  scope?: CatalogScopeFilter;
+  onScopeChange?: (v: CatalogScopeFilter) => void;
+  currentUserEmail?: string | null;
+  currentDisplayName?: string | null;
+  selectedRowId?: string | null;
+  onSelectRow?: (row: CatalogDirectoryRow) => void;
+  newRequestHref?: string;
 };
 
 export function CatalogDirectoryBrowser({
@@ -288,7 +334,10 @@ export function CatalogDirectoryBrowser({
   onOpenPresetPackage,
   onOpenConfigurablePackage,
   hideTypeFilter = false,
+  hideTaxonomyFilters = false,
   hidePackageStats = false,
+  showTypeColumn = true,
+  showTaxonomyColumns: showTaxonomyColumnsProp,
   searchPlaceholder = "Solution, package, tier, tags…",
   footerHint = "Expand a solution for tiers · Custom opens overview · Configurable opens package builder",
   tierInteraction = "open",
@@ -296,18 +345,34 @@ export function CatalogDirectoryBrowser({
   addedTierRefIds,
   justAddedTierId,
   canAdd,
+  variant = "default",
+  scope = "all",
+  onScopeChange,
+  currentUserEmail,
+  currentDisplayName,
+  selectedRowId,
+  onSelectRow,
+  newRequestHref,
 }: Props) {
+  const isCatalog = variant === "catalog";
   const phaseId = useId();
   const typeId = useId();
   const categoryId = useId();
   const tacticId = useId();
   const searchId = useId();
+  const ownerId = useId();
+  const taxableId = useId();
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const [taxableFilter, setTaxableFilter] = useState<string | null>(null);
 
   const rowsForTypeScope = useMemo(() => {
     if (hideTypeFilter) return allRows.filter((r) => r.type === "configured_solution");
+    if (isCatalog) {
+      return allRows.filter((r) => rowMatchesScope(r, scope, currentUserEmail, currentDisplayName));
+    }
     if (itemType === null) return allRows;
     return allRows.filter((r) => r.type === itemType);
-  }, [allRows, hideTypeFilter, itemType]);
+  }, [allRows, hideTypeFilter, itemType, isCatalog, scope, currentUserEmail, currentDisplayName]);
 
   const allTierRows = useMemo(() => rowsForTypeScope.flatMap((r) => r.tierRows), [rowsForTypeScope]);
 
@@ -322,9 +387,42 @@ export function CatalogDirectoryBrowser({
   }, [rowsAfterPhase, category]);
 
   const filteredRows = useMemo(
-    () => filterCatalogDirectoryRows(allRows, itemType, phase, category, tactic, tableSearch, hideTypeFilter),
-    [allRows, itemType, phase, category, tactic, tableSearch, hideTypeFilter]
+    () =>
+      filterCatalogDirectoryRows(
+        allRows,
+        itemType,
+        phase,
+        category,
+        tactic,
+        tableSearch,
+        hideTypeFilter,
+        isCatalog ? scope : "all",
+        currentUserEmail,
+        currentDisplayName
+      ),
+    [
+      allRows,
+      itemType,
+      phase,
+      category,
+      tactic,
+      tableSearch,
+      hideTypeFilter,
+      isCatalog,
+      scope,
+      currentUserEmail,
+      currentDisplayName,
+    ]
   );
+
+  const scopedFilteredRows = useMemo(() => {
+    if (!isCatalog) return filteredRows;
+    return filteredRows.filter((row) => {
+      if (ownerFilter && (row.ownerLabel ?? "") !== ownerFilter) return false;
+      if (taxableFilter && row.taxableLabel !== taxableFilter) return false;
+      return true;
+    });
+  }, [filteredRows, isCatalog, ownerFilter, taxableFilter]);
 
   const typeOptions = useMemo(() => buildTypeFilterOptions(allRows), [allRows]);
 
@@ -353,6 +451,16 @@ export function CatalogDirectoryBrowser({
     if (!tacticOptions.some((o) => o.value === tactic)) onTacticChange(null);
   }, [tactic, tacticOptions, onTacticChange]);
 
+  useEffect(() => {
+    if (!isCatalog || ownerFilter == null) return;
+    if (!rowsForTypeScope.some((r) => (r.ownerLabel ?? "") === ownerFilter)) setOwnerFilter(null);
+  }, [isCatalog, ownerFilter, rowsForTypeScope]);
+
+  useEffect(() => {
+    if (!isCatalog || taxableFilter == null) return;
+    if (!rowsForTypeScope.some((r) => r.taxableLabel === taxableFilter)) setTaxableFilter(null);
+  }, [isCatalog, taxableFilter, rowsForTypeScope]);
+
   const sortedRows = useMemo(() => {
     const dir = sort.dir === "asc" ? 1 : -1;
     const cmpNum = (a: number | null, b: number | null): number => {
@@ -366,7 +474,7 @@ export function CatalogDirectoryBrowser({
     const cmpStr = (a: string, b: string) =>
       (a || "\uffff").localeCompare(b || "\uffff", undefined, { sensitivity: "base" }) * dir;
 
-    return [...filteredRows].sort((a, b) => {
+    return [...(isCatalog ? scopedFilteredRows : filteredRows)].sort((a, b) => {
       let c = 0;
       switch (sort.col) {
         case "name":
@@ -404,10 +512,11 @@ export function CatalogDirectoryBrowser({
       if (c !== 0) return c;
       return a.id.localeCompare(b.id, undefined, { sensitivity: "base" });
     });
-  }, [filteredRows, sort]);
+  }, [filteredRows, scopedFilteredRows, isCatalog, sort]);
 
   const hasFilters =
-    (!hideTypeFilter && itemType !== null) || phase !== null || category !== null || tactic !== null;
+    (!hideTypeFilter && itemType !== null) ||
+    (!hideTaxonomyFilters && (phase !== null || category !== null || tactic !== null));
   const moduleCount = allRows.filter((r) => r.type === "solution_module").length;
   const configuredCount = allRows.filter((r) => r.type === "configured_solution").length;
   const presetCount = allRows.filter((r) => r.type === "preset_package").length;
@@ -419,6 +528,147 @@ export function CatalogDirectoryBrowser({
     onCategoryChange(null);
     onTacticChange(null);
   };
+
+  if (isCatalog) {
+    const scopeCounts: Record<CatalogScopeFilter, number> = {
+      all: allRows.length,
+      solutions: allRows.filter((r) => isCatalogSolutionType(r.type)).length,
+      packages: allRows.filter((r) => r.type === "preset_package" || r.type === "configurable_package").length,
+      mine: allRows.filter((r) => rowMatchesScope(r, "mine", currentUserEmail, currentDisplayName)).length,
+    };
+    const ownerCounts = new Map<string, number>();
+    const taxableCounts = new Map<string, number>();
+    for (const row of rowsForTypeScope) {
+      const owner = row.ownerLabel?.trim();
+      if (owner) ownerCounts.set(owner, (ownerCounts.get(owner) ?? 0) + 1);
+      taxableCounts.set(row.taxableLabel, (taxableCounts.get(row.taxableLabel) ?? 0) + 1);
+    }
+    const ownerOptions = [...ownerCounts.entries()].sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    const taxableOrder = ["Taxable", "Non-taxable", "Mixed", "—"];
+    const taxableOptions = taxableOrder
+      .filter((label) => taxableCounts.has(label))
+      .map((label) => ({ label, count: taxableCounts.get(label) ?? 0 }));
+    const activeScope = scope ?? "all";
+    return (
+      <div className="agency-playbook-browser agency-playbook-browser--directory agency-playbook-browser--catalog">
+        <div className="catalog-toolbar" role="search" aria-label="Filter catalog">
+          <div className="catalog-scope" role="group" aria-label="Type">
+            {SCOPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`catalog-scope__btn${activeScope === opt.value ? " is-active" : ""}`}
+                aria-pressed={activeScope === opt.value}
+                onClick={() => onScopeChange?.(opt.value)}
+              >
+                {opt.label}
+                <span className="catalog-scope__count">{scopeCounts[opt.value]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="catalog-toolbar__end">
+            {newRequestHref ? (
+              <Link className="catalog-toolbar__request" to={newRequestHref}>
+                New request
+              </Link>
+            ) : null}
+          </div>
+          <div className="catalog-toolbar__fields">
+            <div
+              className={`agency-tier-filter-field agency-tier-filter-field--search agency-tier-filter-field--search-directory${tableSearch.trim() ? " agency-tier-filter-field--active" : ""}`}
+            >
+              <label className="agency-tier-filter-field__label" htmlFor={searchId}>
+                Search
+              </label>
+              <div className="agency-tier-filter-field__control agency-tier-filter-field__control--search">
+                <input
+                  id={searchId}
+                  type="search"
+                  className="agency-tier-filter-field__input"
+                  value={tableSearch}
+                  onChange={(e) => onTableSearchChange(e.target.value)}
+                  placeholder="Search name, owner…"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className={`agency-tier-filter-field agency-tier-filter-field--select${ownerFilter ? " agency-tier-filter-field--active" : ""}`}>
+              <label className="agency-tier-filter-field__label" htmlFor={ownerId}>
+                Owner
+              </label>
+              <div className="agency-tier-filter-field__control">
+                <select
+                  id={ownerId}
+                  className="agency-tier-filter-field__select"
+                  value={ownerFilter ?? ""}
+                  onChange={(e) => setOwnerFilter(e.target.value || null)}
+                >
+                  <option value="">All</option>
+                  {ownerOptions.map(([label, count]) => (
+                    <option key={label} value={label}>
+                      {label} ({count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className={`agency-tier-filter-field agency-tier-filter-field--select${taxableFilter ? " agency-tier-filter-field--active" : ""}`}>
+              <label className="agency-tier-filter-field__label" htmlFor={taxableId}>
+                Taxable
+              </label>
+              <div className="agency-tier-filter-field__control">
+                <select
+                  id={taxableId}
+                  className="agency-tier-filter-field__select"
+                  value={taxableFilter ?? ""}
+                  onChange={(e) => setTaxableFilter(e.target.value || null)}
+                >
+                  <option value="">All</option>
+                  {taxableOptions.map((opt) => (
+                    <option key={opt.label} value={opt.label}>
+                      {opt.label} ({opt.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <span className="catalog-toolbar__count">{sortedRows.length} shown</span>
+          </div>
+        </div>
+        <section className="agency-catalog-tier-sheet agency-catalog-tier-sheet--directory" aria-label="Catalog">
+          <CatalogDirectoryTable
+            rows={sortedRows}
+            expandedSolutionIds={expandedSolutionIds}
+            onToggleSolution={onToggleSolution}
+            sort={sort}
+            onToggleSort={onToggleSort}
+            onOpenTier={onOpenTier}
+            onOpenPresetPackage={onOpenPresetPackage}
+            onOpenConfigurablePackage={onOpenConfigurablePackage}
+            selectedRowId={selectedRowId}
+            onSelectRow={onSelectRow}
+            showTaxonomyColumns={false}
+            priceColumnLabel={
+              activeScope === "solutions"
+                ? "Avg. price"
+                : activeScope === "packages" || activeScope === "mine"
+                  ? "Discounted sell price"
+                  : "Avg. / disc. sell"
+            }
+            emptyMessage={
+              allRows.length === 0
+                ? "No items loaded."
+                : tableSearch.trim() || scope !== "all"
+                  ? "No items match your filters."
+                  : "No items to show."
+            }
+          />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="agency-playbook-browser agency-playbook-browser--directory">
@@ -440,6 +690,8 @@ export function CatalogDirectoryBrowser({
               </span>
             </>
           )}
+          {hideTaxonomyFilters ? null : (
+            <>
           <PlaybookFilterSelect
             id={phaseId}
             label="Phase"
@@ -478,6 +730,8 @@ export function CatalogDirectoryBrowser({
             options={tacticOptions}
             onChange={onTacticChange}
           />
+            </>
+          )}
           <div
             className={`agency-tier-filter-field agency-tier-filter-field--search agency-tier-filter-field--search-directory${tableSearch.trim() ? " agency-tier-filter-field--active" : ""}`}
           >
@@ -548,6 +802,8 @@ export function CatalogDirectoryBrowser({
           addedTierRefIds={addedTierRefIds}
           justAddedTierId={justAddedTierId}
           canAdd={canAdd}
+          showTypeColumn={showTypeColumn}
+          showTaxonomyColumns={showTaxonomyColumnsProp ?? true}
           emptyMessage={
             allRows.length === 0
               ? "No solutions loaded."

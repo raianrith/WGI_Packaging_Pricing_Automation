@@ -29,6 +29,8 @@ export type SolutionRequest = {
   review_notes: string | null;
   status_updated_by_email: string | null;
   status_updated_at: string | null;
+  productive_task_list_id?: string | null;
+  productive_task_list_url?: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -26,6 +26,8 @@ create table if not exists public.solution_requests (
   review_notes text null,
   status_updated_by_email text null,
   status_updated_at timestamptz null,
+  productive_task_list_id text null,
+  productive_task_list_url text null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -56,7 +58,7 @@ create policy "Allow update solution_requests"
   on public.solution_requests for update to authenticated using (true);
 
 create policy "Allow delete solution_requests"
-  on public.solution_requests for delete to authenticated using (public.is_app_admin());
+  on public.solution_requests for delete to authenticated using (true);
 
 create or replace function public.set_solution_requests_updated_at()
 returns trigger

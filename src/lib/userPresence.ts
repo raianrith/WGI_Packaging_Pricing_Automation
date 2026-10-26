@@ -18,8 +18,13 @@ export function presenceHeartbeatIntervalMs(): number {
   return HEARTBEAT_INTERVAL_MS;
 }
 
-export function buildPresencePayload(user: User, currentPath: string): PresencePayload {
+export function buildPresencePayload(
+  user: User,
+  currentPath: string,
+  displayName?: string | null
+): PresencePayload {
   const fullName =
+    normalizePresenceText(displayName) ??
     normalizePresenceText(readUserMetaString(user, "full_name")) ??
     normalizePresenceText(readUserMetaString(user, "name")) ??
     normalizePresenceText(user.email?.split("@")[0] ?? "");
@@ -35,12 +40,13 @@ export function buildPresencePayload(user: User, currentPath: string): PresenceP
 export async function upsertUserPresence(
   client: SupabaseClient,
   user: User,
-  currentPath: string
+  currentPath: string,
+  displayName?: string | null
 ): Promise<void> {
   if (presenceWritesDisabled) return;
   const { error } = await client
     .from("user_presence")
-    .upsert(buildPresencePayload(user, currentPath), { onConflict: "user_id" });
+    .upsert(buildPresencePayload(user, currentPath, displayName), { onConflict: "user_id" });
   if (error) {
     if (isMissingPresenceTableError(error.message)) {
       presenceWritesDisabled = true;
@@ -63,13 +69,14 @@ export async function clearUserPresence(client: SupabaseClient, userId: string):
 export function routePresenceLabel(pathname: string | null | undefined): string {
   const path = (pathname ?? "").trim();
   if (!path) return "Unknown";
-  if (path === "/") return "Guided Directory";
-  if (path === "/solutions") return "All Solutions & Packages";
-  if (path === "/directory-details") return "Solution Overviews";
+  if (path === "/") return "Home";
+  if (path === "/solutions") return "Catalog";
+  if (path === "/directory-details") return "Solutions Overview";
+  if (path === "/custom-solutions") return "Custom Solutions";
   if (path === "/package-builder") return "Package Builder";
-  if (path === "/packages") return "Packages";
+  if (path === "/packages") return "Catalog";
   if (path.startsWith("/package/")) return "Package Workspace";
-  if (path === "/roadmap") return "Proposal Builder";
+  if (path === "/roadmap" || path.startsWith("/roadmap/")) return "Proposal Builder";
   if (path === "/solution-requests") return "Solution Requests";
   if (path === "/admin" || path.startsWith("/admin/")) return "Admin";
   return path;

@@ -91,6 +91,27 @@ function toIsoLocal(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+export function addCalendarMonths(iso: string, months: number): string {
+  const d = parseLocalDate(iso);
+  if (!d || !Number.isFinite(months)) return "";
+  const day = d.getDate();
+  const next = new Date(d.getFullYear(), d.getMonth() + months, 1, 12, 0, 0);
+  const last = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, last));
+  return toIsoLocal(next);
+}
+
+/** Inclusive end date for an N-month engagement starting on `start` (Nov 1 + 4 months → Feb 28/29). */
+export function proposalEndFromDurationMonths(start: string, months: number): string {
+  if (!Number.isFinite(months) || months <= 0) return "";
+  const added = addCalendarMonths(start, months);
+  if (!added) return "";
+  const d = parseLocalDate(added);
+  if (!d) return "";
+  d.setDate(d.getDate() - 1);
+  return toIsoLocal(d);
+}
+
 /**
  * Calendar months that intersect [proposalStart, proposalEnd], each clipped to the range.
  * Empty if either date is missing/invalid or start is after end.

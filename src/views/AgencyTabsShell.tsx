@@ -1,61 +1,31 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
+
+const TABS = [
+  { to: "/solutions", label: "Catalog", end: true },
+  { to: "/directory-details", label: "Solutions Overview", end: true },
+  { to: "/custom-solutions", label: "Custom Solutions", end: true },
+] as const;
 
 export function AgencyTabsShell() {
-  const { pathname } = useLocation();
-  const packagesTabActive =
-    pathname === "/packages" || pathname.startsWith("/package/");
-  const directoryTabActive = pathname === "/solutions";
-  const directoryDetailsTabActive = pathname === "/directory-details";
-
   return (
     <div className="agency-tabs-shell">
-      <div className="agency-tabs-shell__bar">
-        <nav className="agency-tabs-nav" aria-label="Directory and package overview">
-          <ul className="agency-tabs agency-tabs--four">
-            <li>
-              <NavLink
-                to="/"
-                end
-                className={({ isActive }) =>
-                  `agency-tab${isActive ? " agency-tab--active" : ""}`
-                }
-              >
-                Guided Directory
-              </NavLink>
-            </li>
-            <li>
-              <NavLink
-                to="/solutions"
-                className={() =>
-                  `agency-tab${directoryTabActive ? " agency-tab--active" : ""}`
-                }
-              >
-                All Solutions & Packages
-              </NavLink>
-            </li>
-            <li>
-              <NavLink
-                to="/directory-details"
-                className={() =>
-                  `agency-tab${directoryDetailsTabActive ? " agency-tab--active" : ""}`
-                }
-              >
-                Solution Overviews
-              </NavLink>
-            </li>
-            <li>
-              <NavLink
-                to="/packages"
-                className={() =>
-                  `agency-tab${packagesTabActive ? " agency-tab--active" : ""}`
-                }
-              >
-                Packages
-              </NavLink>
-            </li>
+      <header className="agency-tabs-shell__bar">
+        <nav className="agency-tabs-nav" aria-label="Catalog views">
+          <ul className="agency-tabs agency-tabs--catalog agency-tabs--catalog-3">
+            {TABS.map((tab) => (
+              <li key={tab.to}>
+                <NavLink
+                  to={tab.to}
+                  end={tab.end}
+                  className={({ isActive }) => `agency-tab${isActive ? " agency-tab--active" : ""}`}
+                >
+                  {tab.label}
+                </NavLink>
+              </li>
+            ))}
           </ul>
         </nav>
-      </div>
+      </header>
       <Outlet />
     </div>
   );

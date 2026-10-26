@@ -8,13 +8,11 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import {
-  AGENCY_HERO_TITLE,
-  AGENCY_VIEW_DESCRIPTION,
-  NAV_PACKAGE_BUILDER,
-} from "../branding";
+import { AGENCY_HERO_TITLE, AGENCY_VIEW_DESCRIPTION } from "../branding";
+import { insertAuditLog } from "../lib/audit";
+import { formatCatalogHours, formatEffortAndDuration } from "../lib/formatMetrics";
 import { STANDALONE_PACKAGE_NAV_ID } from "../lib/navIds";
 import {
   mergePricingWithPackageOverrides,
@@ -26,7 +24,7 @@ import {
   mergeTierWithPackageOverrides,
   parseTierOverrides,
 } from "../lib/packageTierOverrides";
-import { PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
+import { notifyPackagingDataChanged, PACKAGING_DATA_CHANGED_EVENT } from "../lib/packagingEvents";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
 import {
   clearStashedCatalogTierNavigation,
@@ -35,6 +33,7 @@ import {
   stashCatalogTierNavigation,
   type CatalogTierNavTarget,
 } from "../lib/catalogTierNavigation";
+import { solutionOverviewPath } from "../lib/entityLinks";
 import {
   resolveMigratedPackageTarget,
   type PackageMigrationRow,
@@ -71,9 +70,11 @@ import {
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import {
   CatalogDirectoryBrowser,
-  filterCatalogDirectoryRows,
   type CatalogDirectoryTypeFilter,
+  type CatalogScopeFilter,
 } from "../components/CatalogDirectoryBrowser";
+import { CatalogInspectorPanel } from "../components/CatalogInspectorPanel";
+import { useAuth } from "../context/AuthContext";
 import { type PlaybookFilterValue } from "../components/CatalogPlaybookBrowser";
 import type { CatalogDirectorySortCol } from "../components/CatalogDirectoryTable";
 import { useToast } from "../context/ToastContext";
@@ -294,7 +295,10 @@ type AgencyTierDetailNavState = {
 export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewProps) {
   const { packageId: packageIdParam } = useParams<{ packageId: string }>();
   const location = useLocation();
-  const catalogViewMode: CatalogViewMode = catalogSubview === "detail" ? "detail" : "all_table";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user, displayName } = useAuth();
+  const catalogViewMode: CatalogViewMode =
+    mode === "catalog" && catalogSubview === "detail" ? "detail" : "all_table";
   const navTierSelection = readPendingCatalogTierNavigation(location.state);
 
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -307,6 +311,22 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   /** Catalog: directory table vs. tier detail — driven by route (`catalogSubview`). */
   const [catalogTierTableQuery, setCatalogTierTableQuery] = useState("");
   const [playbookItemType, setPlaybookItemType] = useState<CatalogDirectoryTypeFilter>(null);
+  const [catalogScope, setCatalogScope] = useState<CatalogScopeFilter>(() => {
+    const type = new URLSearchParams(window.location.search).get("type");
+    if (type === "packages" || type === "mine" || type === "solutions") return type;
+    return "all";
+  });
+
+  useEffect(() => {
+    const type = searchParams.get("type");
+    if (type === "packages" || type === "mine" || type === "solutions") {
+      setCatalogScope(type);
+      return;
+    }
+    if (!type) setCatalogScope("all");
+  }, [searchParams]);
+  const [selectedCatalogRowId, setSelectedCatalogRowId] = useState<string | null>(null);
+  const [packageCreatorById, setPackageCreatorById] = useState<Map<string, string>>(() => new Map());
   const [playbookPhase, setPlaybookPhase] = useState<PlaybookFilterValue>(null);
   const [playbookCategory, setPlaybookCategory] = useState<PlaybookFilterValue>(null);
   const [playbookTactic, setPlaybookTactic] = useState<PlaybookFilterValue>(null);
@@ -452,6 +472,22 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     setPackageBuilderTypes(slotPack.catalog.types.map((t) => ({ ...t })));
     setPackageBuilderSlots(slotPack.catalog.slots.map((r) => ({ ...r })));
 
+    const { data: createAudit } = await client
+      .from("audit_log")
+      .select("entity_id, changed_by_email")
+      .eq("entity_type", "packages")
+      .eq("action", "insert")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+    const creators = new Map<string, string>();
+    for (const row of createAudit ?? []) {
+      const id = typeof row.entity_id === "string" ? row.entity_id : "";
+      const email = typeof row.changed_by_email === "string" ? row.changed_by_email.trim() : "";
+      if (!id || !email || creators.has(id)) continue;
+      creators.set(id, email);
+    }
+    setPackageCreatorById(creators);
+
     if (mode === "package") {
       return;
     }
@@ -478,7 +514,14 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   }, [load]);
 
   useEffect(() => {
-    if (mode !== "catalog") return;
+    if (mode !== "catalog" || catalogViewMode !== "detail") return;
+    const sol = searchParams.get("sol");
+    const tier = searchParams.get("tier");
+    if (sol) {
+      setSolId((prev) => (prev === sol ? prev : sol));
+      if (tier) setTierId((prev) => (prev === tier ? prev : tier));
+      return;
+    }
     const target = readPendingCatalogTierNavigation(location.state);
     if (!target?.solutionId || !target?.tierId) return;
     stashCatalogTierNavigation(target);
@@ -491,7 +534,19 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     if ((location.state as AgencyTierDetailNavState | null)?.openTierDetail) {
       navigate(location.pathname, { replace: true, state: null });
     }
-  }, [location.pathname, location.state, mode, navigate]);
+  }, [catalogViewMode, location.pathname, location.state, mode, navigate, searchParams]);
+
+  useEffect(() => {
+    if (mode !== "catalog" || catalogViewMode !== "detail" || !solId) return;
+    const currentSol = searchParams.get("sol");
+    const currentTier = searchParams.get("tier");
+    if (currentSol === solId && (currentTier || "") === (tierId || "")) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("sol", solId);
+    if (tierId) next.set("tier", tierId);
+    else next.delete("tier");
+    setSearchParams(next, { replace: true });
+  }, [catalogViewMode, mode, searchParams, setSearchParams, solId, tierId]);
 
   useEffect(() => {
     if (mode !== "catalog" || state.status !== "ok") return;
@@ -580,17 +635,14 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     routeInvalidNotified.current = true;
 
     if (migratedPackageTarget) {
-      stashCatalogTierNavigation(migratedPackageTarget);
-      navigate("/directory-details", {
-        replace: true,
-        state: { openTierDetail: migratedPackageTarget },
-      });
-      toastNote("This package was moved to Solutions. Opening the matching solution tier.");
+      setSelectedCatalogRowId(`solution:${migratedPackageTarget.solutionId}`);
+      navigate("/solutions", { replace: true });
+      toastNote("This package was moved to Solutions. Opening the matching solution in Catalog.");
       return;
     }
 
-    navigate("/packages", { replace: true });
-    toastNote("This package link is no longer valid. Use the Packages tab to open a workspace.");
+    navigate("/solutions?type=packages", { replace: true });
+    toastNote("This package link is no longer valid. Use Catalog to open a workspace.");
   }, [migratedPackageTarget, navigate, packageRouteInvalid, toastNote]);
 
   useEffect(() => {
@@ -855,7 +907,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     };
   }, [tasksForTierDisplay]);
 
-  /** Catalog mode KPIs: selected tier’s tasks, or tasks matching sidebar search filters. */
   const tasksForKpi = useMemo(() => {
     if (!data) return [];
     if (tierId) {
@@ -897,7 +948,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       sumTime,
       sumDuration: sumDur,
       distinctImplementers: roles.size,
-      avgTime: n > 0 ? sumTime / n : 0,
     };
   }, [tasksForKpi]);
 
@@ -916,19 +966,6 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     return data.packages.find((p) => p.package_id === link.package_id);
   }, [data, selectedTier]);
 
-  const kpiScopeLine = useMemo(() => {
-    if (!data) return "";
-    if (tierId && selectedTier && solutionForSelectedTier) {
-      const parts: string[] = [];
-      if (packageForSelectedTier) parts.push(packageForSelectedTier.package_name);
-      else parts.push("Standalone");
-      parts.push(solutionForSelectedTier.solution_name);
-      parts.push((selectedTierDisplay ?? selectedTier).solution_tier_name);
-      return `Scope: ${parts.join(" → ")}`;
-    }
-    return "Scope: pick a tier in the sidebar to show pricing and task KPIs.";
-  }, [data, tierId, selectedTier, selectedTierDisplay, solutionForSelectedTier, packageForSelectedTier]);
-
   const tierPricingMathConfig = useMemo(
     () => normalizeTierPricingMathConfig(loadTierPricingMathConfigFromStorage()),
     []
@@ -936,7 +973,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   const catalogDirectoryRows = useMemo(() => {
     if (!data) return [];
-    return buildCatalogDirectoryRows(
+    const rows = buildCatalogDirectoryRows(
       {
         packages: data.packages,
         solutions: data.solutions,
@@ -950,20 +987,18 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       data.implementerHourGroups,
       tierPricingMathConfig
     );
-  }, [data, packageBuilderTypes, packageBuilderSlots, tierPricingMathConfig]);
-
-  const catalogDirectoryFilteredCount = useMemo(
-    () =>
-      filterCatalogDirectoryRows(
-        catalogDirectoryRows,
-        playbookItemType,
-        playbookPhase,
-        playbookCategory,
-        playbookTactic,
-        catalogTierTableQuery
-      ).length,
-    [catalogDirectoryRows, playbookItemType, playbookPhase, playbookCategory, playbookTactic, catalogTierTableQuery]
-  );
+    const currentEmail = user?.email?.trim().toLowerCase() ?? "";
+    const currentName = displayName?.trim() ?? "";
+    return rows.map((row) => {
+      if (!row.packageId) return row;
+      const creatorEmail = packageCreatorById.get(row.packageId) ?? null;
+      const creatorIsSelf = Boolean(creatorEmail && currentEmail && creatorEmail.toLowerCase() === currentEmail);
+      const ownerLabel =
+        row.ownerLabel ||
+        (creatorIsSelf && currentName ? currentName : null);
+      return { ...row, creatorEmail, ownerLabel };
+    });
+  }, [data, packageBuilderTypes, packageBuilderSlots, tierPricingMathConfig, packageCreatorById, user?.email, displayName]);
 
   const toggleCatalogTierSort = (col: CatalogDirectorySortCol) => {
     setCatalogTierSort((prev) =>
@@ -989,14 +1024,61 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
           state.tiers
         );
         if (target) {
-          stashCatalogTierNavigation(target);
-          navigate("/directory-details", { state: { openTierDetail: target } });
+          toastNote("This package was moved to Solutions. Open the matching solution in Catalog.");
+          navigate("/solutions", { replace: true });
           return;
         }
       }
       navigate(`/package/${encodeURIComponent(packageId)}`);
     },
-    [navigate, state]
+    [navigate, state, toastNote]
+  );
+
+  const deleteCatalogPackage = useCallback(
+    async (packageId: string, packageName: string) => {
+      const label = packageName.trim() || packageId;
+      if (
+        !globalThis.confirm(
+          `Delete package “${label}” and all its solution links? This cannot be undone.`
+        )
+      ) {
+        return;
+      }
+      const client = getSupabase();
+      if (!client || state.status !== "ok") {
+        toastError("Unable to delete this package right now.");
+        return;
+      }
+      const beforePkg = state.packages.find((p) => p.package_id === packageId) ?? null;
+      const beforeTierIds = state.packageTiers
+        .filter((x) => x.package_id === packageId)
+        .map((x) => x.solution_tier_id);
+      const { error: d1 } = await client.from("package_solution_tiers").delete().eq("package_id", packageId);
+      if (d1) {
+        toastError(d1.message);
+        return;
+      }
+      const { error: d2 } = await client.from("packages").delete().eq("package_id", packageId);
+      if (d2) {
+        toastError(d2.message);
+        await load();
+        return;
+      }
+      await insertAuditLog(client, {
+        entityType: "packages",
+        entityId: packageId,
+        action: "delete",
+        before: beforePkg
+          ? { ...(beforePkg as unknown as Record<string, unknown>), solution_tier_ids: beforeTierIds }
+          : null,
+        after: null,
+      });
+      setSelectedCatalogRowId(null);
+      toastNote(`Package ${label} deleted.`);
+      notifyPackagingDataChanged();
+      await load();
+    },
+    [load, state, toastError, toastNote]
   );
 
   const openConfigurablePackage = useCallback(
@@ -1008,34 +1090,16 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
   const openCatalogTierDetail = useCallback(
     (solutionId: string, id: string | null) => {
-      if (mode === "catalog") {
-        if (location.pathname === "/directory-details") {
-          setSolId(solutionId);
-          setTierId(id);
-          setFilterTier("");
-          setFilterSol("");
-          return;
-        }
-        if (id) {
-          stashCatalogTierNavigation({ solutionId, tierId: id });
-          navigate("/directory-details", {
-            state: { openTierDetail: { solutionId, tierId: id } } satisfies AgencyTierDetailNavState,
-          });
-        } else {
-          navigate("/directory-details");
-          setSolId(solutionId);
-          setTierId(null);
-          setFilterTier("");
-          setFilterSol("");
-        }
-        return;
-      }
       setSolId(solutionId);
       setTierId(id);
       setFilterTier("");
       setFilterSol("");
+      if (mode !== "catalog") return;
+      const path = solutionOverviewPath(solutionId, id);
+      if (id) stashCatalogTierNavigation({ solutionId, tierId: id });
+      navigate(path, { replace: catalogViewMode === "detail" });
     },
-    [mode, navigate, location.pathname]
+    [catalogViewMode, mode, navigate]
   );
 
   const selectCatalogTier = useCallback(
@@ -1176,9 +1240,9 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
       vaultSumTaskTime: sumTime,
       vaultSumTaskDuration: sumDuration,
       useWorkspaceTotals,
-      workspaceHoursDisplay: useWorkspaceTotals
-        ? formatKpiNumber(workspaceTotals.totalResourceHoursAfterDiscount)
-        : null,
+      workspaceHoursNum: useWorkspaceTotals
+        ? workspaceTotals.totalResourceHoursAfterDiscount
+        : sumTime,
       distinctImplementers: roles.size,
       sumTaskTime: sumTime,
       sumTaskDuration: sumDuration,
@@ -1372,6 +1436,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   useEffect(() => {
     if (!data) return;
     if (mode === "catalog" && pkgId == null) {
+      if (catalogViewMode !== "detail") return;
       if (pendingTierDetailRef.current || readStashedCatalogTierNavigation()) return;
       const sorted = [...data.solutions].sort((a, b) =>
         sortId(a.solution_id, b.solution_id)
@@ -1403,7 +1468,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
     if (!solId || !solutionsVisible.some((s) => s.solution_id === solId)) {
       setSolId(solutionsVisible[0]?.solution_id ?? null);
     }
-  }, [data, mode, pkgId, solutionsVisible, solId, tierId]);
+  }, [data, mode, pkgId, solutionsVisible, solId, tierId, catalogViewMode]);
 
   useEffect(() => {
     if (!data) return;
@@ -1450,31 +1515,24 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
   }, [data, mode, pkgId, tiersForWorkspacePackage, solId, tiersForSolution, tierId]);
 
   return (
-    <div className="agency-view-shell" style={layout.shell}>
-      <header className="agency-page-header">
-        <h1 style={layout.title}>{AGENCY_HERO_TITLE}</h1>
-        <p className="agency-hero__desc" style={layout.subtitle}>
-          {AGENCY_VIEW_DESCRIPTION}{" "}
-          {mode === "catalog" ? (
-            <>
-              Use{" "}
-              <Link className="agency-hub__link" to="/package-builder">
-                {NAV_PACKAGE_BUILDER}
-              </Link>{" "}
-              to build a new bundle or the{" "}
-              <Link className="agency-hub__link" to="/packages">
-                Packages
-              </Link>{" "}
-              tab to open an existing package workspace.
-            </>
-          ) : (
-            <>
-              Use the <Link className="agency-hub__link" to="/solutions">All Solutions & Packages</Link> tab to search
-              tiers across the Solutions Directory.
-            </>
-          )}
+    <div
+      className={`agency-view-shell${mode === "catalog" ? " agency-view-shell--catalog" : ""}`}
+      style={layout.shell}
+    >
+      {mode === "catalog" ? (
+        <p className="agency-catalog-lede">
+          {catalogViewMode === "all_table"
+            ? "Search solutions and packages, then click a row for details."
+            : "Scope, process, tasks, and pricing for this solution."}
         </p>
-      </header>
+      ) : (
+        <header className="agency-page-header">
+          <h1 style={layout.title}>{AGENCY_HERO_TITLE}</h1>
+          <p className="agency-hero__desc" style={layout.subtitle}>
+            {AGENCY_VIEW_DESCRIPTION}
+          </p>
+        </header>
+      )}
 
       {state.status === "loading" && (
         <div style={loadingBox}>Loading from Supabase…</div>
@@ -1488,8 +1546,8 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
 
       {data && mode === "package" && packageRouteInvalid && (
         <div className="agency-route-error" role="status">
-          <Link className="agency-hub__link" to="/packages">
-            ← Packages
+          <Link className="agency-hub__link" to="/solutions?type=packages">
+            ← Catalog
           </Link>
         </div>
       )}
@@ -1736,7 +1794,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
             {mode === "package" && pkgId != null && (
               <div className="agency-package-workspace-bar">
                 <Link className="agency-hub__link agency-package-workspace-bar__back" to="/solutions">
-                  ← All Solutions & Packages
+                  ← Catalog
                 </Link>
                 {selectedPackageOverview && (
                   <span className="agency-package-workspace-bar__context">
@@ -1773,7 +1831,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                     </span>
                   </p>
                 </div>
-                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
+                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--four">
                   <div className="agency-kpi-card agency-kpi-card--tasks">
                     <span className="agency-kpi-card__label">Solutions in package</span>
                     <span className="agency-kpi-card__value">
@@ -1781,32 +1839,22 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                     </span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--pricing">
-                    <span className="agency-kpi-card__label">
-                      {selectedPackageOverview.useWorkspaceTotals ? "Net sell (workspace)" : "Sell total (Σ solutions)"}
-                    </span>
+                    <span className="agency-kpi-card__label">Price</span>
                     <span className="agency-kpi-card__value">{selectedPackageOverview.sellTotalDisplay}</span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--tasks">
-                    <span className="agency-kpi-card__label">Distinct implementers</span>
+                    <span className="agency-kpi-card__label">People</span>
                     <span className="agency-kpi-card__value">
                       {selectedPackageOverview.distinctImplementers}
                     </span>
                   </div>
                   <div className="agency-kpi-card agency-kpi-card--tasks">
-                    <span className="agency-kpi-card__label">
-                      {selectedPackageOverview.useWorkspaceTotals
-                        ? "Resource hours · after hour discount %"
-                        : "Sum of task time"}
-                    </span>
-                    <span className="agency-kpi-card__value">
-                      {selectedPackageOverview.workspaceHoursDisplay ??
-                        formatKpiNumber(selectedPackageOverview.sumTaskTime)}
-                    </span>
-                  </div>
-                  <div className="agency-kpi-card agency-kpi-card--tasks">
-                    <span className="agency-kpi-card__label">Sum of task duration</span>
-                    <span className="agency-kpi-card__value">
-                      {formatKpiNumber(selectedPackageOverview.sumTaskDuration)}
+                    <span className="agency-kpi-card__label">Effort / delivery</span>
+                    <span className="agency-kpi-card__value agency-kpi-card__value--compact">
+                      {formatEffortAndDuration(
+                        selectedPackageOverview.workspaceHoursNum,
+                        selectedPackageOverview.sumTaskDuration
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1819,10 +1867,14 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       lineHeight: 1.45,
                     }}
                   >
-                    Package comparison: Σ solution vault sells <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·
-                    summed checklist task times <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskTime)} h</strong> ·
-                    summed checklist task duration{" "}
-                    <strong>{formatKpiNumber(selectedPackageOverview.vaultSumTaskDuration)}</strong>.
+                    Package comparison: vault price <strong>{selectedPackageOverview.vaultSellTotalDisplay}</strong> ·{" "}
+                    <strong>
+                      {formatEffortAndDuration(
+                        selectedPackageOverview.vaultSumTaskTime,
+                        selectedPackageOverview.vaultSumTaskDuration
+                      )}
+                    </strong>
+                    .
                   </p>
                 ) : null}
               </section>
@@ -1922,8 +1974,8 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                       return (
                         <p style={{ ...emptyHint, margin: "0.25rem 0 0" }}>
                           No package narrative saved yet. Edit details in{" "}
-                          <Link className="agency-hub__link" to="/packages">
-                            Packages
+                          <Link className="agency-hub__link" to="/solutions?type=packages">
+                            Catalog
                           </Link>
                           .
                         </p>
@@ -2237,84 +2289,97 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
               </div>
             ) : null}
 
-            {mode === "catalog" && (data.packages.length > 0 || data.solutions.length > 0) ? (
-              <section
-                className="agency-kpi-panel agency-kpi-panel--scope"
-                style={kpiSectionWrap}
-                aria-label={
-                  catalogViewMode === "all_table" ? "Directory browser" : "Directory tier detail"
-                }
-              >
-                <div className="agency-kpi-panel__head agency-kpi-panel__head--with-toggle">
-                  <div className="agency-catalog-view-head">
-                    <div>
-                      <h2 className="agency-kpi-panel__title">
-                        {catalogViewMode === "all_table" ? "Directory" : "Directory details"}
-                      </h2>
-                      <p className="agency-kpi-panel__scope agency-kpi-panel__scope--tight">
-                        {catalogViewMode === "all_table"
-                          ? `${catalogDirectoryFilteredCount} item${catalogDirectoryFilteredCount === 1 ? "" : "s"} shown (${catalogDirectoryRows.length} in vault)`
-                          : kpiScopeLine}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                {catalogViewMode === "detail" ? (
-                  <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
-                    <div className="agency-kpi-card agency-kpi-card--pricing">
-                      <span className="agency-kpi-card__label">Sell price</span>
-                      <span className="agency-kpi-card__value">
-                        {tierId && selectedTier ? sellPriceDisplay(selectedPricing) : "—"}
-                      </span>
-                    </div>
-                    <div className="agency-kpi-card agency-kpi-card--pricing">
-                      <span className="agency-kpi-card__label">Tax status</span>
-                      <span className="agency-kpi-card__value agency-kpi-card__value--text">
-                        {tierId && selectedTier ? taxableLabel(selectedPricing) : "—"}
-                      </span>
-                    </div>
-                    <div className="agency-kpi-card agency-kpi-card--tasks">
-                      <span className="agency-kpi-card__label">Distinct implementers</span>
-                      <span className="agency-kpi-card__value">{taskKpis.distinctImplementers}</span>
-                    </div>
-                    <div className="agency-kpi-card agency-kpi-card--tasks">
-                      <span className="agency-kpi-card__label">Sum of task time</span>
-                      <span className="agency-kpi-card__value">
-                        {formatKpiNumber(taskKpis.sumTime)}
-                      </span>
-                    </div>
-                    <div className="agency-kpi-card agency-kpi-card--tasks">
-                      <span className="agency-kpi-card__label">Sum of task duration</span>
-                      <span className="agency-kpi-card__value">
-                        {formatKpiNumber(taskKpis.sumDuration)}
-                      </span>
-                    </div>
-                  </div>
+            {mode === "catalog" && catalogViewMode === "all_table" ? (
+              <div className={`catalog-workspace${selectedCatalogRowId ? " is-open" : ""}`}>
+                <CatalogDirectoryBrowser
+                  allRows={catalogDirectoryRows}
+                  itemType={playbookItemType}
+                  phase={playbookPhase}
+                  category={playbookCategory}
+                  tactic={playbookTactic}
+                  onItemTypeChange={setPlaybookItemType}
+                  onPhaseChange={setPlaybookPhase}
+                  onCategoryChange={setPlaybookCategory}
+                  onTacticChange={setPlaybookTactic}
+                  tableSearch={catalogTierTableQuery}
+                  onTableSearchChange={setCatalogTierTableQuery}
+                  sort={catalogTierSort}
+                  onToggleSort={toggleCatalogTierSort}
+                  expandedSolutionIds={expandedSolutionIds}
+                  onToggleSolution={toggleExpandedSolution}
+                  onOpenTier={selectCatalogTier}
+                  onOpenPresetPackage={openPresetPackage}
+                  onOpenConfigurablePackage={openConfigurablePackage}
+                  variant="catalog"
+                  scope={catalogScope}
+                  onScopeChange={(next) => {
+                    setCatalogScope(next);
+                    const nextParams = new URLSearchParams(searchParams);
+                    if (next === "all") nextParams.delete("type");
+                    else nextParams.set("type", next);
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                  currentUserEmail={user?.email ?? null}
+                  currentDisplayName={displayName}
+                  selectedRowId={selectedCatalogRowId}
+                  onSelectRow={(row) => setSelectedCatalogRowId(row.id)}
+                  newRequestHref="/solution-requests"
+                />
+                {selectedCatalogRowId ? (
+                  <CatalogInspectorPanel
+                    row={catalogDirectoryRows.find((r) => r.id === selectedCatalogRowId) ?? null}
+                    tiers={data.tiers}
+                    onClose={() => setSelectedCatalogRowId(null)}
+                    onOpenPackage={(id) => navigate(`/package/${encodeURIComponent(id)}`)}
+                    onEditPackage={(id) => navigate(`/package/${encodeURIComponent(id)}`)}
+                    onOpenTemplate={openConfigurablePackage}
+                    onOpenSolution={openCatalogTierDetail}
+                    onDeletePackage={(id, name) => void deleteCatalogPackage(id, name)}
+                  />
                 ) : null}
-              </section>
+              </div>
             ) : null}
 
-            {mode === "catalog" && catalogViewMode === "all_table" ? (
-              <CatalogDirectoryBrowser
-                allRows={catalogDirectoryRows}
-                itemType={playbookItemType}
-                phase={playbookPhase}
-                category={playbookCategory}
-                tactic={playbookTactic}
-                onItemTypeChange={setPlaybookItemType}
-                onPhaseChange={setPlaybookPhase}
-                onCategoryChange={setPlaybookCategory}
-                onTacticChange={setPlaybookTactic}
-                tableSearch={catalogTierTableQuery}
-                onTableSearchChange={setCatalogTierTableQuery}
-                sort={catalogTierSort}
-                onToggleSort={toggleCatalogTierSort}
-                expandedSolutionIds={expandedSolutionIds}
-                onToggleSolution={toggleExpandedSolution}
-                onOpenTier={selectCatalogTier}
-                onOpenPresetPackage={openPresetPackage}
-                onOpenConfigurablePackage={openConfigurablePackage}
-              />
+            {mode === "catalog" && catalogViewMode === "detail" ? (
+              <section
+                className="agency-kpi-panel agency-kpi-panel--scope agency-kpi-panel--catalog"
+                style={kpiSectionWrap}
+                aria-label="Solution totals"
+              >
+                <div className="agency-kpi-panel__head">
+                  <h2 className="agency-kpi-panel__title">Totals</h2>
+                </div>
+                <div className="agency-kpi-panel__grid agency-kpi-panel__grid--five">
+                  <div className="agency-kpi-card agency-kpi-card--pricing">
+                    <span className="agency-kpi-card__label">Price</span>
+                    <span className="agency-kpi-card__value">
+                      {tierId && selectedTier ? sellPriceDisplay(selectedPricing) : "—"}
+                    </span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--pricing">
+                    <span className="agency-kpi-card__label">Tax status</span>
+                    <span className="agency-kpi-card__value agency-kpi-card__value--text">
+                      {tierId && selectedTier ? taxableLabel(selectedPricing) : "—"}
+                    </span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">People</span>
+                    <span className="agency-kpi-card__value">{taskKpis.distinctImplementers}</span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">Effort</span>
+                    <span className="agency-kpi-card__value">{formatCatalogHours(taskKpis.sumTime)}</span>
+                  </div>
+                  <div className="agency-kpi-card agency-kpi-card--tasks">
+                    <span className="agency-kpi-card__label">Time to deliver</span>
+                    <span className="agency-kpi-card__value">
+                      {Number.isFinite(taskKpis.sumDuration)
+                        ? `${formatKpiNumber(taskKpis.sumDuration)} days`
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+              </section>
             ) : null}
 
             {mode === "catalog" && catalogViewMode === "detail" && !selectedTier ? (

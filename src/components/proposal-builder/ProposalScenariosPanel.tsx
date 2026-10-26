@@ -35,10 +35,10 @@ export function ProposalScenariosPanel({
   const sectionWordPlural = "sections";
 
   return (
-    <div className="proposal-step-panel">
-      <header className="proposal-step-panel__head">
-        <h2 className="proposal-step-panel__title">Scenarios &amp; Phases</h2>
-        <p className="proposal-step-panel__lead">
+    <div className="proposal-step-panel proposal-section">
+      <header className="proposal-section__head">
+        <h2 className="proposal-section__title">Scenarios &amp; Phases</h2>
+        <p className="proposal-section__lead">
           Choose Program or Project proposal to load the right starting structure, then rename scenarios and sections as
           needed. You can still adjust them later in Organize.
         </p>

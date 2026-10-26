@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   Package,
@@ -23,6 +23,8 @@ import { ProposalCatalogTargetBar } from "./ProposalCatalogTargetBar";
 import { ProposalPackageTemplatePicker } from "./ProposalPackageTemplatePicker";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalCatalogListSearch } from "./ProposalCatalogLineRow";
+import { EntityLink } from "../EntityLink";
+import { hrefForRoadmapCard } from "../../lib/entityLinks";
 import type { ProposalAddedLine } from "./ProposalAddedItemsPanel";
 
 export type PlaybookPackageDraft = {
@@ -73,6 +75,8 @@ type Props = {
   addedPlaybooks: ProposalAddedLine[];
   onEditAdded?: (key: string) => void;
   onRemoveAdded: (key: string) => void;
+  defaultName?: string;
+  embedded?: boolean;
 };
 
 function sumComponents(components: RoadmapPlaybookComponent[]): { hours: number; price: number } {
@@ -125,8 +129,10 @@ export function ProposalPlaybookPackagePanel({
   addedPlaybooks,
   onEditAdded,
   onRemoveAdded,
+  defaultName = "",
+  embedded = false,
 }: Props) {
-  const stepMeta = proposalStepDef("packages");
+  const stepMeta = proposalStepDef("add_scope");
   const nameId = useId();
   const nameHintId = useId();
   const notesId = useId();
@@ -135,7 +141,7 @@ export function ProposalPlaybookPackagePanel({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("packages");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => defaultName.trim());
   const [nameTouched, setNameTouched] = useState(false);
   const [notes, setNotes] = useState("");
   const [staged, setStaged] = useState<RoadmapPlaybookComponent[]>([]);
@@ -143,6 +149,12 @@ export function ProposalPlaybookPackagePanel({
   const [solutionSearch, setSolutionSearch] = useState("");
   const [datesOpen, setDatesOpen] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (nameTouched) return;
+    const next = defaultName.trim();
+    if (next) setName(next);
+  }, [defaultName, nameTouched]);
 
   const requiredComps = useMemo((): RoadmapPlaybookComponent[] => {
     const rowById = new Map(solutionRows.map((r) => [r.tierId, r]));
@@ -228,7 +240,7 @@ export function ProposalPlaybookPackagePanel({
 
   const reset = () => {
     setStage("packages");
-    setName("");
+    setName(defaultName.trim());
     setNameTouched(false);
     setNotes("");
     setStaged([]);
@@ -239,7 +251,7 @@ export function ProposalPlaybookPackagePanel({
   const trimmedName = name.trim();
   const named = trimmedName.length > 0;
   const nameError = nameTouched && !named;
-  const hasDraft = named || staged.length > 0;
+  const hasDraft = staged.length > 0;
   const canConfirm = canAdd && named && components.length > 0;
   const openModal = () => {
     setJustAdded(null);
@@ -270,12 +282,19 @@ export function ProposalPlaybookPackagePanel({
 
   const renderComponentRow = (c: RoadmapPlaybookComponent) => {
     const required = requiredKeys.has(c.key);
+    const href = hrefForRoadmapCard({ kind: c.kind === "package" ? "package" : "tier", refId: c.refId }, tiers);
     return (
       <li key={c.key} className={`proposal-playbook__item${required ? " is-required" : ""}`}>
         <span className={`proposal-playbook__item-kind proposal-playbook__item-kind--${c.kind}`}>
           {c.kind === "package" ? "Package" : "Solution"}
         </span>
-        <span className="proposal-playbook__item-name">{c.headline}</span>
+        {href ? (
+          <EntityLink to={href} className="proposal-playbook__item-name">
+            {c.headline}
+          </EntityLink>
+        ) : (
+          <span className="proposal-playbook__item-name">{c.headline}</span>
+        )}
         <span className="proposal-playbook__item-metric">{c.hours || "—"}</span>
         <span className="proposal-playbook__item-metric proposal-playbook__item-metric--price">
           {c.price || "—"}
@@ -400,14 +419,16 @@ export function ProposalPlaybookPackagePanel({
                 id={nameId}
                 className="roadmap-input proposal-playbook__name-input"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setNameTouched(true);
+                  setName(e.target.value);
+                }}
                 onBlur={() => setNameTouched(true)}
-                placeholder="e.g. Growth Playbook"
+                placeholder="e.g. Client Playbook"
                 required
                 aria-required="true"
                 aria-invalid={nameError}
                 aria-describedby={nameHintId}
-                autoFocus={!named}
               />
               <p
                 id={nameHintId}
@@ -416,9 +437,7 @@ export function ProposalPlaybookPackagePanel({
               >
                 {nameError
                   ? "A playbook package name is required before you can add packages or solutions."
-                  : named
-                    ? "This name appears on the proposal line."
-                    : "Start here — packages and solutions unlock once the playbook has a name."}
+                  : "You can rename this later. It appears as the proposal line."}
               </p>
             </div>
           </div>
@@ -631,7 +650,15 @@ export function ProposalPlaybookPackagePanel({
                       </span>
                     </span>
                     <span role="cell" className="proposal-playbook__table-name">
-                      {c.headline}
+                      {hrefForRoadmapCard({ kind: c.kind === "package" ? "package" : "tier", refId: c.refId }, tiers) ? (
+                        <EntityLink
+                          to={hrefForRoadmapCard({ kind: c.kind === "package" ? "package" : "tier", refId: c.refId }, tiers)!}
+                        >
+                          {c.headline}
+                        </EntityLink>
+                      ) : (
+                        c.headline
+                      )}
                       {requiredKeys.has(c.key) ? (
                         <span className="proposal-playbook__required-tag">Required</span>
                       ) : null}
@@ -687,6 +714,7 @@ export function ProposalPlaybookPackagePanel({
 
   return (
     <div className="proposal-step-panel proposal-catalog proposal-playbook">
+      {embedded ? null : (
       <header className="proposal-step-panel__head">
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number} · Playbook package</p>
         <h2 className="proposal-step-panel__title">Build New Playbook Package</h2>
@@ -695,7 +723,9 @@ export function ProposalPlaybookPackagePanel({
           line on the proposal.
         </p>
       </header>
+      )}
 
+      {embedded ? null : (
       <ProposalCatalogTargetBar
         scenarios={scenarios}
         phases={phases}
@@ -707,6 +737,7 @@ export function ProposalPlaybookPackagePanel({
         targetPhaseTitle={targetPhaseTitle}
         canAdd={canAdd}
       />
+      )}
 
       {justAdded ? (
         <aside className="proposal-playbook__success" aria-live="polite">
@@ -724,52 +755,45 @@ export function ProposalPlaybookPackagePanel({
       ) : null}
 
       <section className="proposal-playbook__launch" aria-label="Start a playbook package">
-        <span className="proposal-playbook__launch-icon" aria-hidden>
-          <svg viewBox="0 0 24 24" fill="none" width="24" height="24">
-            <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
-            <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
-            <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
-            <path d="M17 14v6M14 17h6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-          </svg>
-        </span>
         <div className="proposal-playbook__launch-copy">
           {hasDraft ? (
             <>
-              <p className="proposal-playbook__launch-title">
-                Draft in progress: {trimmedName || "Untitled playbook"}
-              </p>
+              <p className="proposal-playbook__launch-title">{trimmedName || "Untitled playbook"}</p>
               <p className="proposal-playbook__launch-desc">
-                {packageComps.length} package{packageComps.length === 1 ? "" : "s"} ·{" "}
+                Draft · {packageComps.length} package{packageComps.length === 1 ? "" : "s"} ·{" "}
                 {solutionComps.length} solution{solutionComps.length === 1 ? "" : "s"} ·{" "}
                 {formatHours(totals.hours)} · {formatUsd(totals.price)}
               </p>
             </>
           ) : (
             <>
-              <p className="proposal-playbook__launch-title">Create a playbook package</p>
+              <p className="proposal-playbook__launch-title">Playbook package</p>
               <p className="proposal-playbook__launch-desc">
-                Name it, build packages from templates, add solutions, then confirm the bundle hours and
-                pricing — all in one guided form.
+                Bundle packages and solutions into one proposal line.
               </p>
             </>
           )}
         </div>
-        <button
-          type="button"
-          className="roadmap-btn roadmap-btn--primary proposal-playbook__launch-btn"
-          onClick={openModal}
-          disabled={!canAdd}
-        >
-          {hasDraft ? "Continue draft" : "Build playbook package"}
-        </button>
+        <div className="proposal-playbook__launch-actions">
+          {hasDraft ? (
+            <button type="button" className="roadmap-btn roadmap-btn--ghost" onClick={discardDraft}>
+              Discard draft
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="roadmap-btn roadmap-btn--primary proposal-playbook__launch-btn"
+            onClick={openModal}
+            disabled={!canAdd}
+          >
+            {hasDraft ? "Continue" : "Build playbook"}
+          </button>
+        </div>
       </section>
 
       {addedPlaybooks.length > 0 ? (
         <section className="proposal-playbook__existing" aria-label="Playbook packages in this scenario">
-          <h3 className="proposal-playbook__section-title">
-            Playbook packages in {targetScenarioTitle}
-            <span className="proposal-playbook__count">{addedPlaybooks.length}</span>
-          </h3>
+          <h3 className="proposal-playbook__section-title">On this proposal</h3>
           <ul className="proposal-playbook__list">
             {addedPlaybooks.map((line) => (
               <li key={line.key} className="proposal-playbook__item proposal-playbook__item--existing">

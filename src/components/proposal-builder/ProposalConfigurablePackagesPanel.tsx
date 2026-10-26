@@ -55,6 +55,7 @@ type Props = {
   addonGroups?: ModuleAddOnGroup[];
   copyFromScenarios?: ScenarioCopySource[];
   onCopyFromScenario?: (sourceScenarioId: string) => void;
+  embedded?: boolean;
 };
 
 export function ProposalConfigurablePackagesPanel({
@@ -90,8 +91,9 @@ export function ProposalConfigurablePackagesPanel({
   addonGroups,
   copyFromScenarios,
   onCopyFromScenario,
+  embedded = false,
 }: Props) {
-  const stepMeta = proposalStepDef("packages");
+  const stepMeta = proposalStepDef("add_scope");
   const [datesModalPkg, setDatesModalPkg] = useState<Package | null>(null);
 
   const handlePackageBuilt = useCallback((pkg: Package) => setDatesModalPkg(pkg), []);
@@ -104,6 +106,7 @@ export function ProposalConfigurablePackagesPanel({
 
   return (
     <div className="proposal-step-panel proposal-catalog proposal-configurable-packages">
+      {embedded ? null : (
       <header className="proposal-step-panel__head">
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number} · Build new</p>
         <h2 className="proposal-step-panel__title">Build a New Package</h2>
@@ -112,7 +115,9 @@ export function ProposalConfigurablePackagesPanel({
           phase.
         </p>
       </header>
+      )}
 
+      {embedded ? null : (
       <ProposalCatalogTargetBar
         scenarios={scenarios}
         phases={phases}
@@ -124,7 +129,9 @@ export function ProposalConfigurablePackagesPanel({
         targetPhaseTitle={targetPhaseTitle}
         canAdd={canAdd}
       />
+      )}
 
+      {embedded ? null : (
       <div className="proposal-catalog-dashboard">
         <ProposalScenarioBudgetBars budget={budget} scenarios={scenarioBudgetBars} formatUsd={formatUsd} />
         <ProposalAddedItemsPanel
@@ -140,6 +147,7 @@ export function ProposalConfigurablePackagesPanel({
           onAddAddOns={onAddAddOns}
         />
       </div>
+      )}
 
       <ProposalPackageTemplatePicker
         packageTypes={packageTypes}

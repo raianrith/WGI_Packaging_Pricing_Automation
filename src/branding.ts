@@ -9,14 +9,17 @@ export const APP_TITLE = `${APP_BRAND_NAME} · ${APP_SCOPE_LABEL}`;
 /** Main heading on the Agency (read-only) view hero. */
 export const AGENCY_HERO_TITLE = "Solutions Directory";
 
-/** Home tab: guided directory browser hero. */
-export const AGENCY_HOME_TITLE = "Guided Directory Browse";
+/** Home landing heading. */
+export const AGENCY_HOME_TITLE = "Home";
 
 export const AGENCY_HOME_DESCRIPTION =
-  "Walk phase, category, and tactic to surface Solution Tiers, Custom Packages, and Configurable Packages that match your playbook path. Items without taxonomy tags appear as Not Defined—open any match for scope, pricing, and tasks.";
+  "One place to browse how we package and price work, assemble a bundle, or start a client proposal.";
+
+/** Top navigation: app landing. */
+export const NAV_HOME = "Home";
 
 /** Top navigation: catalog, package library, and package workspaces. */
-export const NAV_SOLUTIONS_OVERVIEW = "Solutions Directory";
+export const NAV_SOLUTIONS_OVERVIEW = "Catalog";
 
 /** Top navigation: guided Build a Package flow. */
 export const NAV_PACKAGE_BUILDER = "Package Builder";
@@ -35,7 +38,7 @@ export const CLAUDE_AI_CHAT_PROJECT_URL =
 
 /** Shown on the Agency (read-only) view under the main title. */
 export const AGENCY_VIEW_DESCRIPTION =
-  "A living reference for how we package and price work: programs, solutions, tier options, and the tasks teams use to deliver. Explore in read-only mode—use the sidebar to move through each level, and the main area fills in with KPIs, overviews, and task detail.";
+  "Search solutions and packages. Click a row for details.";
 
 /** Login / sign-up page: explains what Solutions Directory is (product, not infra). */
 export const AUTH_HERO_DESCRIPTION =
@@ -43,7 +46,7 @@ export const AUTH_HERO_DESCRIPTION =
 
 /** Shorter hero copy on the Agency package hub (package-first landing). */
 export const AGENCY_HUB_DESCRIPTION =
-  "Each card opens a dedicated workspace for that bundle: solutions, tier sell prices, scope KPIs, and task detail—read only, synced from Supabase. Solutions without a package live on the Solutions tab, not here.";
+  "Open a package workspace for solutions, prices, scope, and task detail."
 
 /** Hero copy on the Package Builder page. */
 export const PACKAGE_BUILDER_TITLE = "Package Builder";

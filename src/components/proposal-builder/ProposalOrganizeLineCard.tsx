@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { CSSProperties } from "react";
-import type { RoadmapCard, RoadmapLineScope, RoadmapPhase } from "../../lib/roadmapModel";
+import { useState, type CSSProperties } from "react";
+import type { RoadmapCard, RoadmapLineScope } from "../../lib/roadmapModel";
 import { effectiveHoursStr, effectivePriceStr } from "../../lib/roadmapModel";
 import { normalizeIsoDateInput } from "../../lib/proposalDates";
 import {
@@ -9,6 +9,8 @@ import {
   isVariableTierRefId,
   variableTierAppliedToLabel,
 } from "../../lib/proposalVariableTiers";
+import { EntityLink } from "../EntityLink";
+import { hrefForRoadmapCard } from "../../lib/entityLinks";
 
 type CatalogCtxLike = Parameters<typeof effectivePriceStr>[1];
 
@@ -37,9 +39,10 @@ function kindShort(card: RoadmapCard): string {
 type Props = {
   card: RoadmapCard;
   scenarioCards: RoadmapCard[];
-  ctx: CatalogCtxLike;
-  phaseChoices: RoadmapPhase[];
+  ctx: (CatalogCtxLike & { tiers?: Array<{ solution_tier_id: string; solution_id: string }> }) | null;
   computeScratchSellPrice: (c: RoadmapCard, ctx: CatalogCtxLike) => string;
+  proposalStartDate: string;
+  proposalEndDate: string;
   onPatch: (key: string, patch: Partial<RoadmapCard>) => void;
   onRemove: (key: string) => void;
   onDetails: (card: RoadmapCard) => void;
@@ -49,8 +52,9 @@ export function ProposalOrganizeLineCard({
   card,
   scenarioCards,
   ctx,
-  phaseChoices,
   computeScratchSellPrice,
+  proposalStartDate,
+  proposalEndDate,
   onPatch,
   onRemove,
   onDetails,
@@ -58,6 +62,7 @@ export function ProposalOrganizeLineCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.key,
   });
+  const [datesOpen, setDatesOpen] = useState(false);
 
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -67,7 +72,7 @@ export function ProposalOrganizeLineCard({
 
   const hours = effectiveHoursStr(card);
   const price = effectivePriceStr(card, ctx, computeScratchSellPrice);
-  const hasProposalOverride = Boolean(card.hoursOverride?.trim() || card.priceOverride?.trim());
+  const catalogHref = hrefForRoadmapCard(card, ctx?.tiers);
   const appliedToLabel = isVariableTierRefId(card.refId)
     ? variableTierAppliedToLabel(card, scenarioCards)
     : null;
@@ -75,168 +80,142 @@ export function ProposalOrganizeLineCard({
     ? scenarioCards.find((c) => c.key === card.addonOfCardKey)?.headline.trim() || "parent solution"
     : null;
 
+  const cardStart = normalizeIsoDateInput(card.startDate);
+  const cardEnd = normalizeIsoDateInput(card.endDate);
+  const proposalStart = normalizeIsoDateInput(proposalStartDate);
+  const proposalEnd = normalizeIsoDateInput(proposalEndDate);
+  const usesProposalDates =
+    (!cardStart && !cardEnd) ||
+    !proposalStart ||
+    (cardStart === proposalStart && cardEnd === proposalEnd);
+  const showDates = datesOpen || !usesProposalDates;
+
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className={`proposal-organize-line proposal-organize-line--${card.scope}${
+      className={`proposal-organize-line proposal-organize-line--dense proposal-organize-line--${card.scope}${
         card.addonOfCardKey ? " proposal-organize-line--addon" : ""
       }${isDragging ? " proposal-organize-line--dragging" : ""}`}
     >
-      <div className="proposal-organize-line__reorder">
+      <button
+        type="button"
+        className="proposal-organize-line__drag-handle admin-task-drag-handle"
+        aria-label="Drag to another phase"
+        title="Drag to reorder or move between phases"
+        {...attributes}
+        {...listeners}
+      >
+        <span className="admin-task-drag-handle__grip" aria-hidden>
+          ⠿
+        </span>
+      </button>
+
+      <label className="proposal-organize-line__title-wrap">
+        <span className="visually-hidden">Rename {kindShort(card).toLowerCase()} label</span>
+        <span className={`proposal-organize-line__kind proposal-organize-line__kind--${card.addonOfCardKey ? "addon" : card.kind}`}>
+          {kindShort(card)}
+        </span>
+        <input
+          type="text"
+          className="proposal-organize-line__title-input"
+          value={card.headline}
+          placeholder="Untitled"
+          onChange={(e) => onPatch(card.key, { headline: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+        <span className="proposal-organize-line__pencil" aria-hidden>
+          ✎
+        </span>
+        {catalogHref ? (
+          <EntityLink
+            to={catalogHref}
+            className="proposal-organize-line__catalog-link"
+            title={card.kind === "package" ? "Open package overview" : "Open solution overview"}
+          >
+            View
+          </EntityLink>
+        ) : null}
+      </label>
+
+      <span className="proposal-organize-line__metric-value proposal-organize-line__hours">
+        {hours ? `${hours}${/h/i.test(hours) ? "" : " h"}` : "—"}
+      </span>
+      <span className="proposal-organize-line__metric-value proposal-organize-line__price">
+        {price || "—"}
+      </span>
+
+      <select
+        className="roadmap-input roadmap-select roadmap-select--sm"
+        value={card.scope}
+        onChange={(e) => onPatch(card.key, { scope: e.target.value as RoadmapLineScope })}
+        aria-label="Line scope"
+      >
+        {SCOPES.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+
+      <div className="proposal-organize-line__actions">
         <button
           type="button"
-          className="proposal-organize-line__drag-handle admin-task-drag-handle"
-          aria-label="Drag to reorder"
-          title="Drag to reorder"
-          {...attributes}
-          {...listeners}
+          className="proposal-organize-line__action"
+          onClick={() => setDatesOpen((open) => !open)}
         >
-          <span className="admin-task-drag-handle__grip" aria-hidden>
-            ⠿
-          </span>
+          {showDates ? "Hide dates" : "Dates"}
+        </button>
+        <button type="button" className="proposal-organize-line__action" onClick={() => onDetails(card)}>
+          Details
+        </button>
+        <button
+          type="button"
+          className="proposal-organize-line__action proposal-organize-line__action--danger"
+          onClick={() => onRemove(card.key)}
+        >
+          Remove
         </button>
       </div>
 
-      <div className="proposal-organize-line__accent" aria-hidden />
+      {showDates ? (
+        <span className="proposal-organize-line__dates">
+          <input
+            type="date"
+            className="roadmap-input proposal-organize-line__date-input"
+            value={cardStart}
+            onChange={(e) =>
+              onPatch(card.key, { startDate: normalizeIsoDateInput(e.target.value) || null })
+            }
+            aria-label="Solution start date"
+          />
+          <input
+            type="date"
+            className="roadmap-input proposal-organize-line__date-input"
+            value={cardEnd}
+            onChange={(e) =>
+              onPatch(card.key, { endDate: normalizeIsoDateInput(e.target.value) || null })
+            }
+            aria-label="Solution end date"
+          />
+        </span>
+      ) : null}
 
-      <div className="proposal-organize-line__body">
-        <div className="proposal-organize-line__top">
-          <div className="proposal-organize-line__identity">
-            <span className={`proposal-organize-line__kind proposal-organize-line__kind--${card.addonOfCardKey ? "addon" : card.kind}`}>
-              {kindShort(card)}
-            </span>
-            <label className="proposal-organize-line__title-wrap">
-              <span className="visually-hidden">
-                Rename {kindShort(card).toLowerCase()} label
-              </span>
-              <input
-                type="text"
-                className="proposal-organize-line__title-input"
-                value={card.headline}
-                placeholder="Untitled"
-                title="Click to rename"
-                onChange={(e) => onPatch(card.key, { headline: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                }}
-              />
-              <span className="proposal-organize-line__title-hint" aria-hidden>
-                Click to rename
-              </span>
-            </label>
-            {hasProposalOverride ? (
-              <span
-                className="proposal-organize-line__override-badge"
-                title="Proposal hours or price differ from solutions"
-              >
-                Custom
-              </span>
-            ) : null}
-          </div>
-
-          <div className="proposal-organize-line__metrics">
-            <span className="proposal-organize-line__metric">
-              <span className="proposal-organize-line__metric-label">Hours</span>
-              <span className="proposal-organize-line__metric-value">
-                {hours ? `${hours}${/h/i.test(hours) ? "" : " h"}` : "—"}
-              </span>
-            </span>
-            <span className="proposal-organize-line__metric proposal-organize-line__metric--price">
-              <span className="proposal-organize-line__metric-label">Price</span>
-              <span className="proposal-organize-line__metric-value">{price || "—"}</span>
-            </span>
-          </div>
-        </div>
-
-        {addonParentHeadline ? (
-          <p className="proposal-organize-line__applied">
-            Add-on of <strong>{addonParentHeadline}</strong>
-          </p>
-        ) : null}
-        {appliedToLabel && !isTravelVariableTierRefId(card.refId) ? (
-          <p className="proposal-organize-line__applied">
-            Applied to <strong>{appliedToLabel}</strong>
-          </p>
-        ) : null}
-
-        <div className="proposal-organize-line__meta">
-          <label className="proposal-organize-line__field">
-            <span className="proposal-organize-line__field-label">Scope</span>
-            <select
-              className="roadmap-input roadmap-select roadmap-select--sm"
-              value={card.scope}
-              onChange={(e) => onPatch(card.key, { scope: e.target.value as RoadmapLineScope })}
-              aria-label="Line scope"
-            >
-              {SCOPES.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="proposal-organize-line__field">
-            <span className="proposal-organize-line__field-label">Phase</span>
-            <select
-              className="roadmap-input roadmap-select roadmap-select--sm"
-              value={card.phaseId}
-              onChange={(e) => onPatch(card.key, { phaseId: e.target.value })}
-              aria-label="Phase for this line"
-            >
-              {phaseChoices.map((ph) => (
-                <option key={ph.id} value={ph.id}>
-                  {ph.title.trim() || "Phase"}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="proposal-organize-line__field">
-            <span className="proposal-organize-line__field-label">Start</span>
-            <input
-              type="date"
-              className="roadmap-input proposal-organize-line__date-input"
-              value={normalizeIsoDateInput(card.startDate)}
-              onChange={(e) =>
-                onPatch(card.key, { startDate: normalizeIsoDateInput(e.target.value) || null })
-              }
-              aria-label="Solution start date"
-            />
-          </label>
-
-          <label className="proposal-organize-line__field">
-            <span className="proposal-organize-line__field-label">End</span>
-            <input
-              type="date"
-              className="roadmap-input proposal-organize-line__date-input"
-              value={normalizeIsoDateInput(card.endDate)}
-              onChange={(e) =>
-                onPatch(card.key, { endDate: normalizeIsoDateInput(e.target.value) || null })
-              }
-              aria-label="Solution end date"
-            />
-          </label>
-
-          <div className="proposal-organize-line__actions">
-            <button
-              type="button"
-              className="proposal-organize-line__action"
-              onClick={() => onDetails(card)}
-            >
-              Details
-            </button>
-            <button
-              type="button"
-              className="proposal-organize-line__action proposal-organize-line__action--danger"
-              onClick={() => onRemove(card.key)}
-            >
-              Remove
-            </button>
-          </div>
-        </div>
-      </div>
+      {addonParentHeadline || (appliedToLabel && !isTravelVariableTierRefId(card.refId)) ? (
+        <p className="proposal-organize-line__applied proposal-organize-line__applied--dense">
+          {addonParentHeadline ? (
+            <>
+              Add-on of <strong>{addonParentHeadline}</strong>
+            </>
+          ) : (
+            <>
+              Applied to <strong>{appliedToLabel}</strong>
+            </>
+          )}
+        </p>
+      ) : null}
     </li>
   );
 }

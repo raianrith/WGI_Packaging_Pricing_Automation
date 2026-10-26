@@ -1,4 +1,5 @@
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
+import { formatCatalogHours, formatCatalogUsd } from "./formatMetrics";
 import type {
   Package,
   PackageSolutionTier,
@@ -20,18 +21,8 @@ function sortId(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
-function formatKpiNumber(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
 function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—";
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(Number(n));
+  return formatCatalogUsd(n);
 }
 
 function sellPriceNumber(pricing: SolutionTierPricing | null): number | null {
@@ -92,9 +83,10 @@ export function buildCatalogTierTableRows(data: VaultCatalogData): CatalogTierTa
       const sumTasks = taskTimeSumByTierId.get(tier.solution_tier_id) ?? null;
       const hoursNum = vaultHours ?? (sumTasks != null && sumTasks > 0 ? sumTasks : null);
       const hoursDisplay =
-        hoursNum != null && Number.isFinite(hoursNum) ? formatKpiNumber(hoursNum) : "—";
+        hoursNum != null && Number.isFinite(hoursNum) ? formatCatalogHours(hoursNum) : "—";
       const taxable = pr?.taxable ?? false;
       const tagsRaw = pr?.tags?.trim() ?? "";
+      const ownerLabel = tier.solution_tier_owner?.trim() || null;
       return {
         tierId: tier.solution_tier_id,
         solutionId: tier.solution_id,
@@ -113,6 +105,7 @@ export function buildCatalogTierTableRows(data: VaultCatalogData): CatalogTierTa
         taxableSort: taxable ? 1 : 0,
         taxableLabel: taxable ? "Taxable" : "Non-taxable",
         tagsRaw,
+        ownerLabel,
       };
     });
 }

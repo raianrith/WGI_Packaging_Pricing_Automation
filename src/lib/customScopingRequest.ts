@@ -26,6 +26,8 @@ export type CustomScopingRequest = {
   otherNotes: string;
   createdAt: string;
   updatedAt: string;
+  /** Ops skipped this request without adding scope. */
+  skipped?: boolean;
 };
 
 export type CustomScopingFormInput = {
@@ -185,6 +187,7 @@ function parseOneRequest(raw: unknown): CustomScopingRequest | null {
     otherNotes: typeof r.otherNotes === "string" ? r.otherNotes.trim() : "",
     createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date().toISOString(),
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : new Date().toISOString(),
+    skipped: r.skipped === true,
   };
 }
 

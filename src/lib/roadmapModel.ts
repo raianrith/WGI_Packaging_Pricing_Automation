@@ -80,6 +80,8 @@ export type RoadmapCard = {
   startDate?: string | null;
   /** Scheduled end (ISO `YYYY-MM-DD`). */
   endDate?: string | null;
+  /** Ops Custom Scoping: line added to fulfill this request id. */
+  customScopingRequestId?: string | null;
 };
 
 /** Sparse proposal-local task edits (vault / package catalog unchanged). */

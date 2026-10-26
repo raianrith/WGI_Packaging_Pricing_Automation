@@ -49,9 +49,11 @@ function renderRow(
             <strong className="roadmap-export-table__name">
               {c.headline.trim() || "(untitled)"}
             </strong>
+            {c.scope !== "included" ? (
             <span className={`roadmap-export-table__scope roadmap-export-table__scope--${c.scope}`}>
               {c.scope}
             </span>
+            ) : null}
           </div>
           {appliedToLabel && !isTravelVariableTierRefId(c.refId) ? (
             <span className="roadmap-export-table__applied">
@@ -101,14 +103,21 @@ export function ProposalExportPreviewTables({
   return (
     <div className="roadmap-export-table-wrap" aria-label={ariaLabel}>
       {accountMgmt.includedLineCount > 0 ? (
-        <ProposalOrganizeAccountMgmtCard
-          accountMgmtHours={accountMgmt.accountMgmtHours}
-          continuousImprovementHours={accountMgmt.continuousImprovementHours}
-          resourceHours={accountMgmt.resourceHours}
-          flexBudgetUsd={accountMgmt.flexBudgetUsd}
-          hourlyRate={accountMgmt.hourlyRate}
-          formatHoursShort={formatHoursShort}
-        />
+        <details className="roadmap-export-ops-note">
+          <summary>Internal hours for ops</summary>
+          <p className="roadmap-export-ops-note__hint">
+            Account management is 18% of resource hours. Paid Campaign Management and other variable
+            extras with no hours are excluded from that rollup.
+          </p>
+          <ProposalOrganizeAccountMgmtCard
+            accountMgmtHours={accountMgmt.accountMgmtHours}
+            continuousImprovementHours={accountMgmt.continuousImprovementHours}
+            resourceHours={accountMgmt.resourceHours}
+            flexBudgetUsd={accountMgmt.flexBudgetUsd}
+            hourlyRate={accountMgmt.hourlyRate}
+            formatHoursShort={formatHoursShort}
+          />
+        </details>
       ) : null}
       {scenarios.map((scenario) => {
         const scenCards = cards.filter((c) => c.scenarioId === scenario.id);

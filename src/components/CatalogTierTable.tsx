@@ -18,6 +18,7 @@ export type CatalogTierTableRow = {
   taxableSort: number;
   taxableLabel: string;
   tagsRaw: string;
+  ownerLabel?: string | null;
 };
 
 export type CatalogTierSortCol =

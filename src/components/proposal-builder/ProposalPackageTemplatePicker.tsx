@@ -121,43 +121,71 @@ export function ProposalPackageTemplatePicker({
         ) : filteredTypes.length === 0 ? (
           <p className="proposal-configurable-packages__empty">No templates match your search.</p>
         ) : (
-          <div className="proposal-configurable-packages__grid">
-            {filteredTypes.map((pt, index) => {
-              const tierCount = slotsForPackageType(slots, pt.id).length;
+          <ul className="proposal-catalog-lines proposal-configurable-packages__list">
+            {filteredTypes.map((pt) => {
+              const typeSlots = slotsForPackageType(slots, pt.id);
+              let hoursCap = 0;
+              let priceCap = 0;
+              let hasHours = false;
+              let hasPrice = false;
+              for (const slot of typeSlots) {
+                if (slot.hour_ceiling != null) {
+                  hoursCap += slot.hour_ceiling;
+                  hasHours = true;
+                }
+                if (slot.price_ceiling != null) {
+                  priceCap += slot.price_ceiling;
+                  hasPrice = true;
+                }
+              }
+              const hours = hasHours ? `${hoursCap} h` : "—";
+              const price = hasPrice
+                ? new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  }).format(priceCap)
+                : "Configure";
               return (
-                <article
-                  key={pt.id}
-                  className="proposal-configurable-packages__card"
-                  data-accent-index={String(index % 7)}
-                >
-                  <h3 className="proposal-configurable-packages__card-title">{pt.name}</h3>
-                  {pt.card_description ? (
-                    <p className="proposal-configurable-packages__card-desc">{pt.card_description}</p>
-                  ) : null}
-                  <p className="proposal-configurable-packages__card-meta">
-                    {tierCount} package solution{tierCount === 1 ? "" : "s"}
-                  </p>
-                  <div className="proposal-configurable-packages__card-actions">
-                    <button
-                      type="button"
-                      className="proposal-configurable-packages__detail-btn"
-                      onClick={() => setDetailTypeId(pt.id)}
-                    >
-                      Show detail
-                    </button>
-                    <button
-                      type="button"
-                      className="proposal-configurable-packages__build-btn"
-                      disabled={!canBuild}
-                      onClick={() => startBuild(pt.id)}
-                    >
-                      {buildLabel}
-                    </button>
+                <li key={pt.id} className="proposal-catalog-line">
+                  <span className="proposal-catalog-line__kind proposal-catalog-line__kind--package">
+                    Template
+                  </span>
+                  <div className="proposal-catalog-line__copy">
+                    <strong className="proposal-catalog-line__title">{pt.name}</strong>
+                    {pt.card_description?.trim() ? (
+                      <span className="proposal-catalog-line__detail">{pt.card_description.trim()}</span>
+                    ) : null}
                   </div>
-                </article>
+                  <div className="proposal-catalog-line__stats" aria-label="Hours and price">
+                    <span className="proposal-catalog-line__stat">
+                      <span className="proposal-catalog-line__stat-label">Hours</span>
+                      <span className="proposal-catalog-line__stat-value">{hours}</span>
+                    </span>
+                    <span className="proposal-catalog-line__stat proposal-catalog-line__stat--price">
+                      <span className="proposal-catalog-line__stat-label">Price</span>
+                      <span className="proposal-catalog-line__stat-value">{price}</span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="proposal-catalog-line__add proposal-catalog-line__add--ghost"
+                    onClick={() => setDetailTypeId(pt.id)}
+                  >
+                    Detail
+                  </button>
+                  <button
+                    type="button"
+                    className="proposal-catalog-line__add"
+                    disabled={!canBuild}
+                    onClick={() => startBuild(pt.id)}
+                  >
+                    {buildLabel}
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
 

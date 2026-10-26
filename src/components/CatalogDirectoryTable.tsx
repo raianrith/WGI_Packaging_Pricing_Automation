@@ -1,5 +1,7 @@
 import type { CatalogTierSortCol } from "./CatalogTierTable";
 import { isCatalogSolutionType, type CatalogDirectoryRow, type CatalogDirectoryItemType } from "../lib/buildCatalogDirectoryRows";
+import { EntityLink } from "./EntityLink";
+import { hrefForCatalogDirectoryRow, solutionOverviewPath } from "../lib/entityLinks";
 
 export type CatalogDirectorySortCol = CatalogTierSortCol | "type" | "name";
 
@@ -19,6 +21,11 @@ type Props = {
   addedTierRefIds?: ReadonlySet<string>;
   justAddedTierId?: string | null;
   canAdd?: boolean;
+  selectedRowId?: string | null;
+  onSelectRow?: (row: CatalogDirectoryRow) => void;
+  showTaxonomyColumns?: boolean;
+  showTypeColumn?: boolean;
+  priceColumnLabel?: string;
 };
 
 const TYPE_SORT_RANK: Record<CatalogDirectoryItemType, number> = {
@@ -75,9 +82,19 @@ export function CatalogDirectoryTable({
   addedTierRefIds,
   justAddedTierId,
   canAdd = true,
+  selectedRowId = null,
+  onSelectRow,
+  showTaxonomyColumns = true,
+  showTypeColumn = true,
+  priceColumnLabel,
 }: Props) {
   const addMode = tierInteraction === "add";
-  const colCount = addMode ? 10 : 9;
+  const catalogSelect = Boolean(onSelectRow);
+  const colCount =
+    4 +
+    (showTypeColumn ? 1 : 0) +
+    (showTaxonomyColumns ? 4 : 0) +
+    (addMode ? 1 : 0);
 
   const ThSort = ({
     col,
@@ -140,29 +157,53 @@ export function CatalogDirectoryTable({
   }) => (
     <>
       <td className="agency-catalog-tier-sheet__cell--num agency-catalog-directory__cell--price">{row.priceDisplay}</td>
-      <td className="agency-catalog-tier-sheet__cell--num">{row.hoursDisplay}</td>
-      <td>
-        <span
-          className={
-            row.taxable
-              ? "agency-catalog-tier-sheet__status-pill agency-catalog-tier-sheet__status-pill--taxable"
-              : "agency-catalog-tier-sheet__status-pill"
-          }
-        >
-          {row.taxableLabel}
-        </span>
-      </td>
-      <td className="agency-catalog-tier-sheet__tags">
-        {row.tagsRaw.trim() ? (
-          <span className="agency-catalog-tier-sheet__tags-text">{row.tagsRaw}</span>
+      <td className="agency-catalog-tier-sheet__cell--num agency-catalog-directory__cell--hours">{row.hoursDisplay}</td>
+      <td className="agency-catalog-directory__cell--tax">
+        {catalogSelect ? (
+          <span
+            className={`agency-catalog-directory__tax${row.taxableLabel === "Mixed" ? " is-mixed" : ""}`}
+            title={
+              row.taxableLabel === "Mixed"
+                ? "Some items in this row are taxable and some are not."
+                : undefined
+            }
+          >
+            {row.taxableLabel === "—" ? "" : row.taxableLabel}
+          </span>
         ) : (
-          <span className="agency-catalog-tier-sheet__dash">—</span>
+          <span
+            className={
+              row.taxable
+                ? "agency-catalog-tier-sheet__status-pill agency-catalog-tier-sheet__status-pill--taxable"
+                : "agency-catalog-tier-sheet__status-pill"
+            }
+            title={
+              row.taxableLabel === "Mixed"
+                ? "Some items in this row are taxable and some are not."
+                : undefined
+            }
+          >
+            {row.taxableLabel}
+          </span>
         )}
       </td>
+      {showTaxonomyColumns ? (
+        <td className="agency-catalog-tier-sheet__tags">
+          {row.tagsRaw.trim() ? (
+            <span className="agency-catalog-tier-sheet__tags-text">{row.tagsRaw}</span>
+          ) : (
+            <span className="agency-catalog-tier-sheet__dash">—</span>
+          )}
+        </td>
+      ) : null}
     </>
   );
 
   const handleParentActivate = (row: CatalogDirectoryRow) => {
+    if (onSelectRow) {
+      onSelectRow(row);
+      return;
+    }
     if (isCatalogSolutionType(row.type) && row.solutionId) onToggleSolution(row.solutionId);
     else if (row.type === "preset_package" && row.packageId) onOpenPresetPackage(row.packageId);
     else if (row.type === "configurable_package" && row.packageBuilderTypeId) {
@@ -176,12 +217,20 @@ export function CatalogDirectoryTable({
         <thead>
           <tr>
             <ThSort col="name" label="Name" />
-            <ThSort col="type" label="Type" narrow />
-            <ThSort col="phase" label="Phase" narrow />
-            <ThSort col="category" label="Category" />
-            <ThSort col="tactic" label="Tactic" />
-            <ThSort col="price" label="Price" narrow />
-            <ThSort col="hours" label="Hours" narrow />
+            {showTypeColumn ? <ThSort col="type" label="Type" narrow={catalogSelect} /> : null}
+            {showTaxonomyColumns ? (
+              <>
+                <ThSort col="phase" label="Phase" narrow />
+                <ThSort col="category" label="Category" />
+                <ThSort col="tactic" label="Tactic" />
+              </>
+            ) : null}
+            <ThSort
+              col="price"
+              label={priceColumnLabel ?? (catalogSelect ? "Avg. price" : "Price")}
+              narrow
+            />
+            <ThSort col="hours" label={showTaxonomyColumns ? "Hours" : "Hrs"} narrow />
             <th scope="col" className="agency-catalog-tier-sheet__col--tax">
               <button
                 type="button"
@@ -193,7 +242,7 @@ export function CatalogDirectoryTable({
                 <SortIcon active={sort.col === "taxable"} dir={sort.dir} />
               </button>
             </th>
-            <ThSort col="tags" label="Tags" />
+            {showTaxonomyColumns ? <ThSort col="tags" label="Tags" /> : null}
             {addMode ? (
               <th scope="col" className="agency-catalog-directory__col--add">
                 Add
@@ -211,16 +260,20 @@ export function CatalogDirectoryTable({
           ) : (
             rows.flatMap((row) => {
               const isSolution = isCatalogSolutionType(row.type);
-              const expanded = isSolution && row.solutionId != null && expandedSolutionIds.has(row.solutionId);
+              const expanded =
+                !catalogSelect && isSolution && row.solutionId != null && expandedSolutionIds.has(row.solutionId);
+              const selected = selectedRowId === row.id;
+              const rowHref = hrefForCatalogDirectoryRow(row);
               const parentRow = (
                 <tr
                   key={row.id}
                   className={
-                    isSolution
-                      ? `agency-catalog-directory__parent agency-catalog-directory__parent--solution${expanded ? " agency-catalog-directory__parent--expanded" : ""}`
+                    `agency-catalog-directory__parent${selected ? " is-selected" : ""} ` +
+                    (isSolution
+                      ? `agency-catalog-directory__parent--solution${expanded ? " agency-catalog-directory__parent--expanded" : ""}`
                       : row.type === "preset_package"
-                        ? "agency-catalog-directory__parent agency-catalog-directory__parent--preset"
-                        : "agency-catalog-directory__parent agency-catalog-directory__parent--configurable"
+                        ? "agency-catalog-directory__parent--preset"
+                        : "agency-catalog-directory__parent--configurable")
                   }
                   role="button"
                   tabIndex={0}
@@ -234,7 +287,7 @@ export function CatalogDirectoryTable({
                 >
                   <td>
                     <div className="agency-catalog-directory__name-cell">
-                      {isSolution ? (
+                      {catalogSelect ? null : isSolution ? (
                         <span
                           className={`agency-catalog-directory__chevron${expanded ? " agency-catalog-directory__chevron--open" : ""}`}
                           aria-hidden
@@ -252,18 +305,34 @@ export function CatalogDirectoryTable({
                       ) : (
                         <span className="agency-catalog-directory__chevron agency-catalog-directory__chevron--spacer" aria-hidden />
                       )}
-                      <div>
-                        <div className="agency-catalog-tier-sheet__tier-title">{row.name}</div>
-                        <div className="agency-catalog-tier-sheet__submeta">
-                          <span className="agency-catalog-tier-sheet__sol-name">{row.meta}</span>
-                        </div>
+                      <div className="agency-catalog-directory__name-copy">
+                        {rowHref ? (
+                          <EntityLink
+                            to={rowHref}
+                            className="agency-catalog-tier-sheet__tier-title"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {row.name}
+                          </EntityLink>
+                        ) : (
+                          <span className="agency-catalog-tier-sheet__tier-title">{row.name}</span>
+                        )}
+                        {row.meta ? (
+                          <span className="agency-catalog-directory__inline-meta">{row.meta}</span>
+                        ) : null}
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <span className={typePillClass(row.type)}>{row.typeLabel}</span>
-                  </td>
-                  {renderTaxonomy(row.phaseRaw, row.categoryRaw, row.tacticRaw)}
+                  {showTypeColumn ? (
+                    <td className="agency-catalog-directory__cell--type">
+                      {catalogSelect ? (
+                        <span className="agency-catalog-directory__type">{row.typeLabel}</span>
+                      ) : (
+                        <span className={typePillClass(row.type)}>{row.typeLabel}</span>
+                      )}
+                    </td>
+                  ) : null}
+                  {showTaxonomyColumns ? renderTaxonomy(row.phaseRaw, row.categoryRaw, row.tacticRaw) : null}
                   {renderMetrics({
                     priceDisplay: row.priceDisplay,
                     hoursDisplay: row.hoursDisplay,
@@ -271,7 +340,41 @@ export function CatalogDirectoryTable({
                     taxableLabel: row.taxableLabel,
                     tagsRaw: row.tagsRaw,
                   })}
-                  {addMode ? <td className="agency-catalog-directory__cell--add" /> : null}
+                  {addMode ? (
+                    <td className="agency-catalog-directory__cell--add">
+                      {isSolution && row.tierRows.length === 1 && row.solutionId && onAddTier ? (
+                        <button
+                          type="button"
+                          className={`agency-catalog-directory__add-btn${
+                            addedTierRefIds?.has(row.tierRows[0]!.tierId) ? " is-again" : ""
+                          }${justAddedTierId === row.tierRows[0]!.tierId ? " is-done" : ""}`}
+                          disabled={!canAdd || row.type === "solution_module"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!canAdd || row.type === "solution_module") return;
+                            onAddTier(row.solutionId!, row.tierRows[0]!.tierId);
+                          }}
+                        >
+                          {justAddedTierId === row.tierRows[0]!.tierId
+                            ? "Added"
+                            : addedTierRefIds?.has(row.tierRows[0]!.tierId)
+                              ? "Add again"
+                              : "Add"}
+                        </button>
+                      ) : isSolution && row.tierRows.length > 1 ? (
+                        <button
+                          type="button"
+                          className="agency-catalog-directory__add-btn agency-catalog-directory__add-btn--tiers"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (row.solutionId) onToggleSolution(row.solutionId);
+                          }}
+                        >
+                          {expanded ? "Hide tiers" : "Tiers ▾"}
+                        </button>
+                      ) : null}
+                    </td>
+                  ) : null}
                 </tr>
               );
 
@@ -308,19 +411,27 @@ export function CatalogDirectoryTable({
                       <div className="agency-catalog-directory__name-cell agency-catalog-directory__name-cell--child">
                         <span className="agency-catalog-directory__child-bar" aria-hidden />
                         <div>
-                          <div className="agency-catalog-tier-sheet__tier-title">{tier.tierName}</div>
+                          <EntityLink
+                            to={solutionOverviewPath(tier.solutionId, tier.tierId)}
+                            className="agency-catalog-tier-sheet__tier-title"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {tier.tierName}
+                          </EntityLink>
                           <div className="agency-catalog-tier-sheet__submeta">
                             <span className="agency-catalog-tier-sheet__sol-name">Solution tier</span>
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <span className="agency-catalog-directory__type-pill agency-catalog-directory__type-pill--tier">
-                        Tier
-                      </span>
-                    </td>
-                    {renderTaxonomy(tier.phaseRaw, tier.categoryRaw, tier.tacticRaw)}
+                    {showTypeColumn ? (
+                      <td>
+                        <span className="agency-catalog-directory__type-pill agency-catalog-directory__type-pill--tier">
+                          Tier
+                        </span>
+                      </td>
+                    ) : null}
+                    {showTaxonomyColumns ? renderTaxonomy(tier.phaseRaw, tier.categoryRaw, tier.tacticRaw) : null}
                     {renderMetrics({
                       priceDisplay: tier.priceDisplay,
                       hoursDisplay: tier.hoursDisplay,

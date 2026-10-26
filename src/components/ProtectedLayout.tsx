@@ -6,10 +6,12 @@ import {
   APP_TITLE,
   CLAUDE_AI_CHAT_PROJECT_URL,
   NAV_AI_CHAT,
+  NAV_HOME,
   NAV_PACKAGE_BUILDER,
   NAV_PROPOSAL_BUILDER,
   NAV_SOLUTIONS_OVERVIEW,
 } from "../branding";
+import { AppUserMenu } from "./AppUserMenu";
 import { useAuth } from "../context/AuthContext";
 import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
 import { isAgencyRoute, isPackageBuilderRoute } from "../lib/agencyRoutes";
@@ -28,25 +30,6 @@ function AuthLoadingScreen() {
       <div className="auth-loading-screen__spinner" />
       <p className="auth-loading-screen__text">Signing you in…</p>
     </div>
-  );
-}
-
-function SignOutButton() {
-  const { signOut } = useAuth();
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <button
-      type="button"
-      className="app-user-menu__signout"
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        void signOut().finally(() => setBusy(false));
-      }}
-    >
-      {busy ? "Signing out…" : "Sign out"}
-    </button>
   );
 }
 
@@ -74,8 +57,8 @@ function GuardedNavLink({
       className={className}
       title={title}
       onClick={(e) => {
-        if (location.pathname !== "/roadmap") return;
-        if (to === "/roadmap") return;
+        if (!location.pathname.startsWith("/roadmap")) return;
+        if (to === "/roadmap" || to.startsWith("/roadmap/")) return;
         if (!guard?.isActive || !guard.isDirty) return;
         e.preventDefault();
         confirmLeave(() => navigate(to));
@@ -116,7 +99,7 @@ function ThemeToggle({
 }
 
 export function ProtectedLayout() {
-  const { session, loading, configured, profileLoading, isAdmin } = useAuth();
+  const { session, loading, configured, profileLoading, isAdmin, displayName } = useAuth();
   const location = useLocation();
   const agencyTabActive = isAgencyRoute(location.pathname);
   const packageBuilderTabActive = isPackageBuilderRoute(location.pathname);
@@ -129,7 +112,7 @@ export function ProtectedLayout() {
 
     const heartbeat = () => {
       if (document.visibilityState === "hidden") return;
-      void upsertUserPresence(client, user, location.pathname);
+      void upsertUserPresence(client, user, location.pathname, displayName);
     };
 
     heartbeat();
@@ -143,7 +126,7 @@ export function ProtectedLayout() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onFocus);
     };
-  }, [location.pathname, session?.user]);
+  }, [location.pathname, session?.user, displayName]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -166,28 +149,37 @@ export function ProtectedLayout() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  const email = session.user.email ?? "Account";
-
   return (
-    <div style={{ minHeight: "100%" }}>
+    <div
+      className={`app-shell${location.pathname === "/" ? " app-shell--home" : ""}`}
+      style={{ minHeight: "100%" }}
+    >
       <header className="app-top-bar">
         <div className="app-top-bar__inner">
-          <div className="app-top-bar__brand" aria-label={APP_TITLE}>
+          <GuardedNavLink to="/" end className="app-top-bar__brand" title={APP_TITLE}>
             <span className="app-top-bar__brand-name">{APP_BRAND_NAME}</span>
             <span className="app-top-bar__brand-divider" aria-hidden />
             <span className="app-top-bar__brand-scope">{APP_SCOPE_LABEL}</span>
-          </div>
+          </GuardedNavLink>
 
           <nav className="app-module-tabs app-top-bar__nav" aria-label="Application area">
             <GuardedNavLink
               end
               to="/"
+              className={({ isActive }) =>
+                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
+              }
+            >
+              {NAV_HOME}
+            </GuardedNavLink>
+            <GuardedNavLink
+              to="/solutions"
               className={() =>
                 `app-module-tab${agencyTabActive ? " app-module-tab--active" : ""}`
               }
             >
               <span className="app-module-tab__label app-module-tab__label--full">{NAV_SOLUTIONS_OVERVIEW}</span>
-              <span className="app-module-tab__label app-module-tab__label--short">Solutions</span>
+              <span className="app-module-tab__label app-module-tab__label--short">Catalog</span>
             </GuardedNavLink>
             <GuardedNavLink
               to="/package-builder"
@@ -199,8 +191,8 @@ export function ProtectedLayout() {
             </GuardedNavLink>
             <NavLink
               to="/roadmap"
-              className={({ isActive }) =>
-                `app-module-tab${isActive ? " app-module-tab--active" : ""}`
+              className={() =>
+                `app-module-tab${location.pathname.startsWith("/roadmap") ? " app-module-tab--active" : ""}`
               }
             >
               {NAV_PROPOSAL_BUILDER}
@@ -242,17 +234,7 @@ export function ProtectedLayout() {
                   New Request
                 </span>
               </GuardedNavLink>
-              <div className="app-user-menu">
-                <span className="app-user-menu__avatar" aria-hidden>
-                  {(email || "?").slice(0, 1).toUpperCase()}
-                </span>
-                <span className="app-user-menu__details">
-                  <span className="app-user-menu__email" title={email}>
-                    {email}
-                  </span>
-                </span>
-                <SignOutButton />
-              </div>
+              <AppUserMenu />
               <ThemeToggle
                 theme={theme}
                 onToggle={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}

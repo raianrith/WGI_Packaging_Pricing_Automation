@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { RoadmapCardKind } from "../../lib/roadmapModel";
+import { EntityLink } from "../EntityLink";
 import type { ModuleAddOnGroup } from "../../lib/buildCatalogDirectoryRows";
 import {
   ProposalCopyScenarioOfferings,
@@ -21,6 +22,7 @@ export type ProposalAddedLine = {
   isAddon?: boolean;
   canAddAddOns?: boolean;
   addons?: ProposalAddedLine[];
+  catalogHref?: string | null;
 };
 
 type Props = {
@@ -118,7 +120,13 @@ function AddedLineRow({
         </span>
         <div className="proposal-added-line__text">
           <div className="proposal-added-line__title-row">
-            <strong className="proposal-added-line__title">{line.headline.trim() || "(untitled)"}</strong>
+            {line.catalogHref ? (
+              <EntityLink to={line.catalogHref} className="proposal-added-line__title">
+                {line.headline.trim() || "(untitled)"}
+              </EntityLink>
+            ) : (
+              <strong className="proposal-added-line__title">{line.headline.trim() || "(untitled)"}</strong>
+            )}
             <span className="proposal-added-line__price">{line.priceDisplay}</span>
           </div>
           {line.appliedToLabel ? (

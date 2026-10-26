@@ -160,7 +160,7 @@ export function AgencyPackageBuilderView() {
             <h1 className="pkg-builder-page__title">{PACKAGE_BUILDER_TITLE}</h1>
             <p className="pkg-builder-page__lead">{PACKAGE_BUILDER_DESCRIPTION}</p>
           </div>
-          <Link className="pkg-builder-page__library-link" to="/packages">
+          <Link className="pkg-builder-page__library-link" to="/solutions?type=packages">
             <span className="pkg-builder-page__library-icon" aria-hidden>
               ◫
             </span>

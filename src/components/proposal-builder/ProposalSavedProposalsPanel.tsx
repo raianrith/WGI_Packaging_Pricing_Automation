@@ -1,6 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { PROPOSAL_DURATION_LABEL } from "../../branding";
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { EntityLink } from "../EntityLink";
+import { proposalPath } from "../../lib/entityLinks";
 import { formatProposalDurationLabel } from "../../lib/roadmapProposalSnapshot";
+import { displayProposalTitle } from "../../lib/roadmapNameFormat";
 import type { RoadmapProposalRow } from "../../types";
 
 export type ProposalSavedLibraryVariant = "saved" | "awaiting_ops" | "client_ready";
@@ -12,7 +14,7 @@ type Props = {
   deletingProposalId: string | null;
   reviewingProposalId?: string | null;
   onRefresh: () => void;
-  onOpen: (row: RoadmapProposalRow) => void;
+  onOpen?: (row: RoadmapProposalRow) => void;
   onDelete: (row: RoadmapProposalRow) => void;
   onReviewedByOpsChange?: (row: RoadmapProposalRow, reviewed: boolean) => void;
   onMoveToSaved?: (row: RoadmapProposalRow) => void;
@@ -50,16 +52,14 @@ function formatCreator(row: RoadmapProposalRow): string {
   return "Unknown";
 }
 
-function formatCreatedDate(value: string | null | undefined): string {
-  if (!value) return "—";
+function formatListDate(value: string | null | undefined): string {
+  if (!value) return "";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   }).format(d);
 }
 
@@ -68,6 +68,21 @@ function lineCount(row: RoadmapProposalRow): number {
   if (!state || typeof state !== "object") return 0;
   const cards = (state as { cards?: unknown }).cards;
   return Array.isArray(cards) ? cards.length : 0;
+}
+
+function proposalSearchBlob(row: RoadmapProposalRow): string {
+  return [
+    row.roadmap_title,
+    row.client_label,
+    row.created_by_email,
+    formatCreator(row),
+    row.client_budget,
+    row.horizon,
+    formatProposalDurationLabel(row.horizon),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function clientInitials(client: string): string {
@@ -98,7 +113,7 @@ const VARIANT_COPY: Record<
     emptyTitle: "No Proposals Yet",
     emptyBody: (
       <>
-        Switch to the <strong>Create New Proposal</strong> tab, build your roadmap, then save from Review.
+        Switch to the <strong>New</strong> tab, build your roadmap, then save from Review.
       </>
     ),
     allListTitle: "All Saved Proposals",
@@ -141,7 +156,6 @@ export function ProposalSavedProposalsPanel({
   deletingProposalId,
   reviewingProposalId = null,
   onRefresh,
-  onOpen,
   onDelete,
   onReviewedByOpsChange,
   onMoveToSaved,
@@ -149,6 +163,8 @@ export function ProposalSavedProposalsPanel({
 }: Props) {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [clientQuery, setClientQuery] = useState("");
+  const [proposalQuery, setProposalQuery] = useState("");
+  const proposalSearchId = useId();
   const copy = VARIANT_COPY[variant];
   const showReviewedToggle = variant === "awaiting_ops" || variant === "client_ready";
   const reviewedByOpsOn = variant === "client_ready";
@@ -173,36 +189,35 @@ export function ProposalSavedProposalsPanel({
     const sorted = [...proposals].sort(
       (a, b) => new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime()
     );
-    if (selectedClient == null) return sorted;
-    return sorted.filter((row) => clientKey(row) === selectedClient);
-  }, [proposals, selectedClient]);
+    const byClient = selectedClient == null ? sorted : sorted.filter((row) => clientKey(row) === selectedClient);
+    const q = proposalQuery.trim().toLowerCase();
+    if (!q) return byClient;
+    return byClient.filter((row) => proposalSearchBlob(row).includes(q));
+  }, [proposals, selectedClient, proposalQuery]);
 
   const listTitle = selectedClient == null ? copy.allListTitle : selectedClient;
 
   return (
     <section className="proposal-saved" aria-label={copy.ariaLabel}>
       <header className="proposal-saved__hero">
-        <div className="proposal-saved__hero-glow" aria-hidden />
         <div className="proposal-saved__hero-inner">
           <div className="proposal-saved__hero-copy">
-            <p className="proposal-saved__eyebrow">{copy.eyebrow}</p>
-            <h2 className="proposal-saved__title">{copy.title}</h2>
             <p className="proposal-saved__lead">{copy.lead}</p>
             {proposals.length > 0 ? (
-              <div className="proposal-saved__hero-stats">
-                <span className="proposal-saved__hero-stat">
+              <p className="proposal-saved__hero-stats">
+                <span>
                   <strong>{clientEntries.length}</strong> client{clientEntries.length === 1 ? "" : "s"}
                 </span>
-                <span className="proposal-saved__hero-stat">
+                <span>
                   <strong>{proposals.length}</strong> {copy.countLabel}
                 </span>
-              </div>
+              </p>
             ) : null}
           </div>
           <div className="proposal-saved__head-actions">
             <button
               type="button"
-              className="roadmap-btn roadmap-btn--ghost proposal-saved__refresh-btn"
+              className="proposal-saved__refresh-btn"
               onClick={onRefresh}
               disabled={loading}
             >
@@ -280,15 +295,39 @@ export function ProposalSavedProposalsPanel({
             <header className="proposal-saved__main-head">
               <div>
                 <h3 className="proposal-saved__main-title">{listTitle}</h3>
-                <p className="proposal-saved__main-sub">Sorted By Most Recently Updated</p>
+                <p className="proposal-saved__main-sub">Sorted by most recently updated</p>
               </div>
+              <label className="proposal-saved__proposal-search" htmlFor={proposalSearchId}>
+                <span className="proposal-saved__proposal-search-icon" aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
+                    <path d="M16.5 16.5L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <span className="visually-hidden">Search proposals</span>
+                <input
+                  id={proposalSearchId}
+                  type="search"
+                  className="proposal-saved__proposal-search-input"
+                  value={proposalQuery}
+                  onChange={(e) => setProposalQuery(e.target.value)}
+                  placeholder="Search title, client, creator…"
+                  autoComplete="off"
+                />
+              </label>
               <span className="proposal-saved__main-count">
                 {visibleProposals.length} proposal{visibleProposals.length === 1 ? "" : "s"}
               </span>
             </header>
 
             {visibleProposals.length === 0 ? (
-              <p className="proposal-saved__empty roadmap-muted">No proposals for this client.</p>
+              <p className="proposal-saved__empty roadmap-muted">
+                {proposalQuery.trim()
+                  ? "No proposals match this search."
+                  : selectedClient
+                    ? "No proposals for this client."
+                    : "No proposals to show."}
+              </p>
             ) : (
               <ul className="proposal-saved__proposal-list">
                 {visibleProposals.map((row) => {
@@ -296,58 +335,40 @@ export function ProposalSavedProposalsPanel({
                   const isDeleting = deletingProposalId === row.id;
                   const items = lineCount(row);
                   const budget = parseBudgetDisplay(row.client_budget);
+                  const title = displayProposalTitle(row.roadmap_title);
+                  const updated = formatListDate(row.updated_at);
+                  const created = formatListDate(row.created_at);
+                  const dateLabel =
+                    updated && row.updated_at !== row.created_at ? `Updated ${updated}` : created;
                   return (
                     <li
                       key={row.id}
                       className={`proposal-saved-card${isActive ? " proposal-saved-card--active" : ""}`}
                     >
-                      <div className="proposal-saved-card__accent" aria-hidden />
                       <div className="proposal-saved-card__inner">
-                        <button type="button" className="proposal-saved-card__open" onClick={() => onOpen(row)}>
+                        <EntityLink to={proposalPath(row.id)} className="proposal-saved-card__open">
                           <div className="proposal-saved-card__top">
-                            <div className="proposal-saved-card__title-block">
-                              <strong className="proposal-saved-card__title">{row.roadmap_title}</strong>
-                              {selectedClient == null ? (
-                                <span className="proposal-saved-card__client-tag">{clientKey(row)}</span>
-                              ) : null}
-                            </div>
-                            <span className="proposal-saved-card__cta">
-                              Open
-                              <span className="proposal-saved-card__cta-arrow" aria-hidden>
-                                →
-                              </span>
-                            </span>
+                            <strong className="proposal-saved-card__title" title={row.roadmap_title}>
+                              {title}
+                            </strong>
+                            {budget !== "—" ? (
+                              <span className="proposal-saved-card__budget is-set">{budget}</span>
+                            ) : null}
                           </div>
-
-                          <div className="proposal-saved-card__chips">
-                            <span
-                              className={`proposal-saved-chip${budget !== "—" ? " proposal-saved-chip--highlight" : ""}`}
-                            >
-                              <span className="proposal-saved-chip__label">Budget</span>
-                              <span className="proposal-saved-chip__value">{budget}</span>
+                          <p className="proposal-saved-card__meta">
+                            {selectedClient == null ? (
+                              <span className="proposal-saved-card__meta-client">{clientKey(row)}</span>
+                            ) : null}
+                            <span>{formatProposalDurationLabel(row.horizon)}</span>
+                            <span>
+                              {items} item{items === 1 ? "" : "s"}
                             </span>
-                            <span className="proposal-saved-chip">
-                              <span className="proposal-saved-chip__label">{PROPOSAL_DURATION_LABEL}</span>
-                              <span className="proposal-saved-chip__value">{formatProposalDurationLabel(row.horizon)}</span>
-                            </span>
-                            <span className="proposal-saved-chip">
-                              <span className="proposal-saved-chip__label">Creator</span>
-                              <span className="proposal-saved-chip__value">{formatCreator(row)}</span>
-                            </span>
-                            <span className="proposal-saved-chip">
-                              <span className="proposal-saved-chip__label">Created</span>
-                              <span className="proposal-saved-chip__value">{formatCreatedDate(row.created_at)}</span>
-                            </span>
-                          </div>
-                        </button>
+                            <span>{formatCreator(row)}</span>
+                            {dateLabel ? <span>{dateLabel}</span> : null}
+                          </p>
+                        </EntityLink>
 
                         <footer className="proposal-saved-card__foot">
-                          <span className="proposal-saved-card__footnote">
-                            {items} line item{items === 1 ? "" : "s"}
-                            {row.updated_at && row.updated_at !== row.created_at
-                              ? ` · Updated ${formatCreatedDate(row.updated_at)}`
-                              : ""}
-                          </span>
                           <div className="proposal-saved-card__foot-actions">
                             {showMoveToSaved ? (
                               <button

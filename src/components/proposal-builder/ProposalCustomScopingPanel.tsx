@@ -17,10 +17,11 @@ import { proposalStepDef } from "./ProposalBuilderSteps";
 type Props = {
   value: CustomScopingState;
   onChange: (next: CustomScopingState) => void;
+  embedded?: boolean;
 };
 
-export function ProposalCustomScopingPanel({ value, onChange }: Props) {
-  const stepMeta = proposalStepDef("custom_scoping");
+export function ProposalCustomScopingPanel({ value, onChange, embedded = false }: Props) {
+  const stepMeta = proposalStepDef("add_scope");
   const formId = useId();
   const [form, setForm] = useState<CustomScopingFormInput>(() => emptyCustomScopingForm());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -163,6 +164,7 @@ export function ProposalCustomScopingPanel({ value, onChange }: Props) {
 
   return (
     <div className="proposal-step-panel proposal-custom-scoping">
+      {embedded ? null : (
       <header className="proposal-step-panel__head">
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
@@ -171,6 +173,7 @@ export function ProposalCustomScopingPanel({ value, onChange }: Props) {
           scheduled.
         </p>
       </header>
+      )}
 
       <section className="proposal-custom-scoping__toggle-card" aria-labelledby={`${formId}-toggle`}>
         <div className="proposal-custom-scoping__toggle-copy">

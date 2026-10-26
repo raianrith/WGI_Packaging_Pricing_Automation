@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, SetStateAction } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
   cardHoursForScenarioRollup,
@@ -22,11 +23,25 @@ import type { CatalogTierTableRow } from "../components/CatalogTierTable";
 import { ProposalBuilderModeTabs, type ProposalBuilderMode } from "../components/proposal-builder/ProposalBuilderModeTabs";
 import { PROPOSAL_DURATION_LABEL } from "../branding";
 import { ProposalSavedProposalsPanel } from "../components/proposal-builder/ProposalSavedProposalsPanel";
-import { ProposalBuilderSteps, proposalStepDef, type ProposalBuilderStep } from "../components/proposal-builder/ProposalBuilderSteps";
+import {
+  ProposalAddScopeTabs,
+  ProposalBuilderSteps,
+  proposalStepDef,
+  type AddScopeTab,
+  type ProposalBuilderStep,
+} from "../components/proposal-builder/ProposalBuilderSteps";
+import { ProposalShoppingRail, type ShoppingRailPhase } from "../components/proposal-builder/ProposalShoppingRail";
+import { ProposalClientPicker } from "../components/proposal-builder/ProposalClientPicker";
 import { ProposalStepNav } from "../components/proposal-builder/ProposalStepNav";
 import { ProposalOrganizePanel } from "../components/proposal-builder/ProposalOrganizePanel";
 import { ProposalCustomScopingPanel } from "../components/proposal-builder/ProposalCustomScopingPanel";
 import { ProposalCustomScopingSummary } from "../components/proposal-builder/ProposalCustomScopingSummary";
+import {
+  ProposalOpsCustomScopingPanel,
+  ProposalOpsCustomSolutionForm,
+  type OpsScopingFulfillMethod,
+} from "../components/proposal-builder/ProposalOpsCustomScopingPanel";
+import { ProposalCatalogTargetBar } from "../components/proposal-builder/ProposalCatalogTargetBar";
 import { ProposalScenariosPanel } from "../components/proposal-builder/ProposalScenariosPanel";
 import { ProposalCatalogPanel } from "../components/proposal-builder/ProposalCatalogPanel";
 import type { ProposalAddedLine } from "../components/proposal-builder/ProposalAddedItemsPanel";
@@ -40,7 +55,6 @@ import { ProposalClientReadyPanel } from "../components/proposal-builder/Proposa
 import { TierResourceExamplesDisplay } from "../components/TierResourceExamplesDisplay";
 import { useToast, useToastBusy } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
-import { useProposalDraftGuard } from "../context/ProposalDraftGuardContext";
 import {
   effectiveResourceExamples,
   effectiveResourceTools,
@@ -59,17 +73,21 @@ import {
 import { downloadProposalOpsPdf, downloadProposalPdf } from "../lib/proposalPdfExport";
 import { ProposalExportPreviewTables } from "../components/proposal-builder/ProposalExportPreviewTables";
 import {
+  formatProposalDisplayDate,
   normalizeIsoDateInput,
   proposalDateRangeLabel,
+  proposalEndFromDurationMonths,
   type ProposalOfferingDates,
 } from "../lib/proposalDates";
 import {
-  applyRoadmapNameDateSuffix,
+  displayProposalTitle,
+  generateRoadmapName,
   isValidRoadmapNameFormat,
   ROADMAP_NAME_CLIENT_CODE_TOOLTIP,
   ROADMAP_NAME_FORMAT_EXAMPLE,
   ROADMAP_NAME_FORMAT_HINT,
 } from "../lib/roadmapNameFormat";
+import { isJunkReusePackageName } from "../lib/proposalReusePackages";
 import {
   createScenariosAndPhasesForKind,
   defaultPhaseTitleForKind,
@@ -90,11 +108,11 @@ import {
   type CustomScopingState,
 } from "../lib/customScopingRequest";
 import { ProposalCopyFromPanel } from "../components/proposal-builder/ProposalCopyFromPanel";
-import { ProposalSaveReminderBanner } from "../components/proposal-builder/ProposalSaveReminderBanner";
 import { catalogSolutionKind, buildModuleAddOnGroups } from "../lib/buildCatalogDirectoryRows";
 import { copyScenarioOfferings } from "../lib/copyScenarioOfferings";
 import { proposalSnapshotFingerprint } from "../lib/proposalDraftFingerprint";
 import { notifyOpsReviewSubmitted } from "../lib/notifyOpsReviewEmail";
+import { hrefForRoadmapCard, proposalPath } from "../lib/entityLinks";
 import type { OpsReviewSubmissionMeta } from "../lib/opsReviewSubmission";
 import { ProposalOpsReviewSubmitModal } from "../components/proposal-builder/ProposalOpsReviewSubmitModal";
 import { fetchPackageBuilderCatalog } from "../lib/packageBuilderSlots";
@@ -112,7 +130,6 @@ import {
   type PlaybookPackageDraft,
 } from "../components/proposal-builder/ProposalPlaybookPackagePanel";
 import {
-  ProposalPackagesChoice,
   ProposalPackagesPathBar,
   ProposalPackagesSwitchPrompt,
   type PackageAddPath,
@@ -904,15 +921,27 @@ function catalogItemDetails(card: RoadmapCard, ctx: CatalogCtx): ReactNode {
   }
 }
 
+function formatSavedAgo(savedAt: number | null, saving: boolean): string {
+  if (saving) return "Saving…";
+  if (!savedAt) return "Not saved yet";
+  const s = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
+  if (s < 4) return "Saved just now";
+  if (s < 60) return `Saved ${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `Saved ${m}m ago`;
+  return "Saved";
+}
+
 export function RoadmapPlanningView() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { proposalId: proposalIdParam } = useParams<{ proposalId: string }>();
   const { toastError, toastNote, toastSuccess } = useToast();
-  const { setGuard } = useProposalDraftGuard();
   const [state, setState] = useState<LoadState>({ status: "idle" });
   const [catalogReloading, setCatalogReloading] = useState(false);
   useToastBusy(catalogReloading, "Refreshing solutions…");
   const [savedProposals, setSavedProposals] = useState<RoadmapProposalRow[]>([]);
-  const [savedProposalsLoading, setSavedProposalsLoading] = useState(false);
+  const [savedProposalsLoading, setSavedProposalsLoading] = useState(true);
   const [savingProposal, setSavingProposal] = useState(false);
   useToastBusy(savingProposal, "Saving proposal…");
   const [pdfGenerating, setPdfGenerating] = useState<"client" | "ops" | null>(null);
@@ -958,24 +987,36 @@ export function RoadmapPlanningView() {
   const [scratchGroupPickTick, setScratchGroupPickTick] = useState(0);
   const [builderStep, setBuilderStep] = useState<ProposalBuilderStep>("setup");
   const [builderMode, setBuilderMode] = useState<ProposalBuilderMode>("saved");
-  const [packageAddPath, setPackageAddPath] = useState<PackageAddPath | null>(null);
+  const [addScopeTab, setAddScopeTab] = useState<AddScopeTab>("solutions");
+  const [packageAddPath, setPackageAddPath] = useState<PackageAddPath | null>("prebuilt");
   const [packageSwitchPromptPath, setPackageSwitchPromptPath] = useState<PackageAddPath | null>(null);
+  const [opsFulfillRequestId, setOpsFulfillRequestId] = useState<string | null>(null);
+  const [opsFulfillMethod, setOpsFulfillMethod] = useState<OpsScopingFulfillMethod | null>(null);
+  const [opsPackagePath, setOpsPackagePath] = useState<PackageAddPath>("build");
+  const opsFulfillRef = useRef<string | null>(null);
   const [targetPhaseId, setTargetPhaseId] = useState("");
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [setupStartMode, setSetupStartMode] = useState<"choose" | "blank" | "copy">("choose");
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [saveClock, setSaveClock] = useState(0);
+  const clientInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const silentSavingRef = useRef(false);
 
   useEffect(() => {
-    if (builderStep !== "packages") {
-      setPackageAddPath(null);
+    if (builderStep !== "add_scope") {
       setPackageSwitchPromptPath(null);
     }
   }, [builderStep]);
 
   useEffect(() => {
-    if (!normalizeIsoDateInput(proposalStartDate) || !normalizeIsoDateInput(proposalEndDate)) return;
-    setRoadmapTitle((prev) => {
-      const next = applyRoadmapNameDateSuffix(prev, proposalStartDate, proposalEndDate);
-      return next === prev ? prev : next;
-    });
-  }, [proposalStartDate, proposalEndDate]);
+    if (horizon === "custom") return;
+    const months = Number(horizon);
+    if (!normalizeIsoDateInput(proposalStartDate) || !Number.isFinite(months) || months <= 0) return;
+    const end = proposalEndFromDurationMonths(proposalStartDate, months);
+    if (end && end !== proposalEndDate) setProposalEndDate(end);
+  }, [horizon, proposalEndDate, proposalStartDate]);
 
   const roadmapNameValid = useMemo(
     () => isValidRoadmapNameFormat(roadmapTitle),
@@ -1085,7 +1126,10 @@ export function RoadmapPlanningView() {
 
   const loadSavedProposals = useCallback(async () => {
     const client = getSupabase();
-    if (!client) return;
+    if (!client) {
+      setSavedProposalsLoading(false);
+      return;
+    }
     setSavedProposalsLoading(true);
     const { data: rows, error } = await client
       .from("roadmap_proposals")
@@ -1106,6 +1150,8 @@ export function RoadmapPlanningView() {
   useEffect(() => {
     void loadSavedProposals();
   }, [loadSavedProposals]);
+
+  const urlProposalId = proposalIdParam ? decodeURIComponent(proposalIdParam) : null;
 
   const currentProposalSnapshot = useCallback(
     (): RoadmapProposalSnapshot => ({
@@ -1147,26 +1193,41 @@ export function RoadmapPlanningView() {
     reviewStatus?: ProposalReviewStatus;
     opsReview?: OpsReviewSubmissionMeta;
     successMessage?: string;
+    silent?: boolean;
   }): Promise<RoadmapProposalRow | null> => {
     const client = getSupabase();
     if (!client) return null;
     const clientName = clientLabel.trim();
-    const title = roadmapTitle.trim();
+    const pastTitles = savedProposals
+      .filter((row) => row.client_label.trim().toLowerCase() === clientName.toLowerCase())
+      .map((row) => row.roadmap_title);
+    let title = displayProposalTitle(roadmapTitle.trim() === "Untitled proposal" ? "" : roadmapTitle);
+    if (title === "Untitled proposal") title = "";
+    if (!title && clientName) {
+      title = generateRoadmapName(clientName, proposalStartDate, proposalEndDate, pastTitles);
+    } else if (title) {
+      title = displayProposalTitle(title);
+    }
     if (!clientName || !title) {
-      toastError("Add both Client name and Roadmap name before saving.");
+      if (!opts?.silent) toastError("Add both Client name and Roadmap name before saving.");
       return null;
     }
-    if (!isValidRoadmapNameFormat(title)) {
+    if (!opts?.silent && !isValidRoadmapNameFormat(title)) {
       toastError(`Roadmap name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
       return null;
     }
-    setSavingProposal(true);
+    if (title !== roadmapTitle) setRoadmapTitle(title);
+    if (opts?.silent && silentSavingRef.current) return null;
+    if (opts?.silent) silentSavingRef.current = true;
+    else setSavingProposal(true);
     const userId = user?.id ?? null;
     const email = user?.email ?? null;
     const nextReviewStatus = opts?.reviewStatus ?? proposalReviewStatus;
     const nextOpsReview = opts?.opsReview ?? opsReviewMeta ?? undefined;
     const snapshot: RoadmapProposalSnapshot = {
       ...currentProposalSnapshot(),
+      clientLabel: clientName,
+      roadmapTitle: title,
       reviewStatus: nextReviewStatus,
       ...(nextOpsReview ? { opsReview: nextOpsReview } : {}),
     };
@@ -1195,18 +1256,25 @@ export function RoadmapPlanningView() {
           })
           .select("*")
           .single();
-    setSavingProposal(false);
+    if (opts?.silent) silentSavingRef.current = false;
+    else setSavingProposal(false);
     if (result.error) {
-      toastError(`Could not save proposal: ${result.error.message}`);
+      if (!opts?.silent) toastError(`Could not save proposal: ${result.error.message}`);
       return null;
     }
     const saved = result.data as RoadmapProposalRow | null;
-    if (saved?.id) setActiveProposalId(saved.id);
+    if (saved?.id) {
+      setActiveProposalId(saved.id);
+      if (urlProposalId !== saved.id) navigate(proposalPath(saved.id), { replace: true });
+    }
     setProposalReviewStatus(nextReviewStatus);
     if (opts?.opsReview) setOpsReviewMeta(opts.opsReview);
     setLastSavedFingerprint(proposalSnapshotFingerprint(snapshot));
-    toastSuccess(opts?.successMessage ?? `Saved "${title}" under ${clientName}.`);
-    await loadSavedProposals();
+    setLastSavedAt(Date.now());
+    if (!opts?.silent) {
+      toastSuccess(opts?.successMessage ?? `Saved "${title}" under ${clientName}.`);
+      await loadSavedProposals();
+    }
     return saved;
   }, [
     activeProposalId,
@@ -1215,11 +1283,16 @@ export function RoadmapPlanningView() {
     currentProposalSnapshot,
     horizon,
     loadSavedProposals,
+    navigate,
     opsReviewMeta,
+    proposalEndDate,
     proposalReviewStatus,
+    proposalStartDate,
     roadmapTitle,
+    savedProposals,
     toastError,
     toastSuccess,
+    urlProposalId,
     user?.email,
     user?.id,
   ]);
@@ -1262,15 +1335,8 @@ export function RoadmapPlanningView() {
   }, [roadmapTitle, saveCurrentProposal]);
 
   const includeOpsPath = builderMode === "awaiting_ops" || builderMode === "client_ready";
-
-  const proposalStepSaveProps = useMemo(
-    () => ({
-      onSave: () => void saveCurrentProposal(),
-      saving: savingProposal,
-      saveLabel: activeProposalId ? "Update saved" : "Save proposal",
-    }),
-    [saveCurrentProposal, savingProposal, activeProposalId]
-  );
+  opsFulfillRef.current =
+    includeOpsPath && builderStep === "ops_scoping" ? opsFulfillRequestId : null;
 
   const awaitingOpsProposals = useMemo(
     () => savedProposals.filter(isAwaitingOpsReview),
@@ -1282,8 +1348,7 @@ export function RoadmapPlanningView() {
     [savedProposals]
   );
 
-  /** Hide while browsing library tabs; only when drafting or an open proposal is loaded. */
-  const showSaveBanner = builderMode === "create" || activeProposalId != null;
+  const isEditor = builderMode === "create" || activeProposalId != null;
 
   const proposalIsDirty = useMemo(() => {
     if (lastSavedFingerprint === null) return false;
@@ -1291,23 +1356,38 @@ export function RoadmapPlanningView() {
   }, [lastSavedFingerprint, currentProposalSnapshot]);
 
   useEffect(() => {
-    setGuard({
-      isActive: showSaveBanner,
-      isDirty: proposalIsDirty,
-      message:
-        "You have unsaved changes to your proposal. Save your work before leaving, or your changes will be lost.",
-    });
-    return () => setGuard(null);
-  }, [proposalIsDirty, setGuard, showSaveBanner]);
+    if (!isEditor) return;
+    if (!clientLabel.trim()) return;
+    if (!proposalIsDirty) return;
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      void saveCurrentProposal({ silent: true });
+    }, 900);
+    return () => {
+      if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    };
+  }, [clientLabel, isEditor, proposalIsDirty, saveCurrentProposal, currentProposalSnapshot]);
 
   useEffect(() => {
-    if (!proposalIsDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [proposalIsDirty]);
+    if (!lastSavedAt) return;
+    const id = window.setInterval(() => setSaveClock((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [lastSavedAt]);
+
+  const clientOptions = useMemo(() => {
+    const names = savedProposals.map((row) => row.client_label.trim()).filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [savedProposals]);
+
+  useEffect(() => {
+    if (titleTouched) return;
+    if (!clientLabel.trim()) return;
+    const pastTitles = savedProposals
+      .filter((row) => row.client_label.trim().toLowerCase() === clientLabel.trim().toLowerCase())
+      .map((row) => row.roadmap_title);
+    const next = generateRoadmapName(clientLabel, proposalStartDate, proposalEndDate, pastTitles);
+    setRoadmapTitle((prev) => (prev === next ? prev : next));
+  }, [clientLabel, proposalEndDate, proposalStartDate, savedProposals, titleTouched]);
 
   const startNewProposal = useCallback(() => {
     const init = createScenariosAndPhasesForKind("program", newRoadmapCardKey);
@@ -1340,14 +1420,22 @@ export function RoadmapPlanningView() {
     setOpsReviewMeta(null);
     setOpsReviewModalOpen(false);
     setCustomScoping(emptyCustomScopingState());
+    setOpsFulfillRequestId(null);
+    setOpsFulfillMethod(null);
+    setOpsPackagePath("build");
     setLastSavedFingerprint(proposalSnapshotFingerprint(emptySnapshot));
+    setLastSavedAt(null);
+    setTitleTouched(false);
+    setSetupStartMode("choose");
+    setAddScopeTab("solutions");
     setDetailsModalKey(null);
     setScratchDraft(null);
     setScratchModalFocusCompose(false);
     setBuilderMode("create");
     setBuilderStep("setup");
+    if (urlProposalId) navigate("/roadmap", { replace: true });
     toastNote("Started a new proposal draft.");
-  }, [toastNote]);
+  }, [navigate, toastNote, urlProposalId]);
 
   const handleBuilderModeChange = useCallback(
     (mode: ProposalBuilderMode) => {
@@ -1369,30 +1457,45 @@ export function RoadmapPlanningView() {
       }
       setActiveProposalId(null);
       setBuilderMode(mode);
+      if (urlProposalId) navigate("/roadmap", { replace: true });
     },
-    [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, startNewProposal]
+    [activeProposalId, cards.length, clientBudget, clientLabel, navigate, roadmapTitle, startNewProposal, urlProposalId]
   );
 
   const loadSavedProposalIntoBoard = useCallback(
-    (row: RoadmapProposalRow, opts?: { entryStep?: ProposalBuilderStep; libraryMode?: ProposalBuilderMode }) => {
+    (
+      row: RoadmapProposalRow,
+      opts?: { entryStep?: ProposalBuilderStep; libraryMode?: ProposalBuilderMode; fromUrl?: boolean }
+    ): boolean => {
       const snapshot = parseProposalSnapshot(row);
       if (!snapshot) {
         toastError("This saved proposal could not be read.");
-        return;
+        return false;
       }
+      if (activeProposalId === row.id) return true;
       const hasCurrentWork =
         cards.length > 0 || clientLabel.trim() || roadmapTitle.trim() || clientBudget.trim();
       if (hasCurrentWork && activeProposalId !== row.id) {
         const ok = window.confirm(
           "Open this saved proposal? Your current on-screen proposal will be replaced."
         );
-        if (!ok) return;
+        if (!ok) {
+          if (opts?.fromUrl && urlProposalId === row.id && activeProposalId) {
+            navigate(proposalPath(activeProposalId), { replace: true });
+          } else if (opts?.fromUrl && urlProposalId === row.id) {
+            navigate("/roadmap", { replace: true });
+          }
+          return false;
+        }
       }
       const fallback = createInitialScenariosAndPhases();
       const nextScenarios = snapshot.scenarios.length > 0 ? snapshot.scenarios : fallback.scenarios;
       const nextPhases = snapshot.phases.length > 0 ? snapshot.phases : fallback.phases;
       setClientLabel(snapshot.clientLabel);
-      setRoadmapTitle(snapshot.roadmapTitle);
+      setRoadmapTitle(displayProposalTitle(snapshot.roadmapTitle));
+      setTitleTouched(true);
+      setSetupStartMode("blank");
+      setLastSavedAt(new Date(row.updated_at ?? Date.now()).getTime());
       setHorizon(snapshot.horizon);
       setClientBudget(snapshot.clientBudget);
       setProposalStartDate(snapshot.proposalStartDate);
@@ -1402,6 +1505,9 @@ export function RoadmapPlanningView() {
       setOpsReviewMeta(snapshot.opsReview ?? null);
       setOpsReviewModalOpen(false);
       setCustomScoping(snapshot.customScoping ?? emptyCustomScopingState());
+      setOpsFulfillRequestId(null);
+      setOpsFulfillMethod(null);
+      setOpsPackagePath("build");
       setScenarios(nextScenarios);
       setPhases(nextPhases);
       setCards(snapshot.cards);
@@ -1429,10 +1535,35 @@ export function RoadmapPlanningView() {
       setScratchModalFocusCompose(false);
       setBuilderMode(opts?.libraryMode ?? "saved");
       setBuilderStep(opts?.entryStep ?? "review");
+      if (!opts?.fromUrl && urlProposalId !== row.id) {
+        navigate(proposalPath(row.id));
+      }
       toastSuccess(`Opened "${row.roadmap_title}".`);
+      return true;
     },
-    [activeProposalId, cards.length, clientBudget, clientLabel, roadmapTitle, toastError, toastSuccess]
+    [activeProposalId, cards.length, clientBudget, clientLabel, navigate, roadmapTitle, toastError, toastSuccess, urlProposalId]
   );
+
+  const loadSavedProposalRef = useRef(loadSavedProposalIntoBoard);
+  loadSavedProposalRef.current = loadSavedProposalIntoBoard;
+
+  useEffect(() => {
+    if (!urlProposalId) return;
+    if (savedProposalsLoading) return;
+    const row = savedProposals.find((r) => r.id === urlProposalId);
+    if (!row) {
+      toastError("That proposal could not be found.");
+      return;
+    }
+    const libraryMode: ProposalBuilderMode = isAwaitingOpsReview(row)
+      ? "awaiting_ops"
+      : isClientReadyProposal(row)
+        ? "client_ready"
+        : "saved";
+    const entryStep: ProposalBuilderStep =
+      libraryMode === "awaiting_ops" ? "ops_scoping" : libraryMode === "client_ready" ? "client_ready" : "review";
+    loadSavedProposalRef.current(row, { fromUrl: true, libraryMode, entryStep });
+  }, [savedProposals, savedProposalsLoading, toastError, urlProposalId]);
 
   const copyStructureFromSavedProposal = useCallback(
     (row: RoadmapProposalRow) => {
@@ -1482,10 +1613,11 @@ export function RoadmapPlanningView() {
       if (activeProposalId === row.id) {
         setActiveProposalId(null);
       }
+      if (urlProposalId === row.id) navigate("/roadmap", { replace: true });
       toastSuccess(`Deleted "${row.roadmap_title}".`);
       await loadSavedProposals();
     },
-    [activeProposalId, loadSavedProposals, toastError, toastSuccess]
+    [activeProposalId, loadSavedProposals, navigate, toastError, toastSuccess, urlProposalId]
   );
 
   const setReviewedByOps = useCallback(
@@ -1617,7 +1749,19 @@ export function RoadmapPlanningView() {
 
   const setCardsSynced = useCallback(
     (action: SetStateAction<RoadmapCard[]>) => {
-      setCards((prev) => applyVariablePricing(typeof action === "function" ? action(prev) : action));
+      setCards((prev) => {
+        const raw = typeof action === "function" ? action(prev) : action;
+        const reqId = opsFulfillRef.current;
+        const stamped =
+          reqId
+            ? raw.map((c) => {
+                const isNew = !prev.some((p) => p.key === c.key);
+                if (!isNew || c.customScopingRequestId) return c;
+                return { ...c, customScopingRequestId: reqId };
+              })
+            : raw;
+        return applyVariablePricing(stamped);
+      });
     },
     [applyVariablePricing]
   );
@@ -1644,6 +1788,18 @@ export function RoadmapPlanningView() {
   const reorderPhaseCards = useCallback(
     (scenarioId: string, phaseId: string, orderedKeys: string[]) => {
       setCardsSynced((prev) => reorderPhaseCardsByKeys(prev, scenarioId, phaseId, orderedKeys));
+    },
+    [setCardsSynced]
+  );
+
+  const moveCardToPhase = useCallback(
+    (key: string, toPhaseId: string, orderedKeys: string[]) => {
+      setCardsSynced((prev) => {
+        const card = prev.find((c) => c.key === key);
+        if (!card) return prev;
+        const next = prev.map((c) => (c.key === key ? { ...c, phaseId: toPhaseId } : c));
+        return reorderPhaseCardsByKeys(next, card.scenarioId, toPhaseId, orderedKeys);
+      });
     },
     [setCardsSynced]
   );
@@ -1937,7 +2093,7 @@ export function RoadmapPlanningView() {
     [cards, targetScenarioId, catalogCtx]
   );
 
-  const setupComplete = roadmapNameValid;
+  const setupComplete = Boolean(clientLabel.trim() && roadmapTitle.trim());
   const canAddToTarget = !!targetPhaseId;
 
   const catalogAddedLines = useMemo(() => {
@@ -1956,6 +2112,7 @@ export function RoadmapPlanningView() {
     const toLine = (c: RoadmapCard, addons?: ProposalAddedLine[]): ProposalAddedLine => ({
       key: c.key,
       refId: c.refId,
+      catalogHref: hrefForRoadmapCard(c, catalogCtx?.tiers ?? null),
       headline: c.headline,
       phaseTitle: phaseTitleById.get(c.phaseId) ?? "Phase",
       priceDisplay: effectivePriceStr(c, catalogCtx, computeScratchSellPrice) || "—",
@@ -2253,7 +2410,7 @@ export function RoadmapPlanningView() {
   const pdfExportBase = useCallback(() => {
     if (!catalogCtx) return null;
     return {
-      roadmapTitle,
+      roadmapTitle: displayProposalTitle(roadmapTitle),
       clientLabel,
       horizonMonths: (horizon === "custom" ? "custom" : Number(horizon)) as number | "custom",
       proposalStartDate,
@@ -2367,9 +2524,9 @@ export function RoadmapPlanningView() {
 
   const preBuiltCustomPackages = useMemo(() => {
     if (!data?.packageTypes || !catalogCtx) return [];
-    return filterConfigurablePackages(catalogCtx.packages, data.packageTypes).sort((a, b) =>
-      sortId(a.package_id, b.package_id)
-    );
+    return filterConfigurablePackages(catalogCtx.packages, data.packageTypes)
+      .filter((p) => !isJunkReusePackageName(p.package_name))
+      .sort((a, b) => sortId(a.package_id, b.package_id));
   }, [catalogCtx, data?.packageTypes]);
 
   if (state.status === "error") {
@@ -2441,12 +2598,13 @@ export function RoadmapPlanningView() {
       onAddPackage={(p, dates) => {
         if (!canAddToTarget) return;
         addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
-        if (builderStep === "packages" && packageAddPath) {
+        if (builderStep === "add_scope" && addScopeTab === "packages" && packageAddPath) {
           setPackageSwitchPromptPath(packageAddPath);
         }
       }}
       canAdd={canAddToTarget}
       catalogReloading={catalogReloading}
+      embedded
       onReloadCatalog={async () => {
         await load(true);
       }}
@@ -2538,13 +2696,16 @@ export function RoadmapPlanningView() {
         addedPlaybooks={playbookAddedLines}
         onEditAdded={openAddedEdit}
         onRemoveAdded={removeCard}
+        defaultName={`${clientLabel.trim() || "Client"} Playbook`}
+        embedded
       />
     );
   };
 
   const renderCatalogPanel = (
     panelVariant: "offerings" | "preset_packages" | "configurable_packages" | "variable_tiers",
-    filteredPackages: Package[]
+    filteredPackages: Package[],
+    opts?: { hideScratchTier?: boolean }
   ) => (
     <ProposalCatalogPanel
       panelVariant={panelVariant}
@@ -2566,7 +2727,7 @@ export function RoadmapPlanningView() {
       onAddPackage={(p, dates) => {
         if (!canAddToTarget) return;
         addCard(cardForPackage(p, ctx, targetScenarioId, targetPhaseId, dates));
-        if (builderStep === "packages" && packageAddPath) {
+        if (builderStep === "add_scope" && addScopeTab === "packages" && packageAddPath) {
           setPackageSwitchPromptPath(packageAddPath);
         }
       }}
@@ -2626,6 +2787,7 @@ export function RoadmapPlanningView() {
       canAdd={canAddToTarget}
       catalogReloading={catalogReloading}
       onReloadCatalog={() => void load(true)}
+      embedded
       budget={budgetNumber}
       formatUsd={formatUsd}
       scenarioBudgetBars={scenarios.map((s, i) => ({
@@ -2643,8 +2805,48 @@ export function RoadmapPlanningView() {
       addedPackageRefIds={addedPackageRefIds}
       copyFromScenarios={copyFromScenarios}
       onCopyFromScenario={copyOfferingsFromScenario}
+      hideScratchTier={opts?.hideScratchTier}
     />
   );
+
+  const targetScenarioIdx = scenarios.findIndex((s) => s.id === targetScenarioId);
+  const includedTotal = scenarioRollups[targetScenarioIdx]?.priceSubtotal ?? 0;
+  const shoppingPhases: ShoppingRailPhase[] = sortedPhasesForScenario(phases, targetScenarioId).map(
+    (phase) => {
+      const lines = cards
+        .filter((c) => c.scenarioId === targetScenarioId && c.phaseId === phase.id && !c.addonOfCardKey)
+        .map((c) => ({
+          key: c.key,
+          headline: c.headline,
+          priceUsd: cardPriceUsdForRollup(c, ctx, computeScratchSellPrice),
+        }));
+      let totalUsd = 0;
+      for (const c of cards.filter(
+        (x) => x.scenarioId === targetScenarioId && x.phaseId === phase.id && x.scope === "included"
+      )) {
+        const usd = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
+        if (usd != null) totalUsd += usd;
+      }
+      return { id: phase.id, title: phase.title, totalUsd, lines };
+    }
+  );
+  const savedStatus = formatSavedAgo(lastSavedAt, savingProposal);
+  void saveClock;
+
+  const goAddScopeNext = () => {
+    if (setupStartMode === "choose") setSetupStartMode("blank");
+    if (!clientLabel.trim()) {
+      clientInputRef.current?.focus();
+      toastError("Pick a client first.");
+      return;
+    }
+    if (!roadmapTitle.trim()) {
+      titleInputRef.current?.focus();
+      toastError("Roadmap name is required.");
+      return;
+    }
+    setBuilderStep("add_scope");
+  };
 
   return (
     <div className="roadmap-page">
@@ -2652,22 +2854,37 @@ export function RoadmapPlanningView() {
         <header className="roadmap-hero roadmap-hero--builder">
           <div className="roadmap-hero__main roadmap-hero__main--builder">
             <div className="roadmap-hero__copy">
-              <div className="roadmap-hero__title-lockup">
-                <span className="roadmap-hero__title-icon" aria-hidden>
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M8 4h8l4 4v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
-                      stroke="currentColor"
-                      strokeWidth="1.75"
-                      strokeLinejoin="round"
-                    />
-                    <path d="M16 4v4h4" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
-                    <path d="M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <h1 className="roadmap-hero__title roadmap-hero__title--builder">Proposal Builder</h1>
-              </div>
+              {isEditor ? (
+                <div className="proposal-editor-identity">
+                  <button
+                    type="button"
+                    className="proposal-editor-identity__back"
+                    onClick={() => {
+                      setActiveProposalId(null);
+                      setBuilderMode("saved");
+                    }}
+                  >
+                    All proposals
+                  </button>
+                  <h1 className="roadmap-hero__title roadmap-hero__title--builder">
+                    {clientLabel.trim() || "New proposal"}
+                  </h1>
+                  {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—" ? (
+                    <p className="proposal-editor-identity__dates">
+                      {proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
+                    </p>
+                  ) : null}
+                  <p className="proposal-editor-identity__status">
+                    Draft · {savedStatus}
+                  </p>
+                </div>
+              ) : (
+                <div className="roadmap-hero__title-lockup">
+                  <h1 className="roadmap-hero__title roadmap-hero__title--builder">Proposals</h1>
+                </div>
+              )}
             </div>
+            {isEditor ? null : (
             <div className="roadmap-hero__mode-tabs">
               <ProposalBuilderModeTabs
                 active={
@@ -2678,21 +2895,15 @@ export function RoadmapPlanningView() {
                     : builderMode
                 }
                 onChange={handleBuilderModeChange}
+                onNewProposal={() => handleBuilderModeChange("create")}
                 savedCount={savedProposals.length}
                 awaitingOpsCount={awaitingOpsProposals.length}
                 clientReadyCount={clientReadyProposals.length}
               />
             </div>
+            )}
           </div>
         </header>
-
-        {showSaveBanner ? (
-          <ProposalSaveReminderBanner
-            isDirty={proposalIsDirty}
-            saving={savingProposal}
-            onSave={() => void saveCurrentProposal()}
-          />
-        ) : null}
 
         {(builderMode === "saved" ||
           builderMode === "awaiting_ops" ||
@@ -2718,7 +2929,7 @@ export function RoadmapPlanningView() {
                   libraryMode: builderMode,
                   entryStep:
                     builderMode === "awaiting_ops"
-                      ? "client_service"
+                      ? "ops_scoping"
                       : builderMode === "client_ready"
                         ? "client_ready"
                         : "review",
@@ -2756,12 +2967,52 @@ export function RoadmapPlanningView() {
           <div className="proposal-builder__main">
             {builderStep === "setup" ? (
               <>
-                <section className="roadmap-panel roadmap-panel--meta proposal-step-panel">
+                <section className="proposal-step-panel proposal-setup">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">Step 1</p>
                     <h2 className="proposal-step-panel__title">Setup</h2>
+                    <p className="proposal-step-panel__lead">
+                      Start from a past proposal or a blank draft, then set the client and dates.
+                    </p>
                   </header>
-                  <div className="roadmap-meta-grid">
+                  {setupStartMode === "choose" ? (
+                    <div className="proposal-setup-start" role="group" aria-label="How to start">
+                      <button
+                        type="button"
+                        className="proposal-setup-start__choice"
+                        onClick={() => setSetupStartMode("blank")}
+                      >
+                        <strong>Start blank</strong>
+                        <span>New client, new scope.</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="proposal-setup-start__choice"
+                        onClick={() => setSetupStartMode("copy")}
+                      >
+                        <strong>Copy a past proposal</strong>
+                        <span>Bring over scenarios, phases, and line items.</span>
+                      </button>
+                    </div>
+                  ) : (
+                  <div className="proposal-setup__groups">
+                  {setupStartMode === "copy" ? (
+                    <ProposalCopyFromPanel
+                      proposals={savedProposals}
+                      loading={savedProposalsLoading}
+                      activeProposalId={activeProposalId}
+                      onCopy={copyStructureFromSavedProposal}
+                    />
+                  ) : null}
+                  <fieldset className="proposal-setup__group">
+                    <legend className="proposal-setup__group-title">Identity</legend>
+                    <div className="roadmap-meta-grid">
+                    <ProposalClientPicker
+                      id="proposal-client"
+                      value={clientLabel}
+                      options={clientOptions}
+                      onChange={setClientLabel}
+                      inputRef={clientInputRef}
+                    />
                     <div className="roadmap-field">
                       <div className="roadmap-field__cap-row">
                         <label className="roadmap-field__cap" htmlFor="proposal-roadmap-name">
@@ -2787,33 +3038,25 @@ export function RoadmapPlanningView() {
                       </div>
                       <input
                         id="proposal-roadmap-name"
+                        ref={titleInputRef}
                         className="roadmap-input"
                         value={roadmapTitle}
-                        onChange={(e) => setRoadmapTitle(e.target.value)}
+                        onChange={(e) => {
+                          setTitleTouched(true);
+                          setRoadmapTitle(e.target.value);
+                        }}
                         placeholder={ROADMAP_NAME_FORMAT_EXAMPLE}
                         aria-describedby="proposal-roadmap-name-hint"
                       />
                       <p id="proposal-roadmap-name-hint" className="roadmap-muted roadmap-field__note">
-                        {ROADMAP_NAME_FORMAT_HINT}
+                        Generated from the client and dates. Override if you need a different project name.
                       </p>
-                      {roadmapTitle.trim() && !roadmapNameValid ? (
+                      {titleTouched && roadmapTitle.trim() && !roadmapNameValid ? (
                         <span className="roadmap-budget-warn" role="status">
                           Use the standard format, e.g. {ROADMAP_NAME_FORMAT_EXAMPLE}.
                         </span>
                       ) : null}
                     </div>
-                    <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Client name</span>
-                      <input
-                        className="roadmap-input"
-                        value={clientLabel}
-                        onChange={(e) => setClientLabel(e.target.value)}
-                        placeholder="Optional label for your notes"
-                      />
-                      <p className="roadmap-muted roadmap-field__note">
-                        Reference the company by its exact full name as it appears in Productive.
-                      </p>
-                    </label>
                     <label className="roadmap-field">
                       <span className="roadmap-field__cap">Client budget (USD)</span>
                       <input
@@ -2830,28 +3073,19 @@ export function RoadmapPlanningView() {
                         </span>
                       ) : null}
                     </label>
+                    </div>
+                  </fieldset>
+                  <fieldset className="proposal-setup__group">
+                    <legend className="proposal-setup__group-title">Schedule</legend>
+                    <div className="roadmap-meta-grid">
                     <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Proposal start date</span>
+                      <span className="roadmap-field__cap">Start date</span>
                       <input
                         type="date"
                         className="roadmap-input"
                         value={proposalStartDate}
                         onChange={(e) => setProposalStartDate(normalizeIsoDateInput(e.target.value))}
                       />
-                    </label>
-                    <label className="roadmap-field">
-                      <span className="roadmap-field__cap">Proposal end date</span>
-                      <input
-                        type="date"
-                        className="roadmap-input"
-                        value={proposalEndDate}
-                        onChange={(e) => setProposalEndDate(normalizeIsoDateInput(e.target.value))}
-                      />
-                      {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—" ? (
-                        <span className="roadmap-budget-confirm">
-                          Proposal schedule: {proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
-                        </span>
-                      ) : null}
                     </label>
                     <label className="roadmap-field">
                       <span className="roadmap-field__cap">{PROPOSAL_DURATION_LABEL}</span>
@@ -2864,17 +3098,29 @@ export function RoadmapPlanningView() {
                         <option value="4">4 months</option>
                         <option value="6">6 months</option>
                         <option value="12">12 months</option>
-                        <option value="custom">Custom (describe in export)</option>
+                        <option value="custom">Custom</option>
                       </select>
                     </label>
+                    <div className="roadmap-field">
+                      <span className="roadmap-field__cap">End date</span>
+                      {horizon === "custom" ? (
+                        <input
+                          type="date"
+                          className="roadmap-input"
+                          value={proposalEndDate}
+                          onChange={(e) => setProposalEndDate(normalizeIsoDateInput(e.target.value))}
+                        />
+                      ) : (
+                        <p className="proposal-setup__end-readout">
+                          {formatProposalDisplayDate(proposalEndDate) || "Set a start date"}
+                        </p>
+                      )}
+                    </div>
+                    </div>
+                  </fieldset>
                   </div>
+                  )}
                 </section>
-                <ProposalCopyFromPanel
-                  proposals={savedProposals}
-                  loading={savedProposalsLoading}
-                  activeProposalId={activeProposalId}
-                  onCopy={copyStructureFromSavedProposal}
-                />
                 <ProposalScenariosPanel
                   proposalKind={proposalKind}
                   onProposalKindChange={applyProposalKind}
@@ -2897,84 +3143,80 @@ export function RoadmapPlanningView() {
                   step="setup"
                   onStepChange={setBuilderStep}
                   includeOpsPath={includeOpsPath}
-                  nextDisabled={!setupComplete}
-                  nextLabel={
-                    setupComplete ? "Continue to add packages" : "Add a roadmap name to continue"
-                  }
-                  {...proposalStepSaveProps}
+                  nextLabel="Next: Add scope"
+                  onNext={goAddScopeNext}
                 />
               </>
             ) : null}
 
-            {builderStep === "packages" ? (
-              <>
-                {packageAddPath == null ? (
-                  <ProposalPackagesChoice onChoose={setPackageAddPath} />
-                ) : (
-                  <>
-                    <ProposalPackagesPathBar
-                      path={packageAddPath}
-                      onSelectPath={(next) => {
-                        setPackageAddPath(next);
-                        setPackageSwitchPromptPath(null);
-                      }}
-                      onBackToOptions={() => {
-                        setPackageAddPath(null);
-                        setPackageSwitchPromptPath(null);
-                      }}
-                    />
-                    {packageSwitchPromptPath === packageAddPath ? (
-                      <ProposalPackagesSwitchPrompt
-                        fromPath={packageAddPath}
-                        onSwitch={() => {
-                          const next = packageAddPath === "build" ? "prebuilt" : "build";
-                          setPackageAddPath(next);
-                          setPackageSwitchPromptPath(null);
-                        }}
-                        onDismiss={() => setPackageSwitchPromptPath(null)}
-                      />
-                    ) : null}
-                    {packageAddPath === "build"
-                      ? renderConfigurablePackagesPanel()
-                      : packageAddPath === "playbook"
-                        ? renderPlaybookPackagePanel()
-                        : renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
-                  </>
-                )}
-                <ProposalStepNav
-                  step="packages"
-                  onStepChange={setBuilderStep}
-                  includeOpsPath={includeOpsPath}
-                  nextLabel="Continue to add solutions"
-                  {...proposalStepSaveProps}
+            {builderStep === "add_scope" ? (
+              <div className="proposal-add-scope">
+                <div className="proposal-add-scope__shop">
+                  <section className="proposal-step-panel proposal-add-scope__panel">
+                    <header className="proposal-step-panel__head proposal-add-scope__head">
+                      <h2 className="proposal-step-panel__title">Add scope</h2>
+                      <ProposalAddScopeTabs active={addScopeTab} onChange={setAddScopeTab} />
+                    </header>
+                    {addScopeTab === "solutions"
+                      ? renderCatalogPanel("offerings", [])
+                      : addScopeTab === "past" ? (
+                        <ProposalCopyFromPanel
+                          proposals={savedProposals}
+                          loading={savedProposalsLoading}
+                          activeProposalId={activeProposalId}
+                          onCopy={copyStructureFromSavedProposal}
+                        />
+                      ) : addScopeTab === "custom" ? (
+                        <ProposalCustomScopingPanel
+                          value={customScoping}
+                          onChange={setCustomScoping}
+                          embedded
+                        />
+                      ) : (
+                        <>
+                          <ProposalPackagesPathBar
+                            path={packageAddPath ?? "prebuilt"}
+                            onSelectPath={(next) => {
+                              setPackageAddPath(next);
+                              setPackageSwitchPromptPath(null);
+                            }}
+                          />
+                          {packageSwitchPromptPath === packageAddPath ? (
+                            <ProposalPackagesSwitchPrompt
+                              fromPath={packageAddPath ?? "prebuilt"}
+                              onSwitch={() => {
+                                const next = packageAddPath === "build" ? "prebuilt" : "build";
+                                setPackageAddPath(next);
+                                setPackageSwitchPromptPath(null);
+                              }}
+                              onDismiss={() => setPackageSwitchPromptPath(null)}
+                            />
+                          ) : null}
+                          {(packageAddPath ?? "prebuilt") === "build"
+                            ? renderConfigurablePackagesPanel()
+                            : (packageAddPath ?? "prebuilt") === "playbook"
+                              ? renderPlaybookPackagePanel()
+                              : renderCatalogPanel("preset_packages", preBuiltCustomPackages)}
+                        </>
+                      )}
+                  </section>
+                </div>
+                <ProposalShoppingRail
+                  clientLabel={clientLabel}
+                  dateLabel={proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
+                  includedTotal={includedTotal}
+                  budget={budgetNumber}
+                  formatUsd={formatUsd}
+                  phases={shoppingPhases}
+                  scenarios={scenarios}
+                  allPhases={phases}
+                  targetScenarioId={targetScenarioId}
+                  targetPhaseId={targetPhaseId}
+                  onTargetScenarioChange={setTargetScenarioId}
+                  onTargetPhaseChange={setTargetPhaseId}
+                  onNext={() => setBuilderStep("board")}
                 />
-              </>
-            ) : null}
-
-            {builderStep === "catalog" ? (
-              <>
-                {renderCatalogPanel("offerings", [])}
-                <ProposalStepNav
-                  step="catalog"
-                  onStepChange={setBuilderStep}
-                  includeOpsPath={includeOpsPath}
-                  nextLabel="Custom Scoping Request"
-                  {...proposalStepSaveProps}
-                />
-              </>
-            ) : null}
-
-            {builderStep === "custom_scoping" ? (
-              <>
-                <ProposalCustomScopingPanel value={customScoping} onChange={setCustomScoping} />
-                <ProposalStepNav
-                  step="custom_scoping"
-                  onStepChange={setBuilderStep}
-                  includeOpsPath={includeOpsPath}
-                  nextLabel="Organize Proposal"
-                  {...proposalStepSaveProps}
-                />
-              </>
+              </div>
             ) : null}
 
             {builderStep === "board" ? (
@@ -2993,6 +3235,9 @@ export function RoadmapPlanningView() {
                   onPatchCard={patchCard}
                   onRemoveCard={removeCard}
                   onReorderPhaseCards={reorderPhaseCards}
+                  onMoveCard={moveCardToPhase}
+                  proposalStartDate={proposalStartDate}
+                  proposalEndDate={proposalEndDate}
                   onOpenDetails={openDetailsModal}
                   onEditStructure={() => setBuilderStep("setup")}
                   onClearScenarioItems={clearScenarioItems}
@@ -3009,37 +3254,30 @@ export function RoadmapPlanningView() {
                 step="board"
                 onStepChange={setBuilderStep}
                 includeOpsPath={includeOpsPath}
-                nextLabel="Preview Proposal"
-                {...proposalStepSaveProps}
+                nextLabel="Next: Review"
               />
             ) : null}
 
             {builderStep === "review" ? (
               <>
-                <section className="roadmap-panel proposal-review-header">
+                <section className="proposal-step-panel proposal-review-header">
                   <header className="proposal-step-panel__head">
-                    <p className="proposal-step-panel__eyebrow">
-                      Step {proposalStepDef("review").number}
-                    </p>
                     <h2 className="proposal-step-panel__title">
                       {proposalStepDef("review").label}
                     </h2>
                     <p className="proposal-step-panel__lead">
-                      {roadmapTitle.trim() || "Untitled roadmap"}
+                      {displayProposalTitle(roadmapTitle)}
                       {clientLabel.trim() ? ` · ${clientLabel.trim()}` : ""}
                       {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—"
                         ? ` · ${proposalDateRangeLabel(proposalStartDate, proposalEndDate)}`
-                        : ""}{" "}
-                      — {cards.length} line item
-                      {cards.length === 1 ? "" : "s"} across {scenarios.length} scenario
-                      {scenarios.length === 1 ? "" : "s"}.
+                        : ""}
                     </p>
                   </header>
                 </section>
 
                 <ProposalCustomScopingSummary state={customScoping} />
 
-        <section className="roadmap-panel roadmap-panel--export">
+        <section className="proposal-step-panel proposal-review-export">
           <div className="roadmap-export__head">
             <h2 className="roadmap-export__title">Export Preview</h2>
             <div className="roadmap-export__head-actions">
@@ -3067,9 +3305,136 @@ export function RoadmapPlanningView() {
                   step="review"
                   onStepChange={setBuilderStep}
                   includeOpsPath={includeOpsPath}
-                  nextLabel={includeOpsPath ? "Ops Review" : "Submit for Ops Review"}
+                  nextLabel={includeOpsPath ? "Next: Custom Scoping" : "Submit for Ops Review"}
                   onNext={includeOpsPath ? undefined : () => setOpsReviewModalOpen(true)}
-                  {...proposalStepSaveProps}
+                />
+              </>
+            ) : null}
+
+            {includeOpsPath && builderStep === "ops_scoping" ? (
+              <>
+                <ProposalOpsCustomScopingPanel
+                  state={customScoping}
+                  cards={cards}
+                  ctx={catalogCtx}
+                  computeScratchSellPrice={computeScratchSellPrice}
+                  budget={budgetNumber}
+                  usedUsd={includedTotal}
+                  scenarioTitle={targetScenarioTitle}
+                  formatUsd={formatUsd}
+                  activeRequestId={opsFulfillRequestId}
+                  activeMethod={opsFulfillMethod}
+                  onSelectMethod={(requestId, method) => {
+                    setOpsFulfillRequestId(method ? requestId : null);
+                    setOpsFulfillMethod(method);
+                    if (method === "package") setOpsPackagePath("build");
+                  }}
+                  onSkip={(requestId) => {
+                    setCustomScoping((prev) => ({
+                      ...prev,
+                      requests: prev.requests.map((r) =>
+                        r.id === requestId ? { ...r, skipped: true } : r
+                      ),
+                    }));
+                    if (opsFulfillRequestId === requestId) {
+                      setOpsFulfillRequestId(null);
+                      setOpsFulfillMethod(null);
+                    }
+                  }}
+                  onUnskip={(requestId) => {
+                    setCustomScoping((prev) => ({
+                      ...prev,
+                      requests: prev.requests.map((r) =>
+                        r.id === requestId ? { ...r, skipped: false } : r
+                      ),
+                    }));
+                  }}
+                  onRemoveLinked={removeCard}
+                  targetBar={
+                    <ProposalCatalogTargetBar
+                      scenarios={scenarios}
+                      phases={phases}
+                      targetScenarioId={targetScenarioId}
+                      targetPhaseId={targetPhaseId}
+                      onTargetScenarioChange={setTargetScenarioId}
+                      onTargetPhaseChange={setTargetPhaseId}
+                      targetScenarioTitle={targetScenarioTitle}
+                      targetPhaseTitle={targetPhaseTitle}
+                      canAdd={canAddToTarget}
+                    />
+                  }
+                  workbench={
+                    opsFulfillMethod === "existing" ? (
+                      renderCatalogPanel("offerings", [], { hideScratchTier: true })
+                    ) : opsFulfillMethod === "package" ? (
+                      <>
+                        <ProposalPackagesPathBar
+                          path={opsPackagePath}
+                          onSelectPath={setOpsPackagePath}
+                          includePlaybook={false}
+                        />
+                        {opsPackagePath === "build"
+                          ? renderConfigurablePackagesPanel()
+                          : renderCatalogPanel("preset_packages", preBuiltCustomPackages, {
+                              hideScratchTier: true,
+                            })}
+                      </>
+                    ) : opsFulfillMethod === "custom" ? (
+                      customScoping.requests
+                        .filter((request) => request.id === opsFulfillRequestId)
+                        .map((request) => (
+                          <ProposalOpsCustomSolutionForm
+                            key={request.id}
+                            request={request}
+                            canAdd={canAddToTarget}
+                            defaultBlendRate={DEFAULT_SCRATCH_BLEND}
+                            budget={budgetNumber}
+                            usedUsd={includedTotal}
+                            scenarioTitle={targetScenarioTitle}
+                            formatUsd={formatUsd}
+                            onAdd={(input) => {
+                              if (!canAddToTarget) return;
+                              const extras = input.extras.map((ex) => ({
+                                id: ex.id,
+                                name: ex.name,
+                                hours: ex.hours,
+                              }));
+                              const base = cardForScratchTier(targetScenarioId, targetPhaseId, ctx, {
+                                startDate: proposalStartDate,
+                                endDate: proposalEndDate,
+                              });
+                              const next: RoadmapCard = {
+                                ...base,
+                                headline: input.headline,
+                                description: input.description,
+                                hours: formatProposalHoursValue(input.hours),
+                                hoursOverride: null,
+                                scratchBlendRateUsd: input.blendRate,
+                                scratchRiskMult: DEFAULT_SCRATCH_MULT,
+                                scratchStrategicMult: DEFAULT_SCRATCH_MULT,
+                                scratchAttachedTaskIds: [],
+                                scratchAttachedTaskGroupIds: [],
+                                taskLayout: { extras },
+                                priceOverride: input.priceOverrideUsd
+                                  ? formatProposalUsdValue(input.priceOverrideUsd)
+                                  : null,
+                                customScopingRequestId: request.id,
+                              };
+                              next.price = input.priceOverrideUsd
+                                ? formatProposalUsdValue(input.priceOverrideUsd)
+                                : computeScratchSellPrice(next, catalogCtx);
+                              addCard(next);
+                            }}
+                          />
+                        ))
+                    ) : null
+                  }
+                />
+                <ProposalStepNav
+                  step="ops_scoping"
+                  onStepChange={setBuilderStep}
+                  includeOpsPath={includeOpsPath}
+                  nextLabel="Next: Ops Review"
                 />
               </>
             ) : null}
@@ -3100,8 +3465,7 @@ export function RoadmapPlanningView() {
                   step="client_service"
                   onStepChange={setBuilderStep}
                   includeOpsPath={includeOpsPath}
-                  nextLabel="Client Ready Proposal"
-                  {...proposalStepSaveProps}
+                  nextLabel="Next: Client Ready"
                 />
               </>
             ) : null}
@@ -3109,7 +3473,7 @@ export function RoadmapPlanningView() {
             {includeOpsPath && builderStep === "client_ready" ? (
               <>
                 <ProposalClientReadyPanel
-                  roadmapTitle={roadmapTitle}
+                  roadmapTitle={displayProposalTitle(roadmapTitle)}
                   clientLabel={clientLabel}
                   dateRangeLabel={proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
                   scenarios={scenarios}
@@ -3151,7 +3515,6 @@ export function RoadmapPlanningView() {
                   includeOpsPath={includeOpsPath}
                   nextLabel="Reviewed by Ops"
                   onNext={() => void markReviewedByOps()}
-                  {...proposalStepSaveProps}
                 />
               </>
             ) : null}

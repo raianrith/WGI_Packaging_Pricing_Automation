@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { EntityLink } from "../EntityLink";
 
 export type CatalogLineKind = "tier" | "package";
 
@@ -12,6 +13,7 @@ type Props = {
   justAdded: boolean;
   canAdd: boolean;
   onAdd: () => void;
+  href?: string | null;
 };
 
 function kindLabel(kind: CatalogLineKind): string {
@@ -33,6 +35,7 @@ export function ProposalCatalogLineRow({
   justAdded,
   canAdd,
   onAdd,
+  href,
 }: Props) {
   const addLabel = justAdded ? "Added" : onProposal ? "Add again" : "Add";
 
@@ -45,7 +48,13 @@ export function ProposalCatalogLineRow({
       </span>
 
       <div className="proposal-catalog-line__copy">
-        <strong className="proposal-catalog-line__title">{title}</strong>
+        {href ? (
+          <EntityLink to={href} className="proposal-catalog-line__title">
+            {title}
+          </EntityLink>
+        ) : (
+          <strong className="proposal-catalog-line__title">{title}</strong>
+        )}
         {detail.trim() ? <span className="proposal-catalog-line__detail">{detail}</span> : null}
       </div>
 

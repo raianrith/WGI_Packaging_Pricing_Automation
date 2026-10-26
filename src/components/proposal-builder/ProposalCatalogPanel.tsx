@@ -25,6 +25,7 @@ import {
   parseFlexBudgetPriceInput,
 } from "../../lib/proposalFlexBudget";
 import { formatProposalUsdValue } from "../../lib/proposalCardTasks";
+import { packageOverviewPath, solutionOverviewPath } from "../../lib/entityLinks";
 import { ProposalAddOnsModal } from "./ProposalAddOnsModal";
 import { ProposalOfferingDatesModal } from "./ProposalOfferingDatesModal";
 import { ProposalAddedItemsPanel, type ProposalAddedLine } from "./ProposalAddedItemsPanel";
@@ -44,7 +45,8 @@ import {
 } from "../CatalogDirectoryBrowser";
 import type { CatalogDirectorySortCol } from "../CatalogDirectoryTable";
 import type { PlaybookFilterValue } from "../CatalogPlaybookBrowser";
-import { proposalStepDef, type ProposalBuilderStep } from "./ProposalBuilderSteps";
+import { proposalStepDef } from "./ProposalBuilderSteps";
+import { formatPackageReuseDate } from "../../lib/proposalReusePackages";
 
 /** Sentinel kept for any external imports; browse drill-down removed from Add Solutions. */
 export const BROWSE_SHOW_ALL = "__show_all__";
@@ -105,6 +107,10 @@ type Props = {
   addedPackageRefIds: Set<string>;
   copyFromScenarios?: ScenarioCopySource[];
   onCopyFromScenario?: (sourceScenarioId: string) => void;
+  /** Hide step header, adding-to box, additions, and budget — shopping rail covers them. */
+  embedded?: boolean;
+  /** Hide the scratch / custom one-off footer (ops existing-solution picker). */
+  hideScratchTier?: boolean;
 };
 
 function parsePaidAdsSpendInput(raw: string): number {
@@ -149,6 +155,8 @@ export function ProposalCatalogPanel({
   addedPackageRefIds,
   copyFromScenarios,
   onCopyFromScenario,
+  embedded = false,
+  hideScratchTier = false,
 }: Props) {
   const searchId = useId();
   const travelHoursFieldId = useId();
@@ -379,17 +387,13 @@ export function ProposalCatalogPanel({
   };
 
   const stepMeta = useMemo(() => {
-    const stepId: ProposalBuilderStep =
-      panelVariant === "preset_packages" || panelVariant === "configurable_packages"
-        ? "packages"
-        : "catalog";
-    const def = proposalStepDef(stepId);
+    const def = proposalStepDef("add_scope");
     if (panelVariant === "preset_packages") {
       return {
         ...def,
-        numberLabel: `Step ${def.number} · Pre-built`,
-        label: "Copy a Previously Created Package",
-        lead: "Copy a packages that has been used before.",
+        numberLabel: `Step ${def.number} · Packages`,
+        label: "Copy a previously created package",
+        lead: "Copy a package that has been used before.",
       };
     }
     if (panelVariant === "configurable_packages") {
@@ -427,7 +431,7 @@ export function ProposalCatalogPanel({
     panelVariant === "configurable_packages"
       ? "Configurable packages from Package Builder templates"
       : panelVariant === "preset_packages"
-        ? "Copy a packages that has been used before"
+        ? "Copy a package that has been used before"
         : "Admin-defined custom bundles";
 
   const linkModalPreviewUsd =
@@ -626,13 +630,16 @@ export function ProposalCatalogPanel({
   };
 
   return (
-    <div className="proposal-step-panel proposal-catalog">
+    <div className={`proposal-step-panel proposal-catalog${embedded ? " proposal-catalog--embedded" : ""}`}>
+      {embedded ? null : (
       <header className="proposal-step-panel__head">
         <p className="proposal-step-panel__eyebrow">{stepMeta.numberLabel ?? `Step ${stepMeta.number}`}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">{stepMeta.lead}</p>
       </header>
+      )}
 
+      {embedded ? null : (
       <section
         className={`proposal-catalog-target${canAdd ? " proposal-catalog-target--ready" : " proposal-catalog-target--blocked"}`}
         aria-label="Choose where new items are added"
@@ -697,7 +704,9 @@ export function ProposalCatalogPanel({
         </div>
         </div>
       </section>
+      )}
 
+      {embedded ? null : (
       <div className="proposal-catalog-dashboard">
         <ProposalScenarioBudgetBars budget={budget} scenarios={scenarioBudgetBars} formatUsd={formatUsd} />
         <ProposalAddedItemsPanel
@@ -713,6 +722,7 @@ export function ProposalCatalogPanel({
           onAddAddOns={onAddAddOns}
         />
       </div>
+      )}
 
       {onReloadCatalog ? (
         <div className="proposal-catalog-source">
@@ -776,13 +786,16 @@ export function ProposalCatalogPanel({
                     key={p.package_id}
                     kind="package"
                     title={p.package_name}
-                    detail="Linked solution tiers bundle"
+                    detail={[p.package_owner?.trim(), formatPackageReuseDate(p.package_create_date)]
+                      .filter(Boolean)
+                      .join(" · ")}
                     hours={row.hours}
                     price={row.price}
                     onProposal={onProposal}
                     justAdded={justAdded}
                     canAdd={canAdd}
                     onAdd={() => handleAddPackage(p.package_id)}
+                    href={packageOverviewPath(p.package_id)}
                   />
                 );
               })}
@@ -829,6 +842,7 @@ export function ProposalCatalogPanel({
                   justAdded={justAdded}
                   canAdd={canAdd}
                   onAdd={() => handleAddVariableTierRow(r.tierId)}
+                  href={solutionOverviewPath(r.solutionId, r.tierId)}
                 />
               );
             })}
@@ -862,8 +876,11 @@ export function ProposalCatalogPanel({
               onOpenPresetPackage={() => {}}
               onOpenConfigurablePackage={() => {}}
               hideTypeFilter
+              hideTaxonomyFilters
               hidePackageStats
-              searchPlaceholder="Solution, tier, tags…"
+              showTypeColumn={false}
+              showTaxonomyColumns={false}
+              searchPlaceholder="Solution, tier…"
               footerHint="Expand a solution for tiers · Click Add on a tier to place it on the proposal"
               tierInteraction="add"
               onAddTier={(_solutionId, tierId) => handleAddTier(tierId)}
@@ -873,6 +890,7 @@ export function ProposalCatalogPanel({
               }
               canAdd={canAdd}
             />
+            {hideScratchTier ? null : (
             <footer className="proposal-catalog-tiers__footer">
               <button
                 type="button"
@@ -886,6 +904,7 @@ export function ProposalCatalogPanel({
                 + Custom one-off tier
               </button>
             </footer>
+            )}
           </div>
 
           <div className="proposal-catalog-extras">
@@ -929,6 +948,7 @@ export function ProposalCatalogPanel({
                     justAdded={justAdded}
                     canAdd={canAdd}
                     onAdd={() => handleAddVariableTierRow(r.tierId)}
+                    href={solutionOverviewPath(r.solutionId, r.tierId)}
                   />
                 );
               })}

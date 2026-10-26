@@ -1,15 +1,19 @@
 import type { CatalogTierTableRow } from "../components/CatalogTierTable";
+import { formatCatalogHours, formatCatalogUsd } from "./formatMetrics";
 import { computePackageWorkspaceFormMetrics } from "./packageWorkspaceMetrics";
 import {
   buildCatalogTierTableRows,
   type VaultCatalogData,
 } from "./buildCatalogTierTableRows";
 import { slotsForPackageType } from "./packageBuilderSlots";
+import { clientFacingLabelsForQuantity, parseTierOverrides } from "./packageTierOverrides";
+import { normalizeTierQuantity } from "./packageTierQuantities";
 import type {
   ImplementerHourGroupRow,
   Package,
   PackageBuilderPackageType,
   PackageBuilderSlotTemplate,
+  PackageSolutionTier,
 } from "../types";
 import type { TierPricingMathConfig } from "./tierPricingMath";
 
@@ -74,15 +78,15 @@ export function catalogSolutionKind(
 } {
   const stored = parseSolutionType(storedType);
   if (stored === "solution_module") {
-    return { type: "solution_module", typeLabel: "Solution Modules" };
+    return { type: "solution_module", typeLabel: "Module" };
   }
   if (stored === "configured_solution") {
-    return { type: "configured_solution", typeLabel: "Configured Solutions" };
+    return { type: "configured_solution", typeLabel: "Solution" };
   }
   if (isSolutionModuleName(name)) {
-    return { type: "solution_module", typeLabel: "Solution Modules" };
+    return { type: "solution_module", typeLabel: "Module" };
   }
-  return { type: "configured_solution", typeLabel: "Configured Solutions" };
+  return { type: "configured_solution", typeLabel: "Solution" };
 }
 
 export function isCatalogSolutionType(
@@ -90,6 +94,13 @@ export function isCatalogSolutionType(
 ): type is "solution_module" | "configured_solution" {
   return type === "solution_module" || type === "configured_solution";
 }
+
+export type CatalogInspectorTierLine = {
+  key: string;
+  name: string;
+  priceDisplay: string;
+  hoursDisplay: string;
+};
 
 export type CatalogDirectoryRow = {
   id: string;
@@ -107,10 +118,15 @@ export type CatalogDirectoryRow = {
   taxableSort: number;
   taxableLabel: string;
   tagsRaw: string;
+  ownerLabel: string | null;
+  creatorEmail: string | null;
+  peopleCount: number;
   solutionId?: string;
   packageId?: string;
   packageBuilderTypeId?: string;
   tierRows: CatalogTierTableRow[];
+  /** Package lines including quantity (same vault tier can appear more than once). */
+  tierLines?: CatalogInspectorTierLine[];
 };
 
 function sortId(a: string, b: string): number {
@@ -142,6 +158,38 @@ function tierSizeRank(name: string): number | null {
   return null;
 }
 
+function inspectorLinesFromTierRows(tierRows: CatalogTierTableRow[]): CatalogInspectorTierLine[] {
+  return tierRows.map((row) => ({
+    key: row.tierId,
+    name: row.tierName,
+    priceDisplay: row.priceDisplay,
+    hoursDisplay: row.hoursDisplay,
+  }));
+}
+
+function inspectorLinesFromPackageLinks(
+  pkgId: string,
+  links: readonly PackageSolutionTier[],
+  tierRowById: Map<string, CatalogTierTableRow>
+): CatalogInspectorTierLine[] {
+  const lines: CatalogInspectorTierLine[] = [];
+  for (const link of links) {
+    const vault = tierRowById.get(link.solution_tier_id);
+    const qty = normalizeTierQuantity(link.quantity);
+    const fallback = vault?.tierName?.trim() || link.solution_tier_id;
+    const labels = clientFacingLabelsForQuantity(parseTierOverrides(link.tier_overrides), qty, fallback);
+    for (let i = 0; i < qty; i++) {
+      lines.push({
+        key: `${pkgId}:${link.solution_tier_id}:${i}`,
+        name: labels[i] ?? fallback,
+        priceDisplay: vault?.priceDisplay ?? "—",
+        hoursDisplay: vault?.hoursDisplay ?? "—",
+      });
+    }
+  }
+  return lines;
+}
+
 function compareTierName(a: CatalogTierTableRow, b: CatalogTierTableRow): number {
   const an = a.tierName || "";
   const bn = b.tierName || "";
@@ -155,18 +203,32 @@ function compareTierName(a: CatalogTierTableRow, b: CatalogTierTableRow): number
   return an.localeCompare(bn, undefined, { sensitivity: "base" }) || sortId(a.tierId, b.tierId);
 }
 
-function formatKpiNumber(n: number): string {
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+function formatUsd(n: number | null | undefined): string {
+  return formatCatalogUsd(n);
 }
 
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—";
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(Number(n));
+function ownerSummary(tierRows: CatalogTierTableRow[], packageOwner?: string | null): string | null {
+  const fromPackage = packageOwner?.trim() || "";
+  if (fromPackage) return fromPackage;
+  const names = [
+    ...new Set(tierRows.map((r) => r.ownerLabel?.trim()).filter((v): v is string => Boolean(v))),
+  ];
+  if (names.length === 0) return null;
+  return names.join(", ");
+}
+
+function peopleCountForTiers(
+  tierIds: string[],
+  tasks: { solution_tier_id: string; task_implementer: string | null }[]
+): number {
+  const idSet = new Set(tierIds);
+  const people = new Set<string>();
+  for (const task of tasks) {
+    if (!idSet.has(task.solution_tier_id)) continue;
+    const name = task.task_implementer?.trim();
+    if (name) people.add(name.toLowerCase());
+  }
+  return people.size;
 }
 
 function sumTierRollup(tierRows: CatalogTierTableRow[]): {
@@ -207,10 +269,22 @@ function sumTierRollup(tierRows: CatalogTierTableRow[]): {
     priceNum,
     priceDisplay: priceNum != null ? formatUsd(priceNum) : "—",
     hoursNum,
-    hoursDisplay: hoursNum != null ? formatKpiNumber(hoursNum) : "—",
+    hoursDisplay: hoursNum != null ? formatCatalogHours(hoursNum) : "—",
     taxableSort,
     taxableLabel,
   };
+}
+
+function averageTierPrice(tierRows: CatalogTierTableRow[]): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const row of tierRows) {
+    if (row.priceNum == null || !Number.isFinite(row.priceNum)) continue;
+    sum += row.priceNum;
+    count += 1;
+  }
+  if (count === 0) return null;
+  return Math.round(sum / count);
 }
 
 export function isConfigurablePackage(
@@ -243,13 +317,17 @@ export function buildSolutionDirectoryRowsFromTier(
         type: kind.type,
         typeLabel: kind.typeLabel,
         name,
-        meta: tierCount === 0 ? "No solutions" : tierCount === 1 ? "1 solution" : `${tierCount} solutions`,
+        meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
         tagsRaw: "",
+        ownerLabel: null,
+        creatorEmail: null,
+        peopleCount: 0,
         solutionId,
         tierRows: sorted,
+        tierLines: inspectorLinesFromTierRows(sorted),
         ...rollup,
       };
     });
@@ -294,6 +372,7 @@ export function buildCatalogDirectoryRows(
     .map((solution) => {
       const tierRows = [...(tiersBySolutionId.get(solution.solution_id) ?? [])].sort(compareTierName);
       const rollup = sumTierRollup(tierRows);
+      const avgPrice = averageTierPrice(tierRows);
       const tierCount = tierRows.length;
       const name = solution.solution_name?.trim() || solution.solution_id;
       const kind = catalogSolutionKind(name, solution.solution_type);
@@ -302,14 +381,23 @@ export function buildCatalogDirectoryRows(
         type: kind.type,
         typeLabel: kind.typeLabel,
         name,
-        meta: tierCount === 0 ? "No solutions" : tierCount === 1 ? "1 solution" : `${tierCount} solutions`,
+        meta: tierCount === 0 ? "No tiers" : tierCount === 1 ? "1 tier" : `${tierCount} tiers`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
         tagsRaw: "",
+        ownerLabel: ownerSummary(tierRows),
+        creatorEmail: null,
+        peopleCount: peopleCountForTiers(
+          tierRows.map((t) => t.tierId),
+          data.tasks
+        ),
         solutionId: solution.solution_id,
         tierRows,
+        tierLines: inspectorLinesFromTierRows(tierRows),
         ...rollup,
+        priceNum: avgPrice,
+        priceDisplay: avgPrice != null ? formatUsd(avgPrice) : "—",
       };
     });
 
@@ -339,27 +427,31 @@ export function buildCatalogDirectoryRows(
       );
       const meta =
         tierLineCount === 0
-          ? "No solutions"
+          ? "No tiers"
           : tierLineCount === 1
-            ? "1 solution"
-            : `${tierLineCount} solutions`;
+            ? "1 tier"
+            : `${tierLineCount} tiers`;
 
       return {
         id: `package:${pkg.package_id}`,
         type: "preset_package" as const,
-        typeLabel: "Custom Package",
+        typeLabel: "Package",
         name: pkg.package_name?.trim() || pkg.package_id,
         meta,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
         tagsRaw: "",
+        ownerLabel: ownerSummary(tierRows, pkg.package_owner),
+        creatorEmail: null,
+        peopleCount: peopleCountForTiers(tierIds, data.tasks),
         packageId: pkg.package_id,
         tierRows,
+        tierLines: inspectorLinesFromPackageLinks(pkg.package_id, links, tierRowById),
         priceNum,
         priceDisplay: priceNum != null ? formatUsd(priceNum) : "—",
         hoursNum,
-        hoursDisplay: hoursNum != null ? formatKpiNumber(hoursNum) : "—",
+        hoursDisplay: hoursNum != null ? formatCatalogHours(hoursNum) : "—",
         taxableSort: vaultRollup.taxableSort,
         taxableLabel: vaultRollup.taxableLabel,
       };
@@ -372,15 +464,19 @@ export function buildCatalogDirectoryRows(
       return {
         id: `package-type:${pt.id}`,
         type: "configurable_package" as const,
-        typeLabel: "Configurable Package",
+        typeLabel: "Template",
         name: pt.name.trim() || pt.id,
-        meta: slotCount === 0 ? "No package solutions" : slotCount === 1 ? "1 package solution" : `${slotCount} package solutions`,
+        meta: slotCount === 0 ? "No slots" : slotCount === 1 ? "1 slot" : `${slotCount} slots`,
         phaseRaw: "",
         categoryRaw: "",
         tacticRaw: "",
         tagsRaw: "",
+        ownerLabel: null,
+        creatorEmail: null,
+        peopleCount: 0,
         packageBuilderTypeId: pt.id,
         tierRows: [],
+        tierLines: [],
         priceNum: null,
         priceDisplay: "—",
         hoursNum: null,

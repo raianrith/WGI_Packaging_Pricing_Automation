@@ -16,7 +16,7 @@ type Counts = {
   uniqueTasks: number;
 };
 
-export function GlobalKpiStrip() {
+export function GlobalKpiStrip({ variant = "default" }: { variant?: "default" | "home" }) {
   const location = useLocation();
   const [counts, setCounts] = useState<Counts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,11 +94,16 @@ export function GlobalKpiStrip() {
     { key: "uniqueTasks", label: "Unique Tasks", hint: "Distinct names" },
   ];
 
+  const isHome = variant === "home";
+
   return (
-    <section className="global-kpi-strip" aria-label="Vault totals">
+    <section
+      className={`global-kpi-strip${isHome ? " global-kpi-strip--home" : ""}`}
+      aria-label="Workspace totals"
+    >
       <header className="global-kpi-strip__head">
-        <h2 className="global-kpi-strip__title">At a glance</h2>
-        <p className="global-kpi-strip__subtitle">Live counts from your workspace</p>
+        <h2 className="global-kpi-strip__title">{isHome ? "Live counts" : "At a glance"}</h2>
+        {isHome ? null : <p className="global-kpi-strip__subtitle">Live counts from your workspace</p>}
       </header>
       <ul className="global-kpi-strip__grid" role="list">
         {items.map((item, i) => {

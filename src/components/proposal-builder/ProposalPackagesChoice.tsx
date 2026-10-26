@@ -7,7 +7,7 @@ type Props = {
 };
 
 export function ProposalPackagesChoice({ onChoose }: Props) {
-  const stepMeta = proposalStepDef("packages");
+  const stepMeta = proposalStepDef("add_scope");
 
   return (
     <div className="proposal-step-panel proposal-packages-choice">
@@ -15,7 +15,8 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
         <p className="proposal-step-panel__eyebrow">Step {stepMeta.number}</p>
         <h2 className="proposal-step-panel__title">{stepMeta.label}</h2>
         <p className="proposal-step-panel__lead">
-          Packages are optional. Choose how you want to add one—or skip ahead and come back anytime.
+          Packages are optional. Pick a path below, or use <strong>Next: Solutions</strong> at the
+          bottom to skip and come back later.
         </p>
       </header>
 
@@ -25,6 +26,7 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
           className="proposal-packages-choice__card"
           onClick={() => onChoose("build")}
         >
+          <span className="proposal-packages-choice__kicker">01</span>
           <span className="proposal-packages-choice__icon" aria-hidden>
             <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
               <path
@@ -51,6 +53,7 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
           className="proposal-packages-choice__card"
           onClick={() => onChoose("prebuilt")}
         >
+          <span className="proposal-packages-choice__kicker">02</span>
           <span className="proposal-packages-choice__icon proposal-packages-choice__icon--library" aria-hidden>
             <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
               <path
@@ -77,6 +80,7 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
           className="proposal-packages-choice__card"
           onClick={() => onChoose("playbook")}
         >
+          <span className="proposal-packages-choice__kicker">03</span>
           <span className="proposal-packages-choice__icon proposal-packages-choice__icon--playbook" aria-hidden>
             <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
               <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" stroke="currentColor" strokeWidth="1.75" />
@@ -103,23 +107,32 @@ export function ProposalPackagesChoice({ onChoose }: Props) {
 type PathBarProps = {
   path: PackageAddPath;
   onSelectPath: (path: PackageAddPath) => void;
-  onBackToOptions: () => void;
+  onBackToOptions?: () => void;
+  includePlaybook?: boolean;
 };
 
 const PATH_TABS: Array<{ id: PackageAddPath; label: string }> = [
-  { id: "build", label: "Build new" },
-  { id: "prebuilt", label: "Re-Use Past Packages" },
-  { id: "playbook", label: "Playbook Package" },
+  { id: "build", label: "Build" },
+  { id: "prebuilt", label: "Re-use" },
+  { id: "playbook", label: "Playbook" },
 ];
 
-export function ProposalPackagesPathBar({ path, onSelectPath, onBackToOptions }: PathBarProps) {
+export function ProposalPackagesPathBar({
+  path,
+  onSelectPath,
+  onBackToOptions,
+  includePlaybook = true,
+}: PathBarProps) {
+  const tabs = includePlaybook ? PATH_TABS : PATH_TABS.filter((tab) => tab.id !== "playbook");
   return (
     <div className="proposal-packages-path">
+      {onBackToOptions ? (
       <button type="button" className="proposal-packages-path__back" onClick={onBackToOptions}>
         ← All options
       </button>
+      ) : null}
       <div className="proposal-packages-path__tabs" role="tablist" aria-label="Package add method">
-        {PATH_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"

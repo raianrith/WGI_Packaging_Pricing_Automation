@@ -96,6 +96,7 @@ export function AgencyHomeView() {
   const jumps: JumpLink[] = [
     { to: "/solutions", label: "Catalog", hint: "Solutions and packages in one table" },
     { to: "/directory-details", label: "Solutions Overview", hint: "Scope, process, tasks, and pricing" },
+    { to: "/package-overview", label: "Package Overview", hint: "Pricing, components, and tasks for a package" },
     { to: "/custom-solutions", label: "Custom Solutions", hint: "Scoping requests and ops-built custom lines" },
     { to: "/solution-requests", label: "New Solution Request", hint: "Ask for a solution that isn't in the vault" },
   ];

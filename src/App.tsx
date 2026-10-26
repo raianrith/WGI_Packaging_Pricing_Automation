@@ -13,6 +13,7 @@ import { AuthPage } from "./views/AuthPage";
 import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
 import { SolutionRequestsView } from "./views/SolutionRequestsView";
 import { CatalogCustomSolutionsView } from "./views/CatalogCustomSolutionsView";
+import { PackageOverviewLanding } from "./views/PackageOverviewLanding";
 
 export default function App() {
   return (
@@ -31,11 +32,12 @@ export default function App() {
           <Route element={<AgencyTabsShell />}>
             <Route path="solutions" element={<AgencyView mode="catalog" catalogSubview="directory" />} />
             <Route path="directory-details" element={<AgencyView mode="catalog" catalogSubview="detail" />} />
+            <Route path="package-overview" element={<PackageOverviewLanding />} />
+            <Route path="package/standalone" element={<Navigate to="/package-overview" replace />} />
+            <Route path="package/:packageId" element={<AgencyView mode="package" />} />
             <Route path="custom-solutions" element={<CatalogCustomSolutionsView />} />
           </Route>
-          <Route path="packages" element={<Navigate to="/solutions?type=packages" replace />} />
-          <Route path="package/standalone" element={<Navigate to="/solutions" replace />} />
-          <Route path="package/:packageId" element={<AgencyView mode="package" />} />
+          <Route path="packages" element={<Navigate to="/package-overview" replace />} />
           <Route
             path="/admin"
             element={<Navigate to="/admin/vault" replace />}

@@ -74,8 +74,9 @@ export function routePresenceLabel(pathname: string | null | undefined): string 
   if (path === "/directory-details") return "Solutions Overview";
   if (path === "/custom-solutions") return "Custom Solutions";
   if (path === "/package-builder") return "Package Builder";
-  if (path === "/packages") return "Catalog";
-  if (path.startsWith("/package/")) return "Package Workspace";
+  if (path === "/packages" || path === "/package-overview" || path.startsWith("/package/")) {
+    return "Package Overview";
+  }
   if (path === "/roadmap" || path.startsWith("/roadmap/")) return "Proposal Builder";
   if (path === "/solution-requests") return "Solution Requests";
   if (path === "/admin" || path.startsWith("/admin/")) return "Admin";

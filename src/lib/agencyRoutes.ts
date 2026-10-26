@@ -3,6 +3,7 @@ export function isAgencyRoute(pathname: string): boolean {
   return (
     pathname === "/solutions" ||
     pathname === "/directory-details" ||
+    pathname === "/package-overview" ||
     pathname === "/packages" ||
     pathname.startsWith("/package/") ||
     pathname === "/catalog" ||

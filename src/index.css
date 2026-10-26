@@ -9721,6 +9721,10 @@ html[data-theme="dark"] .admin-side-nav__link--active {
   font-size: clamp(1.7rem, 3.2vw, 2.55rem);
 }
 
+.agency-tabs--catalog-4 .agency-tab {
+  font-size: clamp(1.35rem, 2.5vw, 2.05rem);
+}
+
 .agency-tab:hover {
   color: var(--suede);
 }
@@ -9750,8 +9754,9 @@ html[data-theme="dark"] .admin-side-nav__link--active {
 
   .agency-tab,
   .agency-tabs--catalog .agency-tab,
-  .agency-tabs--catalog-3 .agency-tab {
-    font-size: 1.35rem;
+  .agency-tabs--catalog-3 .agency-tab,
+  .agency-tabs--catalog-4 .agency-tab {
+    font-size: 1.2rem;
     padding-bottom: 0.55rem;
   }
 }

@@ -386,6 +386,58 @@ const formSubHeading: CSSProperties = {
   letterSpacing: "0.06em",
 };
 
+/** Agency Solutions Overview reads these first; they used to be copied only on autofill and never shown in the vault form. */
+function TierOverviewNarrativeFields({
+  lbl,
+  input,
+  textarea,
+  overview,
+  setOverview,
+  overviewLink,
+  setOverviewLink,
+  direction,
+  setDirection,
+}: {
+  lbl: CSSProperties;
+  input: CSSProperties;
+  textarea: CSSProperties;
+  overview: string;
+  setOverview: (v: string) => void;
+  overviewLink: string;
+  setOverviewLink: (v: string) => void;
+  direction: string;
+  setDirection: (v: string) => void;
+}) {
+  return (
+    <>
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Overview</h4>
+      <p
+        style={{
+          gridColumn: "1 / -1",
+          margin: "0 0 0.35rem",
+          fontSize: "0.8rem",
+          lineHeight: 1.4,
+          color: "var(--muted)",
+        }}
+      >
+        This is the copy on Solutions Overview. What / why / when below are a separate Description block.
+      </p>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Solution overview</AdminFieldCaption>
+        <MarkdownTextarea value={overview} onChange={setOverview} textareaStyle={textarea} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Overview link</AdminFieldCaption>
+        <input style={input} value={overviewLink} onChange={(e) => setOverviewLink(e.target.value)} />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <AdminFieldCaption>Direction</AdminFieldCaption>
+        <MarkdownTextarea value={direction} onChange={setDirection} textareaStyle={textarea} />
+      </label>
+    </>
+  );
+}
+
 const idLegendBar: CSSProperties = {
   fontSize: "0.8rem",
   color: "var(--muted)",
@@ -520,6 +572,9 @@ export function SolutionsBuilderPanel({
   const [tCategory, setTCategory] = useState("");
   const [tTactic, setTTactic] = useState("");
   const [tOwner, setTOwner] = useState("");
+  const [tOverview, setTOverview] = useState("");
+  const [tOverviewLink, setTOverviewLink] = useState("");
+  const [tDirection, setTDirection] = useState("");
   const [tSop, setTSop] = useState("");
   const [tWhatIsIt, setTWhatIsIt] = useState("");
   const [tWhyValuable, setTWhyValuable] = useState("");
@@ -533,7 +588,7 @@ export function SolutionsBuilderPanel({
   const [tResTools, setTResTools] = useState("");
   const [tResExamples, setTResExamples] = useState<TierResourceExampleRow[]>(() => [emptyResourceExampleRow()]);
 
-  /** When set, new tier inserts also copy hidden legacy fields (overview, link, direction) from this row. */
+  /** When set, new-tier autofill copies narrative fields from this row into the form. */
   const [createAutofillFrom, setCreateAutofillFrom] = useState<SolutionTier | null>(null);
   const [draftTasks, setDraftTasks] = useState<DraftTaskRow[]>([newDraftTaskRow()]);
   const [draftTaskBulkSelectedKeys, setDraftTaskBulkSelectedKeys] = useState<Set<string>>(
@@ -554,6 +609,9 @@ export function SolutionsBuilderPanel({
     setTName("");
     setTCategory("");
     setTOwner("");
+    setTOverview("");
+    setTOverviewLink("");
+    setTDirection("");
     setTSop("");
     setTWhatIsIt("");
     setTWhyValuable("");
@@ -637,6 +695,9 @@ export function SolutionsBuilderPanel({
     setTCategory((prev) => (prev.trim() ? prev : (t.solution_tier_category ?? "")));
     setTTactic((prev) => (prev.trim() ? prev : (t.solution_tier_tactic ?? "")));
     setTOwner(t.solution_tier_owner ?? "");
+    setTOverview(t.solution_tier_overview ?? "");
+    setTOverviewLink(t.solution_tier_overview_link ?? "");
+    setTDirection(t.solution_tier_direction ?? "");
     setTSop(t.solution_tier_sop ?? "");
     setTWhatIsIt(t.solution_tier_what_is_it ?? "");
     setTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
@@ -715,7 +776,6 @@ export function SolutionsBuilderPanel({
       after: rowJson(solRow),
     });
 
-    const leg = createAutofillFrom;
     const resSave = resourceStructuredFieldsForSave(tResTpl, tResTools, tResExamples);
     const tierRow: SolutionTier = {
       solution_tier_id: tierId,
@@ -725,9 +785,9 @@ export function SolutionsBuilderPanel({
       solution_tier_category: normTierCategory(tCategory),
       solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
-      solution_tier_overview: leg ? leg.solution_tier_overview : null,
-      solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
-      solution_tier_direction: leg ? leg.solution_tier_direction : null,
+      solution_tier_overview: blankToNull(tOverview),
+      solution_tier_overview_link: blankToNull(tOverviewLink),
+      solution_tier_direction: blankToNull(tDirection),
       solution_tier_sop: blankToNull(tSop),
       ...resSave,
       solution_tier_what_is_it: blankToNull(tWhatIsIt),
@@ -886,7 +946,6 @@ export function SolutionsBuilderPanel({
       return;
     }
     const id = nextAutoTierId(tierIdRows ?? []);
-    const leg = createAutofillFrom;
     const resInsert = resourceStructuredFieldsForSave(tResTpl, tResTools, tResExamples);
     const row: SolutionTier = {
       solution_tier_id: id,
@@ -896,9 +955,9 @@ export function SolutionsBuilderPanel({
       solution_tier_category: normTierCategory(tCategory),
       solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
-      solution_tier_overview: leg ? leg.solution_tier_overview : null,
-      solution_tier_overview_link: leg ? leg.solution_tier_overview_link : null,
-      solution_tier_direction: leg ? leg.solution_tier_direction : null,
+      solution_tier_overview: blankToNull(tOverview),
+      solution_tier_overview_link: blankToNull(tOverviewLink),
+      solution_tier_direction: blankToNull(tDirection),
       solution_tier_sop: blankToNull(tSop),
       ...resInsert,
       solution_tier_what_is_it: blankToNull(tWhatIsIt),
@@ -932,6 +991,9 @@ export function SolutionsBuilderPanel({
     setTName("");
     setTCategory("");
     setTOwner("");
+    setTOverview("");
+    setTOverviewLink("");
+    setTDirection("");
     setTSop("");
     setTWhatIsIt("");
     setTWhyValuable("");
@@ -1134,6 +1196,9 @@ export function SolutionsBuilderPanel({
   const [updTCategory, setUpdTCategory] = useState("");
   const [updTTactic, setUpdTTactic] = useState("");
   const [updTOwner, setUpdTOwner] = useState("");
+  const [updTOverview, setUpdTOverview] = useState("");
+  const [updTOverviewLink, setUpdTOverviewLink] = useState("");
+  const [updTDirection, setUpdTDirection] = useState("");
   const [updTSop, setUpdTSop] = useState("");
   const [updTWhatIsIt, setUpdTWhatIsIt] = useState("");
   const [updTWhyValuable, setUpdTWhyValuable] = useState("");
@@ -1149,8 +1214,10 @@ export function SolutionsBuilderPanel({
   const [updSolName, setUpdSolName] = useState("");
   const [updSolType, setUpdSolType] = useState<SolutionType>("configured_solution");
   const [updSolAddOnsAllowed, setUpdSolAddOnsAllowed] = useState(false);
-  /** When set, tier save uses legacy fields (overview, link, direction) from this source. */
+  /** When set, autofill copies narrative fields from this source into the form. */
   const [updAutofillFrom, setUpdAutofillFrom] = useState<SolutionTier | null>(null);
+  /** Blank form is for adding a new tier; otherwise the focused tier is loaded into Overview. */
+  const [updAddingNewTier, setUpdAddingNewTier] = useState(false);
 
   const [updTaskEditId, setUpdTaskEditId] = useState<string | null>(null);
   const [updKName, setUpdKName] = useState("");
@@ -1383,9 +1450,9 @@ export function SolutionsBuilderPanel({
       solution_tier_category: normTierCategory(tCategory),
       solution_tier_tactic: normTierTactic(tTactic),
       solution_tier_owner: blankToNull(tOwner),
-      solution_tier_overview: null,
-      solution_tier_overview_link: null,
-      solution_tier_direction: null,
+      solution_tier_overview: blankToNull(tOverview),
+      solution_tier_overview_link: blankToNull(tOverviewLink),
+      solution_tier_direction: blankToNull(tDirection),
       solution_tier_sop: null,
       solution_tier_resources: null,
       solution_tier_resource_templates: null,
@@ -1403,7 +1470,21 @@ export function SolutionsBuilderPanel({
       solution_tier_created_date: todayISODate(),
       solution_tier_modified_date: todayISODate(),
     }),
-    [draftPricingTierId, previewSolutionId, tName, tPhase, tCategory, tTactic, tOwner, normTierPhase, normTierCategory, normTierTactic]
+    [
+      draftPricingTierId,
+      previewSolutionId,
+      tName,
+      tPhase,
+      tCategory,
+      tTactic,
+      tOwner,
+      tOverview,
+      tOverviewLink,
+      tDirection,
+      normTierPhase,
+      normTierCategory,
+      normTierTactic,
+    ]
   );
 
   const previewNextTaskIdUpdate = useMemo(() => nextAutoTaskId(tasks), [tasks]);
@@ -1430,6 +1511,9 @@ export function SolutionsBuilderPanel({
     setUpdTCategory(t.solution_tier_category ?? "");
     setUpdTTactic(t.solution_tier_tactic ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
+    setUpdTOverview(t.solution_tier_overview ?? "");
+    setUpdTOverviewLink(t.solution_tier_overview_link ?? "");
+    setUpdTDirection(t.solution_tier_direction ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
     setUpdTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
@@ -1471,6 +1555,16 @@ export function SolutionsBuilderPanel({
     }
   }, [tiersOfUpdateSol, updTierFocus]);
 
+  useEffect(() => {
+    if (!showUpdateDetails || updAddingNewTier) return;
+    if (!updTierFocus) return;
+    if (updTierEditId === updTierFocus) return;
+    const t = tiers.find((x) => x.solution_tier_id === updTierFocus);
+    if (t) startEditTier(t);
+    // startEditTier is defined below; keep this in sync with focused-tier changes only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showUpdateDetails, updAddingNewTier, updTierFocus, updTierEditId, tiers]);
+
   const clearTierUpdateForm = () => {
     setUpdTierEditId(null);
     setUpdTName("");
@@ -1478,6 +1572,9 @@ export function SolutionsBuilderPanel({
     setUpdTCategory("");
     setUpdTTactic("");
     setUpdTOwner("");
+    setUpdTOverview("");
+    setUpdTOverviewLink("");
+    setUpdTDirection("");
     setUpdTSop("");
     setUpdTWhatIsIt("");
     setUpdTWhyValuable("");
@@ -1658,6 +1755,17 @@ export function SolutionsBuilderPanel({
     setUpdSolAddOnsAllowed(Boolean(sol.add_ons_allowed));
     setShowUpdateDetails(true);
     setVaultWorkTab("overview");
+    const first = [...tiers]
+      .filter((t) => t.solution_id === sol.solution_id)
+      .sort((a, b) =>
+        a.solution_tier_name.localeCompare(b.solution_tier_name, undefined, { sensitivity: "base" })
+      )[0];
+    if (first) startEditTier(first);
+    else {
+      setUpdAddingNewTier(true);
+      clearTierUpdateForm();
+      setUpdTierFocus("");
+    }
   };
 
   const openTierWorkspace = (t: SolutionTier, tab: VaultWorkTab = "overview") => {
@@ -1675,6 +1783,7 @@ export function SolutionsBuilderPanel({
 
   const startEditTier = (t: SolutionTier) => {
     cancelTierRename();
+    setUpdAddingNewTier(false);
     setUpdTierFocus(t.solution_tier_id);
     setUpdTierEditId(t.solution_tier_id);
     setUpdTName(t.solution_tier_name);
@@ -1682,6 +1791,9 @@ export function SolutionsBuilderPanel({
     setUpdTCategory(t.solution_tier_category ?? "");
     setUpdTTactic(t.solution_tier_tactic ?? "");
     setUpdTOwner(t.solution_tier_owner ?? "");
+    setUpdTOverview(t.solution_tier_overview ?? "");
+    setUpdTOverviewLink(t.solution_tier_overview_link ?? "");
+    setUpdTDirection(t.solution_tier_direction ?? "");
     setUpdTSop(t.solution_tier_sop ?? "");
     setUpdTWhatIsIt(t.solution_tier_what_is_it ?? "");
     setUpdTWhyValuable(t.solution_tier_why_is_it_valuable ?? "");
@@ -1899,8 +2011,6 @@ export function SolutionsBuilderPanel({
     setOpErr(null);
     setOpOk(null);
     const today = todayISODate();
-    const prevTier = updTierEditId ? tiers.find((x) => x.solution_tier_id === updTierEditId) : null;
-    const legU = updAutofillFrom;
     const resUpd = resourceStructuredFieldsForSave(updResTpl, updResTools, updResExamples);
     const payload = {
       solution_id: updSolutionId,
@@ -1909,11 +2019,9 @@ export function SolutionsBuilderPanel({
       solution_tier_category: normTierCategory(updTCategory),
       solution_tier_tactic: normTierTactic(updTTactic),
       solution_tier_owner: blankToNull(updTOwner),
-      solution_tier_overview: legU ? legU.solution_tier_overview : (prevTier?.solution_tier_overview ?? null),
-      solution_tier_overview_link: legU
-        ? legU.solution_tier_overview_link
-        : (prevTier?.solution_tier_overview_link ?? null),
-      solution_tier_direction: legU ? legU.solution_tier_direction : (prevTier?.solution_tier_direction ?? null),
+      solution_tier_overview: blankToNull(updTOverview),
+      solution_tier_overview_link: blankToNull(updTOverviewLink),
+      solution_tier_direction: blankToNull(updTDirection),
       solution_tier_sop: blankToNull(updTSop),
       ...resUpd,
       solution_tier_what_is_it: blankToNull(updTWhatIsIt),
@@ -1949,7 +2057,8 @@ export function SolutionsBuilderPanel({
         after: rowJson(after),
       });
       setOpOk("Tier saved.");
-      clearTierUpdateForm();
+      setUpdAutofillFrom(null);
+      setUpdAddingNewTier(false);
       await onSaved();
       return;
     }
@@ -2003,8 +2112,10 @@ export function SolutionsBuilderPanel({
       after: rowJson(row),
     });
     setOpOk(`Tier created as ${id}.`);
-    clearTierUpdateForm();
     setUpdTierFocus(id);
+    setUpdTierEditId(id);
+    setUpdAddingNewTier(false);
+    setUpdAutofillFrom(null);
     await onSaved();
   };
 
@@ -2646,9 +2757,8 @@ export function SolutionsBuilderPanel({
         </select>
       </label>
       <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
-        Fills fields below this control (and copies overview, link, and direction on save). If <strong>Tier name</strong> is
-        empty, it uses the source tier&apos;s name; if you already typed a name, it is left unchanged. Clear the list to use
-        blank legacy fields.
+        Fills fields below this control, including overview, link, and direction. If <strong>Tier name</strong> is
+        empty, it uses the source tier&apos;s name; if you already typed a name, it is left unchanged.
       </p>
     </>
   );
@@ -2674,8 +2784,8 @@ export function SolutionsBuilderPanel({
         </select>
       </label>
       <p style={{ ...muted, gridColumn: "1 / -1", margin: "0 0 0.5rem", fontSize: "0.8rem", lineHeight: 1.4 }}>
-        Fills the form; empty <strong>Tier name</strong> is filled from the source tier, otherwise your typed name is kept.
-        When editing, overview/link/direction are only overwritten if you pick a source tier.
+        Fills the form, including overview, link, and direction. Empty <strong>Tier name</strong> is filled from the
+        source tier, otherwise your typed name is kept.
       </p>
     </>
   );
@@ -2716,6 +2826,18 @@ export function SolutionsBuilderPanel({
         <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
       </label>
       {createTierAutofillBlock}
+
+      <TierOverviewNarrativeFields
+        lbl={lbl}
+        input={input}
+        textarea={textarea}
+        overview={tOverview}
+        setOverview={setTOverview}
+        overviewLink={tOverviewLink}
+        setOverviewLink={setTOverviewLink}
+        direction={tDirection}
+        setDirection={setTDirection}
+      />
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
@@ -2806,6 +2928,18 @@ export function SolutionsBuilderPanel({
         <input style={input} value={updTOwner} onChange={(e) => setUpdTOwner(e.target.value)} />
       </label>
       {updateTierAutofillBlock}
+
+      <TierOverviewNarrativeFields
+        lbl={lbl}
+        input={input}
+        textarea={textarea}
+        overview={updTOverview}
+        setOverview={setUpdTOverview}
+        overviewLink={updTOverviewLink}
+        setOverviewLink={setUpdTOverviewLink}
+        direction={updTDirection}
+        setDirection={setUpdTDirection}
+      />
 
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
@@ -3157,6 +3291,18 @@ export function SolutionsBuilderPanel({
                     <input style={input} value={tOwner} onChange={(e) => setTOwner(e.target.value)} />
                   </label>
                   {createTierAutofillBlock}
+
+                  <TierOverviewNarrativeFields
+                    lbl={lbl}
+                    input={input}
+                    textarea={textarea}
+                    overview={tOverview}
+                    setOverview={setTOverview}
+                    overviewLink={tOverviewLink}
+                    setOverviewLink={setTOverviewLink}
+                    direction={tDirection}
+                    setDirection={setTDirection}
+                  />
 
                   <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
                   <label style={{ ...lbl, gridColumn: "1 / -1" }}>
@@ -4581,8 +4727,30 @@ export function SolutionsBuilderPanel({
                     {updTierEditId ? "Save tier changes" : "Create tier"}
                   </button>
                   {updTierEditId ? (
-                    <button type="button" style={btn} onClick={clearTierUpdateForm}>
+                    <button
+                      type="button"
+                      style={btn}
+                      onClick={() => {
+                        const t = updTierFocus
+                          ? tiers.find((x) => x.solution_tier_id === updTierFocus)
+                          : null;
+                        if (t) startEditTier(t);
+                        else clearTierUpdateForm();
+                      }}
+                    >
                       Cancel
+                    </button>
+                  ) : null}
+                  {tiersOfUpdateSol.length > 0 ? (
+                    <button
+                      type="button"
+                      style={btn}
+                      onClick={() => {
+                        setUpdAddingNewTier(true);
+                        clearTierUpdateForm();
+                      }}
+                    >
+                      Add another tier
                     </button>
                   ) : null}
                 </div>

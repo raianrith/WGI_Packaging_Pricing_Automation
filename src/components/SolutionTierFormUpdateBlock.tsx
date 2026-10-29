@@ -85,6 +85,32 @@ export function SolutionTierFormUpdateBlock({
       </label>
       {autofillBlock}
 
+      <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Overview</h4>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Solution overview</span>
+        <MarkdownTextarea
+          value={v("solution_tier_overview")}
+          onChange={(x) => onChange("solution_tier_overview", x)}
+          textareaStyle={textarea}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Overview link</span>
+        <input
+          style={input}
+          value={v("solution_tier_overview_link")}
+          onChange={(e) => onChange("solution_tier_overview_link", e.target.value)}
+        />
+      </label>
+      <label style={{ ...lbl, gridColumn: "1 / -1" }}>
+        <span className="admin-field-caption">Direction</span>
+        <MarkdownTextarea
+          value={v("solution_tier_direction")}
+          onChange={(x) => onChange("solution_tier_direction", x)}
+          textareaStyle={textarea}
+        />
+      </label>
+
       <h4 style={{ ...formSubHeading, gridColumn: "1 / -1" }}>Description</h4>
       <label style={{ ...lbl, gridColumn: "1 / -1" }}>
         <span className="admin-field-caption">What is it</span>

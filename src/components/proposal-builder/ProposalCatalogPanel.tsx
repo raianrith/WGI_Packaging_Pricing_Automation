@@ -378,7 +378,9 @@ export function ProposalCatalogPanel({
     }
     if (isPercentVariableTierRefId(tierId)) {
       if (variableTierLinkTargets.length === 0) {
-        window.alert("Add at least one solution tier to this scenario before adding this variable tier.");
+        window.alert(
+          "Add at least one solution tier or package to this scenario before adding this variable tier."
+        );
         return;
       }
       setLinkModalTierId(tierId);
@@ -410,7 +412,7 @@ export function ProposalCatalogPanel({
         numberLabel: `Step ${def.number}`,
         label: "Extras",
         lead:
-          "Extras like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from the solutions already in this scenario.",
+          "Extras like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from solutions and packages already in this scenario.",
       };
     }
     return {
@@ -806,7 +808,7 @@ export function ProposalCatalogPanel({
           <p className="proposal-catalog-step-prompt">Pick An Extra</p>
           <p className="proposal-catalog-offerings__hint">
             Extras like Paid Campaign Management, Rush Charge, and Travel Time — priced dynamically from
-            scenario solutions · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
+            scenario solutions and packages · adding to <strong>{targetScenarioTitle}</strong> ·{" "}
             <strong>{targetPhaseTitle}</strong>
           </p>
           <ProposalCatalogListSearch
@@ -828,7 +830,7 @@ export function ProposalCatalogPanel({
               const priceDisplay = isTravelVariableTierRefId(r.tierId)
                 ? "Enter hours"
                 : isPercentVariableTierRefId(r.tierId)
-                  ? "Select tier"
+                  ? "Select line"
                   : "—";
               return (
                 <ProposalCatalogLineRow
@@ -912,7 +914,7 @@ export function ProposalCatalogPanel({
               <p className="proposal-catalog-step-prompt">Extras</p>
               <p className="proposal-catalog-offerings__hint">
                 Dynamic add-ons like Paid Campaign Management, Rush Charge, and Travel Time — priced from
-                solutions already in this scenario.
+                solutions and packages already in this scenario.
               </p>
             </header>
             <ProposalCatalogListSearch
@@ -934,7 +936,7 @@ export function ProposalCatalogPanel({
                 const priceDisplay = isTravelVariableTierRefId(r.tierId)
                   ? "Enter hours"
                   : isPercentVariableTierRefId(r.tierId)
-                    ? "Select tier"
+                    ? "Select line"
                     : "—";
                 return (
                   <ProposalCatalogLineRow
@@ -1298,18 +1300,20 @@ export function ProposalCatalogPanel({
                   {linkModalTier.solution_tier_name}
                 </h2>
                 <p className="proposal-travel-modal__subtitle">
-                  Choose which scenario tier this charge is based on. The formula stays the same — only the base sell
-                  price changes.
+                  Choose which scenario package or solution tier this charge is based on. The formula stays the
+                  same — only the base sell price changes.
                 </p>
               </div>
             </header>
 
             <div className="proposal-travel-modal__body">
-              <p className="proposal-travel-modal__field-label">Linked tier</p>
+              <p className="proposal-travel-modal__field-label">Apply to</p>
               {variableTierLinkTargets.length === 0 ? (
-                <p className="proposal-travel-modal__empty">Add solution tiers to this scenario first.</p>
+                <p className="proposal-travel-modal__empty">
+                  Add a solution tier or package to this scenario first.
+                </p>
               ) : (
-                <ul className="proposal-travel-modal__link-list" role="listbox" aria-label="Linked tier">
+                <ul className="proposal-travel-modal__link-list" role="listbox" aria-label="Apply to">
                   {variableTierLinkTargets.map((target) => {
                     const selected = selectedLinkedTierRefId === target.refId;
                     return (
@@ -1348,12 +1352,14 @@ export function ProposalCatalogPanel({
                 {linkModalPreviewUsd != null && selectedLinkTarget ? (
                   <span className="proposal-travel-modal__preview-formula">
                     {variableTierRuleSummary(linkModalTier.solution_tier_id).replace(
-                      "linked tier sell",
+                      "linked sell",
                       selectedLinkTarget.priceDisplay
                     )}
                   </span>
                 ) : (
-                  <span className="proposal-travel-modal__preview-hint">Select a tier to preview the charge</span>
+                  <span className="proposal-travel-modal__preview-hint">
+                    Select a package or tier to preview the charge
+                  </span>
                 )}
               </div>
             </div>

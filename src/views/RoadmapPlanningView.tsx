@@ -140,6 +140,7 @@ import {
   isPaidAdsVariableTierRefId,
   isPercentVariableTierRefId,
   isTravelVariableTierRefId,
+  isVariableTierLinkTarget,
   isVariableTierRefId,
   variableTierLinkTargetsForScenario,
   variableTierAppliedToLabel,
@@ -2082,8 +2083,7 @@ export function RoadmapPlanningView() {
         (c) =>
           c.scenarioId === targetScenarioId &&
           c.refId === linkedRefId &&
-          c.scope === "included" &&
-          !isVariableTierRefId(c.refId)
+          isVariableTierLinkTarget(c)
       );
       if (!linked) return null;
       const base = cardPriceUsdForRollup(linked, catalogCtx, computeScratchSellPrice);

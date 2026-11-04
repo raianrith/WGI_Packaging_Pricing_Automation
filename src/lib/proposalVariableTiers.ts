@@ -115,7 +115,7 @@ export function variableTierRuleSummary(refId: string): string {
   if (rule.kind === "paid_ads") {
     return "Total paid ads spend (tiered rate per $1k)";
   }
-  const pct = `${rule.pct}% of linked tier sell`;
+  const pct = `${rule.pct}% of linked sell`;
   if (rule.minUsd != null && rule.maxUsd != null) {
     return `${pct} (${formatUsd(rule.minUsd)} min · ${formatUsd(rule.maxUsd)} max)`;
   }
@@ -130,11 +130,11 @@ export function formatVariableTierPriceUsd(n: number): string {
   return formatUsd(Math.round(n));
 }
 
-/** Solution tier lines that can anchor a percent-based variable tier. */
+/** Included package or solution-tier lines that can anchor a percent-based variable tier (e.g. rush charge). */
 export function isVariableTierLinkTarget(card: Pick<RoadmapCard, "kind" | "refId" | "scope">): boolean {
   if (card.scope !== "included") return false;
   if (isVariableTierRefId(card.refId)) return false;
-  return card.kind === "tier" || card.kind === "custom_tier";
+  return card.kind === "tier" || card.kind === "custom_tier" || card.kind === "package";
 }
 
 export type VariableTierLinkTarget = {
@@ -158,7 +158,7 @@ export function variableTierLinkTargetsForScenario(
     const sellUsd = cardPriceUsdForRollup(c, ctx, computeScratchSellPrice);
     out.push({
       refId: c.refId,
-      headline: c.headline.trim() || "Untitled tier",
+      headline: c.headline.trim() || (c.kind === "package" ? "Untitled package" : "Untitled tier"),
       sellUsd: sellUsd != null && Number.isFinite(sellUsd) ? sellUsd : null,
       priceDisplay:
         sellUsd != null && Number.isFinite(sellUsd) ? formatVariableTierPriceUsd(sellUsd) : "—",

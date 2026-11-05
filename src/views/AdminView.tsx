@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  ADMIN_VIEW_DESCRIPTION,
-  AGENCY_HERO_TITLE,
-} from "../branding";
+import { ADMIN_VIEW_DESCRIPTION } from "../branding";
 import {
   ADMIN_NAV_GROUPS,
+  adminModeLabel,
   adminPath,
+  findAdminNavItem,
   parseAdminLocation,
   type AdminModeId,
   type AdminSectionId,
@@ -108,6 +107,8 @@ export function AdminView() {
     [location.pathname]
   );
   const adminSubTab = modeToSubTab(mode);
+  const activeNav = useMemo(() => findAdminNavItem(section), [section]);
+  const modeLabel = useMemo(() => adminModeLabel(section, mode), [section, mode]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [tiers, setTiers] = useState<SolutionTier[]>([]);
@@ -434,31 +435,39 @@ export function AdminView() {
 
   return (
     <div className="admin-page-shell admin-page-shell--v2" style={shell}>
-      <header className="admin-page-header">
+      <header className="admin-page-header admin-page-header--compact">
         <div className="admin-hero-top">
-          <span className="admin-hero__eyebrow">Admin</span>
-          <button
-            type="button"
-            className="agency-btn-secondary admin-hero__reload admin-btn-quiet"
-            style={btnReload}
-            onClick={() => void refresh()}
-            disabled={loading}
-          >
-            Reload data
-          </button>
+          <div className="admin-hero-top__copy">
+            <span className="admin-hero__eyebrow">Admin</span>
+            <h1 className="admin-hero__title admin-hero__title--section" style={title}>
+              {activeNav?.item.label ?? "Admin"}
+            </h1>
+            <p className="admin-hero__desc admin-hero__desc--compact" style={subtitle}>
+              {activeNav?.item.hint ?? ADMIN_VIEW_DESCRIPTION}
+            </p>
+          </div>
+          <div className="admin-hero-top__actions">
+            <Link to="/" className="admin-hero__back" style={link}>
+              ← Solutions overview
+            </Link>
+            <button
+              type="button"
+              className="agency-btn-secondary admin-hero__reload admin-btn-quiet"
+              style={btnReload}
+              onClick={() => void refresh()}
+              disabled={loading}
+            >
+              Reload data
+            </button>
+          </div>
         </div>
-        <h1 className="admin-hero__title" style={title}>
-          {AGENCY_HERO_TITLE}
-        </h1>
-        <p className="admin-hero__desc" style={subtitle}>
-          {ADMIN_VIEW_DESCRIPTION}{" "}
-          <Link to="/" style={link}>
-            Back to solutions overview
-          </Link>
-        </p>
+        <details className="admin-kpi-dock">
+          <summary className="admin-kpi-dock__summary">Vault counts</summary>
+          <div className="admin-kpi-dock__body">
+            <GlobalKpiStrip />
+          </div>
+        </details>
       </header>
-
-      <GlobalKpiStrip />
 
       {loading && (
         <div className="admin-loading">
@@ -473,6 +482,7 @@ export function AdminView() {
           }`}
         >
           <aside className="admin-side-nav" aria-label="Admin sections">
+            <p className="admin-side-nav__title">Navigate</p>
             {ADMIN_NAV_GROUPS.map((group) => (
               <div key={group.id} className="admin-side-nav__group">
                 <p className="admin-side-nav__group-label">{group.label}</p>
@@ -493,6 +503,7 @@ export function AdminView() {
                         }}
                       >
                         <span className="admin-side-nav__link-label">{item.label}</span>
+                        <span className="admin-side-nav__link-hint">{item.hint}</span>
                       </NavLink>
                     </li>
                   ))}
@@ -502,8 +513,39 @@ export function AdminView() {
           </aside>
 
           <div className="admin-workspace__main">
+          <div className="admin-context-bar" aria-label="Current section">
+            <nav className="admin-context-bar__crumbs" aria-label="Breadcrumb">
+              <span className="admin-context-bar__crumb">Admin</span>
+              {activeNav ? (
+                <>
+                  <span className="admin-context-bar__sep" aria-hidden>
+                    /
+                  </span>
+                  <span className="admin-context-bar__crumb">{activeNav.group.label}</span>
+                  <span className="admin-context-bar__sep" aria-hidden>
+                    /
+                  </span>
+                  <span className="admin-context-bar__crumb admin-context-bar__crumb--current">
+                    {activeNav.item.label}
+                  </span>
+                </>
+              ) : null}
+              {modeLabel ? (
+                <>
+                  <span className="admin-context-bar__sep" aria-hidden>
+                    /
+                  </span>
+                  <span className="admin-context-bar__crumb admin-context-bar__crumb--mode">
+                    {modeLabel}
+                  </span>
+                </>
+              ) : null}
+            </nav>
+            <p className="admin-context-bar__hint">{activeNav?.item.hint}</p>
+          </div>
+
           <label className="admin-mobile-nav">
-            <span className="admin-field-caption">Section</span>
+            <span className="admin-field-caption">Jump to section</span>
             <select
               className="admin-field"
               value={section}
@@ -512,58 +554,73 @@ export function AdminView() {
                 goAdmin(next, next === "vault" || next === "packages" ? "update" : null);
               }}
             >
-              {ADMIN_NAV_GROUPS.flatMap((g) =>
-                g.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {g.label}: {item.label}
-                  </option>
-                ))
-              )}
+              {ADMIN_NAV_GROUPS.map((g) => (
+                <optgroup key={g.id} label={g.label}>
+                  {g.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </label>
           {(section === "vault" || section === "packages") && (
             <div
-              className="admin-subtabs"
+              className="admin-mode-tabs"
               role="tablist"
               aria-label={section === "packages" ? "Package builder mode" : "Vault mode"}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={adminSubTab === "create"}
-                className={
-                  adminSubTab === "create" ? "admin-subtab admin-subtab--active" : "admin-subtab"
-                }
-                onClick={() => goAdmin(section, "create")}
-              >
-                {section === "packages" ? "Create package" : "Create solution"}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={adminSubTab === "update"}
-                className={
-                  adminSubTab === "update" ? "admin-subtab admin-subtab--active" : "admin-subtab"
-                }
-                onClick={() => goAdmin(section, "update")}
-              >
-                {section === "packages" ? "Update package" : "Browse & edit"}
-              </button>
-              {section === "packages" && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={adminSubTab === "build_slots"}
-                  className={
-                    adminSubTab === "build_slots"
-                      ? "admin-subtab admin-subtab--active"
-                      : "admin-subtab"
-                  }
-                  onClick={() => goAdmin("packages", "slots")}
-                >
-                  Configurable package
-                </button>
-              )}
+              {(
+                section === "packages"
+                  ? ([
+                      [
+                        "create",
+                        "Create package",
+                        "Assemble a new package from solutions and tiers",
+                      ],
+                      [
+                        "update",
+                        "Update package",
+                        "Open an existing package and edit tiers, narrative, or checklist",
+                      ],
+                      [
+                        "build_slots",
+                        "Configurable package",
+                        "Set slot limits and rules for Package Builder templates",
+                      ],
+                    ] as const)
+                  : ([
+                      [
+                        "update",
+                        "Browse & edit",
+                        "Find solutions and edit tiers, tasks, and pricing",
+                      ],
+                      [
+                        "create",
+                        "Create solution",
+                        "Build a new solution (or tier) in a guided flow",
+                      ],
+                    ] as const)
+              ).map(([id, label, hint]) => {
+                const selected = adminSubTab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    title={hint}
+                    className={selected ? "admin-mode-tab admin-mode-tab--active" : "admin-mode-tab"}
+                    onClick={() => {
+                      if (id === "build_slots") goAdmin("packages", "slots");
+                      else goAdmin(section, id);
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           )}
 

@@ -46,7 +46,7 @@ export function ProposalCopyFromPanel({ proposals, loading, activeProposalId, on
         </h3>
         <p className="proposal-copy-from__lead">
           Import scenarios, phases, and solutions from a saved proposal into this draft. Setup fields
-          (client, budget, roadmap name) on step 1 are not changed.
+          (client, budget, project name) on step 1 are not changed.
         </p>
       </div>
 

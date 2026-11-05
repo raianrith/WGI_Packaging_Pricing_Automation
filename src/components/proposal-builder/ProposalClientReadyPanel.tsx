@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import {
   cardPriceUsdForRollup,
   type CatalogCtxLike,
@@ -194,9 +194,9 @@ function ProposalImplementerLoadChart({
                       className={`proposal-impl-matrix__cell${hrs > 0 ? " has-hours" : ""}`}
                       style={
                         hrs > 0
-                          ? {
-                              background: `rgba(13, 92, 77, ${0.08 + intensity * 0.42})`,
-                            }
+                          ? ({
+                              ["--impl-heat"]: String(0.1 + intensity * 0.55),
+                            } as CSSProperties)
                           : undefined
                       }
                       title={
@@ -262,15 +262,17 @@ function DealSegmentDonut({
   const taxableSafe = Math.max(0, taxable);
   const nonTaxSafe = Math.max(0, nonTaxable);
   const taxablePct = total > 0 ? (taxableSafe / total) * 100 : 0;
-  const gradient =
+  const donutFill =
     total <= 0
-      ? "conic-gradient(#ddd6fe 0deg 360deg)"
-      : `conic-gradient(#7c3aed 0 ${taxablePct}%, #c4b5fd ${taxablePct}% 100%)`;
+      ? "var(--border)"
+      : taxablePct >= 50
+        ? "var(--suede)"
+        : "var(--antique)";
 
   return (
     <div className="proposal-deal-info__chart" role="img" aria-label={title}>
       <div className="proposal-deal-info__chart-visual">
-        <div className="proposal-deal-info__donut" style={{ background: gradient }}>
+        <div className="proposal-deal-info__donut" style={{ background: donutFill }}>
           <div className="proposal-deal-info__donut-hole">
             <span className="proposal-deal-info__donut-total-label">Total</span>
             <strong className="proposal-deal-info__donut-total">{totalLabel}</strong>

@@ -101,6 +101,8 @@ function ThemeToggle({
 export function ProtectedLayout() {
   const { session, loading, configured, profileLoading, isAdmin, displayName } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { guard, confirmLeave } = useProposalDraftGuard();
   const agencyTabActive = isAgencyRoute(location.pathname);
   const packageBuilderTabActive = isPackageBuilderRoute(location.pathname);
   const [theme, setTheme] = useState<AppTheme>(() => readInitialTheme());
@@ -194,6 +196,17 @@ export function ProtectedLayout() {
               className={() =>
                 `app-module-tab${location.pathname.startsWith("/roadmap") ? " app-module-tab--active" : ""}`
               }
+              onClick={(e) => {
+                if (!location.pathname.startsWith("/roadmap")) return;
+                e.preventDefault();
+                const openList = () =>
+                  navigate("/roadmap", { replace: true, state: { openProposalList: true } });
+                if (guard?.isActive && guard.isDirty) {
+                  confirmLeave(openList);
+                  return;
+                }
+                openList();
+              }}
             >
               {NAV_PROPOSAL_BUILDER}
             </NavLink>

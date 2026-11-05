@@ -65,6 +65,11 @@ export type PackageBuilderSlotBucket = {
   pick_count: number;
   sort_order: number;
   member_tier_ids: string[];
+  /**
+   * When true, builders may skip this bucket (0..pick_count).
+   * When false, they must pick exactly pick_count.
+   */
+  optional: boolean;
 };
 
 /** Tier slot under a package type — optional hour/price ceilings and/or solution tier count limit. */
@@ -88,7 +93,7 @@ export type PackageBuilderSlotTemplate = {
   allowed_solution_tier_ids: string[];
   /** Always included when building from this slot (cannot go below default_qty). */
   preselected_tiers: PackageBuilderSlotPreselectedTier[];
-  /** Choice buckets: pick exactly pick_count distinct members. */
+  /** Choice buckets: required = exactly pick_count; optional = 0..pick_count. */
   buckets: PackageBuilderSlotBucket[];
   /** Shown as a disclaimer when this tier is selected in Build a Package. */
   tier_notes: string | null;

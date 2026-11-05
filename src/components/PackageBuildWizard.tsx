@@ -871,7 +871,9 @@ export function PackageBuildWizard({
           if (bucketSelectedCount(b, prev) >= b.pick_count) {
             queueMicrotask(() =>
               toastNote(
-                `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
+                b.optional
+                  ? `Pick up to ${b.pick_count} from "${b.name}". Deselect one before choosing another.`
+                  : `Pick exactly ${b.pick_count} from "${b.name}". Deselect one before choosing another.`
               )
             );
             return prev;
@@ -940,7 +942,9 @@ export function PackageBuildWizard({
         if (!b.member_tier_ids.includes(tier.solution_tier_id)) continue;
         if (bucketSelectedCount(b, tierPickQty) >= b.pick_count) {
           toastNote(
-            `Pick exactly ${b.pick_count} from “${b.name}”. Deselect one before choosing another.`
+            b.optional
+              ? `Pick up to ${b.pick_count} from "${b.name}". Deselect one before choosing another.`
+              : `Pick exactly ${b.pick_count} from "${b.name}". Deselect one before choosing another.`
           );
           return;
         }
@@ -1632,6 +1636,7 @@ export function PackageBuildWizard({
                   {bucketSections.map(({ bucket, rows }) => {
                     const picked = bucketSelectedCount(bucket, tierPickQty);
                     const complete = isBucketComplete(bucket, tierPickQty);
+                    const optional = Boolean(bucket.optional);
                     return (
                       <section
                         key={bucket.id}
@@ -1643,11 +1648,21 @@ export function PackageBuildWizard({
                       >
                         <header className="agency-pkg-wizard__sel-head">
                           <h3 className="agency-pkg-wizard__sel-title">
-                            Pick {bucket.pick_count} from {bucket.name}
+                            {optional
+                              ? `Optional: up to ${bucket.pick_count} from ${bucket.name}`
+                              : `Pick ${bucket.pick_count} from ${bucket.name}`}
                           </h3>
                           <p className="agency-pkg-wizard__sel-lead">
                             {picked} of {bucket.pick_count} selected
-                            {!complete ? " — choose exactly this many distinct components." : " — done."}
+                            {optional
+                              ? picked === 0
+                                ? " — skip or choose up to this many."
+                                : complete
+                                  ? " — within limit."
+                                  : " — choose up to this many distinct components."
+                              : !complete
+                                ? " — choose exactly this many distinct components."
+                                : " — done."}
                           </p>
                         </header>
                         <WizardSolutionTierTable

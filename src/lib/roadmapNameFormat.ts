@@ -1,17 +1,28 @@
 import { normalizeIsoDateInput } from "./proposalDates";
 
-/** Example: `CR Roadmap Jul–Oct 2026` */
-export const ROADMAP_NAME_FORMAT_EXAMPLE = "CR Roadmap Jul–Oct 2026";
+/** Example: `VIK X-Series Video Nov 2026` (single month) or `CR Project Jul–Oct 2026` (range). */
+export const ROADMAP_NAME_FORMAT_EXAMPLE = "VIK X-Series Video Nov 2026";
 
-export const ROADMAP_NAME_FORMAT_HINT = "Format: [Client Code] [Project Name] [Mon–Mon YYYY]";
+export const ROADMAP_NAME_FORMAT_HINT =
+  "Format: [Client Code] [Project Name] [Mon YYYY or Mon–Mon YYYY]";
 
 export const ROADMAP_NAME_CLIENT_CODE_TOOLTIP =
   "Client codes are standardized abbreviations — use the correct code, no variations, based on what's in the Account Assignments spreadsheet";
 
-const ROADMAP_NAME_DATE_SUFFIX_RE =
-  /\s+(?:[A-Za-z]{3,9}[-–][A-Za-z]{3,9}\s+\d{4}|[A-Za-z]{3,9}\s+\d{4}\s*[-–]\s*[A-Za-z]{3,9}\s+\d{4})$/;
+const MONTH_TOKEN =
+  "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
 
-export const ROADMAP_NAME_FORMAT_RE = /^(\S+)\s+(.+?)\s+[A-Za-z]{3,9}[-–][A-Za-z]{3,9}\s+\d{4}$/;
+/** Date suffix: `Jul–Oct 2026`, `Jul 2026 – Oct 2026`, or single `Nov 2026`. */
+const ROADMAP_NAME_DATE_SUFFIX_RE = new RegExp(
+  String.raw`\s+(?:(?:${MONTH_TOKEN})\s+\d{4}\s*[-–]\s*(?:${MONTH_TOKEN})\s+\d{4}|(?:${MONTH_TOKEN})[-–](?:${MONTH_TOKEN})\s+\d{4}|(?:${MONTH_TOKEN})\s+\d{4})$`,
+  "i"
+);
+
+/** Valid title ends with a month range or a single month + year. */
+export const ROADMAP_NAME_FORMAT_RE = new RegExp(
+  String.raw`^(\S+)\s+(.+?)\s+(?:(?:${MONTH_TOKEN})[-–](?:${MONTH_TOKEN})\s+\d{4}|(?:${MONTH_TOKEN})\s+\d{4})$`,
+  "i"
+);
 
 function parseLocalDate(iso: string): Date | null {
   const t = normalizeIsoDateInput(iso);
@@ -26,7 +37,7 @@ function monthToken(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short" });
 }
 
-/** Suffix only, e.g. `Jul–Oct 2026`. */
+/** Suffix only, e.g. `Jul–Oct 2026` or `Nov 2026` when start/end share a month. */
 export function roadmapNameMonthRangeLabel(
   start: string | null | undefined,
   end: string | null | undefined
@@ -34,11 +45,16 @@ export function roadmapNameMonthRangeLabel(
   const a = normalizeIsoDateInput(start);
   const b = normalizeIsoDateInput(end);
   if (!a || !b) return "";
+  const startDate = parseLocalDate(a);
   const endDate = parseLocalDate(b);
-  if (!endDate) return "";
+  if (!startDate || !endDate) return "";
   const startMon = monthToken(a);
   const endMon = monthToken(b);
   if (!startMon || !endMon) return "";
+  const sameMonth =
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth();
+  if (sameMonth) return `${endMon} ${endDate.getFullYear()}`;
   return `${startMon}–${endMon} ${endDate.getFullYear()}`;
 }
 
@@ -85,19 +101,16 @@ export function generateRoadmapName(
   start: string | null | undefined,
   end: string | null | undefined,
   pastTitles: string[] = [],
-  projectName = "Roadmap"
+  projectName = "Project"
 ): string {
   const code = inferClientCode(clientLabel, pastTitles);
   const suffix = roadmapNameMonthRangeLabel(start, end);
-  return [code, projectName.trim() || "Roadmap", suffix].filter(Boolean).join(" ");
+  return [code, projectName.trim() || "Project", suffix].filter(Boolean).join(" ");
 }
 
-const MONTH_TOKEN =
-  "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
-
 /**
- * List/display title: keep the first complete date range and drop leftover
- * typed suffixes like `Nov-Feb 2 Nov-Feb 20 Nov-Feb 2027`.
+ * List/display title: keep the first complete date range (or single month)
+ * and drop leftover typed suffixes like `Nov-Feb 2 Nov-Feb 20 Nov-Feb 2027`.
  */
 export function displayProposalTitle(raw: string): string {
   const untitled = "Untitled proposal";
@@ -128,9 +141,19 @@ export function displayProposalTitle(raw: string): string {
   const suffixed = t.match(firstSuffix);
   if (suffixed?.[1]) return suffixed[1].trim();
 
+  const singleMonth = new RegExp(
+    String.raw`^(.+?\s+(?:${MONTH_TOKEN})\s+\d{4})\b`,
+    "i"
+  );
+  const single = t.match(singleMonth);
+  if (single?.[1]) return single[1].trim();
+
   const cleaned = t
     .replace(
-      new RegExp(String.raw`(?:\s+(?:${MONTH_TOKEN})[-–](?:${MONTH_TOKEN})(?:\s+\d{1,3})?)+$`, "i"),
+      new RegExp(
+        String.raw`(?:\s+(?:${MONTH_TOKEN})[-–](?:${MONTH_TOKEN})(?:\s+\d{1,3})?|\s+(?:${MONTH_TOKEN})\s+\d{1,3})+$`,
+        "i"
+      ),
       ""
     )
     .trim();

@@ -50,14 +50,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         hint: "Preset packages and configurable slot limits",
       },
       {
-        id: "task-groups",
-        label: "Task groups",
-        hint: "Reusable task templates and sync to tiers",
-      },
-      {
         id: "playbook-packages",
         label: "Playbook Packages",
         hint: "Which custom packages and solutions can go into Playbook Packages",
+      },
+      {
+        id: "task-groups",
+        label: "Task groups",
+        hint: "Reusable task templates and sync to tiers",
       },
     ],
   },
@@ -65,6 +65,16 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     id: "system",
     label: "System",
     items: [
+      {
+        id: "glossary",
+        label: "Data glossary",
+        hint: "Column meanings for imports and tables",
+      },
+      {
+        id: "health",
+        label: "Data health",
+        hint: "Find tiers where tasks and pricing disagree",
+      },
       {
         id: "implementers",
         label: "Implementer mapping",
@@ -80,16 +90,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         label: "Pricing math",
         hint: "Hourly rate, multipliers, recalculate all",
       },
-      {
-        id: "health",
-        label: "Data health",
-        hint: "Find tiers where tasks and pricing disagree",
-      },
-      {
-        id: "glossary",
-        label: "Data glossary",
-        hint: "Column meanings for imports and tables",
-      },
     ],
   },
   {
@@ -97,18 +97,41 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     label: "Ops",
     items: [
       {
-        id: "audit",
-        label: "Change history",
-        hint: "Audit log of Admin writes",
-      },
-      {
         id: "users",
         label: "Active users",
         hint: "Who is signed in right now",
       },
+      {
+        id: "audit",
+        label: "Change history",
+        hint: "Audit log of Admin writes",
+      },
     ],
   },
 ];
+
+export function findAdminNavItem(section: AdminSectionId): {
+  group: AdminNavGroup;
+  item: AdminNavItem;
+} | null {
+  for (const group of ADMIN_NAV_GROUPS) {
+    const item = group.items.find((i) => i.id === section);
+    if (item) return { group, item };
+  }
+  return null;
+}
+
+export function adminModeLabel(section: AdminSectionId, mode: AdminModeId): string | null {
+  if (section === "vault") {
+    return mode === "create" ? "Create solution" : "Browse & edit";
+  }
+  if (section === "packages") {
+    if (mode === "create") return "Create package";
+    if (mode === "slots") return "Configurable package";
+    return "Update package";
+  }
+  return null;
+}
 
 export function adminPath(section: AdminSectionId, mode?: AdminModeId | null): string {
   if (section === "vault") {

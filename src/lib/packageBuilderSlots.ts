@@ -236,7 +236,7 @@ export async function fetchPackageBuilderCatalog(
       .select("slot_id,solution_tier_id,default_qty"),
     client
       .from("package_builder_slot_buckets")
-      .select("id,slot_id,name,pick_count,sort_order")
+      .select("*")
       .order("sort_order", { ascending: true }),
     client
       .from("package_builder_slot_bucket_members")
@@ -303,6 +303,7 @@ export async function fetchPackageBuilderCatalog(
       name: string;
       pick_count: number;
       sort_order: number;
+      optional?: boolean | null;
     }[]) {
       const sid = String(row.slot_id);
       const bid = String(row.id);
@@ -313,6 +314,7 @@ export async function fetchPackageBuilderCatalog(
         pick_count: Number(row.pick_count) || 1,
         sort_order: Number(row.sort_order) || list.length + 1,
         member_tier_ids: membersByBucket.get(bid) ?? [],
+        optional: Boolean(row.optional),
       });
       bucketsBySlot.set(sid, list);
     }
@@ -468,16 +470,28 @@ export async function replaceSlotSelectionChildren(
   await client.from("package_builder_slot_buckets").delete().eq("slot_id", persistedSlotId);
   const buckets = normalizeSlotBuckets(slot.buckets);
   for (const [i, b] of buckets.entries()) {
-    const { data, error: bucketErr } = await client
+    const baseRow = {
+      slot_id: persistedSlotId,
+      name: b.name,
+      pick_count: b.pick_count,
+      sort_order: i + 1,
+    };
+    let { data, error: bucketErr } = await client
       .from("package_builder_slot_buckets")
-      .insert({
-        slot_id: persistedSlotId,
-        name: b.name,
-        pick_count: b.pick_count,
-        sort_order: i + 1,
-      })
+      .insert({ ...baseRow, optional: Boolean(b.optional) })
       .select("id")
       .single();
+    if (bucketErr && /optional/i.test(bucketErr.message)) {
+      // Column not migrated yet — persist without flag (treat as required in DB).
+      ({ data, error: bucketErr } = await client
+        .from("package_builder_slot_buckets")
+        .insert(baseRow)
+        .select("id")
+        .single());
+      if (!bucketErr && b.optional) {
+        return "Run package_builder_slot_bucket_optional.sql in Supabase to save optional choice buckets.";
+      }
+    }
     if (bucketErr || !data) return bucketErr?.message ?? "Could not create choice bucket.";
     const bucketId = String((data as { id: string }).id);
     const memberRows = b.member_tier_ids.map((solution_tier_id, mi) => ({

@@ -3129,15 +3129,15 @@ export function SolutionsBuilderPanel({
           <p className="admin-sb-hero__lead" style={muted}>
             {subTab === "create" ? (
               <>
-                One place to fill everything: solution, tier, tasks, and pricing. Use <strong>Create new / Update</strong>{" "}
-                above to switch modes. Id pattern: <code>1-</code> package → <code>2-</code> solution → <code>3-</code>{" "}
-                tier → <code>4-</code> task.
+                One place to fill everything: solution, tier, tasks, and pricing. Switch to{" "}
+                <strong>Browse &amp; edit</strong> above when you need the list. Id pattern: <code>1-</code> package →{" "}
+                <code>2-</code> solution → <code>3-</code> tier → <code>4-</code> task.
               </>
             ) : (
               <>
-                Select a solution, then work through <strong>Solution</strong>, <strong>Tiers</strong>, and{" "}
-                <strong>Tasks &amp; pricing</strong>. For brand-new records, use the <strong>Create new</strong> button in
-                this panel.
+                Search, open a tier, then work in <strong>Overview</strong>, <strong>Tasks</strong>, or{" "}
+                <strong>Pricing</strong>. Use <strong>Create solution</strong> above for brand-new records, or{" "}
+                <strong>Create new solution</strong> in this panel.
               </>
             )}
           </p>
@@ -4542,16 +4542,22 @@ export function SolutionsBuilderPanel({
                 <div className="admin-vault-worktabs admin-vault-worktabs--sticky" role="tablist" aria-label="Tier workspace">
                   {(
                     [
-                      ["overview", "Overview", "1"],
-                      ["tasks", "Tasks", "2"],
-                      ["pricing", "Pricing", "3"],
+                      [
+                        "overview",
+                        "1",
+                        "Overview",
+                        "Solution details, tier narrative, scope, and resources",
+                      ],
+                      ["tasks", "2", "Tasks", "Add, reorder, and map implementers for this tier"],
+                      ["pricing", "3", "Pricing", "Risk, strategic scores, hours, and sell price"],
                     ] as const
-                  ).map(([id, label, key]) => (
+                  ).map(([id, key, label, hint]) => (
                     <button
                       key={id}
                       type="button"
                       role="tab"
                       aria-selected={vaultWorkTab === id}
+                      title={hint}
                       className={
                         vaultWorkTab === id
                           ? "admin-vault-worktab admin-vault-worktab--active"
@@ -4562,7 +4568,7 @@ export function SolutionsBuilderPanel({
                         if (updTierFocus) syncVaultUrl(updTierFocus, id);
                       }}
                     >
-                      {label}
+                      <span className="admin-vault-worktab__label">{label}</span>
                       <span className="admin-vault-worktab__key">{key}</span>
                     </button>
                   ))}

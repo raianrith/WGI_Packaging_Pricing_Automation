@@ -58,9 +58,15 @@ export function normalizeSlotBuckets(
         pick_count: Math.max(1, Math.floor(Number(b.pick_count) || 1)),
         sort_order: Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : i + 1,
         member_tier_ids,
+        optional: Boolean(b.optional),
       };
     })
-    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        Number(a.optional) - Number(b.optional) ||
+        a.sort_order - b.sort_order ||
+        a.name.localeCompare(b.name)
+    );
 }
 
 /** Seed qty map from locked preselects (does not clear other keys). */
@@ -116,7 +122,9 @@ export function isBucketComplete(
   bucket: PackageBuilderSlotBucket,
   qty: PackageTierQuantities
 ): boolean {
-  return bucketSelectedCount(bucket, qty) === bucket.pick_count;
+  const n = bucketSelectedCount(bucket, qty);
+  if (bucket.optional) return n <= bucket.pick_count;
+  return n === bucket.pick_count;
 }
 
 export function allBucketsComplete(
@@ -145,8 +153,13 @@ export function selectionRulesSummary(slot: PackageBuilderSlotTemplate): string 
   if (slot.preselected_tiers.length > 0) {
     parts.push(`${slot.preselected_tiers.length} always included`);
   }
-  if (slot.buckets.length > 0) {
-    parts.push(`${slot.buckets.length} choice bucket${slot.buckets.length === 1 ? "" : "s"}`);
+  const required = slot.buckets.filter((b) => !b.optional).length;
+  const optional = slot.buckets.filter((b) => b.optional).length;
+  if (required > 0) {
+    parts.push(`${required} required bucket${required === 1 ? "" : "s"}`);
+  }
+  if (optional > 0) {
+    parts.push(`${optional} optional bucket${optional === 1 ? "" : "s"}`);
   }
   return parts.join(" · ");
 }
@@ -159,6 +172,7 @@ export function cloneBucketsForDuplicate(
     id: newLocalBucketId(),
     sort_order: i + 1,
     member_tier_ids: [...b.member_tier_ids],
+    optional: Boolean(b.optional),
   }));
 }
 

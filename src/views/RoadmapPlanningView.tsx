@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, SetStateAction } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { browserKeyConfigurationError, getSupabase } from "../lib/supabase";
 import {
   cardHoursForScenarioRollup,
@@ -936,6 +936,7 @@ function formatSavedAgo(savedAt: number | null, saving: boolean): string {
 export function RoadmapPlanningView() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { proposalId: proposalIdParam } = useParams<{ proposalId: string }>();
   const { toastError, toastNote, toastSuccess } = useToast();
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -1210,11 +1211,11 @@ export function RoadmapPlanningView() {
       title = displayProposalTitle(title);
     }
     if (!clientName || !title) {
-      if (!opts?.silent) toastError("Add both Client name and Roadmap name before saving.");
+      if (!opts?.silent) toastError("Add both Client name and Project name before saving.");
       return null;
     }
     if (!opts?.silent && !isValidRoadmapNameFormat(title)) {
-      toastError(`Roadmap name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
+      toastError(`Project name must follow ${ROADMAP_NAME_FORMAT_HINT.replace("Format: ", "")}.`);
       return null;
     }
     if (title !== roadmapTitle) setRoadmapTitle(title);
@@ -1549,7 +1550,16 @@ export function RoadmapPlanningView() {
   loadSavedProposalRef.current = loadSavedProposalIntoBoard;
 
   useEffect(() => {
+    const st = location.state as { openProposalList?: boolean } | null;
+    if (!st?.openProposalList) return;
+    setActiveProposalId(null);
+    setBuilderMode("saved");
+    navigate("/roadmap", { replace: true, state: null });
+  }, [location.state, navigate]);
+
+  useEffect(() => {
     if (!urlProposalId) return;
+    if ((location.state as { openProposalList?: boolean } | null)?.openProposalList) return;
     if (savedProposalsLoading) return;
     const row = savedProposals.find((r) => r.id === urlProposalId);
     if (!row) {
@@ -1564,7 +1574,7 @@ export function RoadmapPlanningView() {
     const entryStep: ProposalBuilderStep =
       libraryMode === "awaiting_ops" ? "ops_scoping" : libraryMode === "client_ready" ? "client_ready" : "review";
     loadSavedProposalRef.current(row, { fromUrl: true, libraryMode, entryStep });
-  }, [savedProposals, savedProposalsLoading, toastError, urlProposalId]);
+  }, [location.state, savedProposals, savedProposalsLoading, toastError, urlProposalId]);
 
   const copyStructureFromSavedProposal = useCallback(
     (row: RoadmapProposalRow) => {
@@ -2832,6 +2842,16 @@ export function RoadmapPlanningView() {
   );
   const savedStatus = formatSavedAgo(lastSavedAt, savingProposal);
   void saveClock;
+  const editorIdentityTitle = (() => {
+    const parts: string[] = [];
+    const client = clientLabel.trim();
+    const title = roadmapTitle.trim();
+    const dates = proposalDateRangeLabel(proposalStartDate, proposalEndDate);
+    if (client) parts.push(client);
+    if (title && title.toLowerCase() !== "untitled proposal") parts.push(title);
+    if (dates !== "—") parts.push(dates);
+    return parts.length > 0 ? parts.join(" | ") : "New proposal";
+  })();
 
   const goAddScopeNext = () => {
     if (setupStartMode === "choose") setSetupStartMode("blank");
@@ -2842,7 +2862,7 @@ export function RoadmapPlanningView() {
     }
     if (!roadmapTitle.trim()) {
       titleInputRef.current?.focus();
-      toastError("Roadmap name is required.");
+      toastError("Project name is required.");
       return;
     }
     setBuilderStep("add_scope");
@@ -2862,18 +2882,14 @@ export function RoadmapPlanningView() {
                     onClick={() => {
                       setActiveProposalId(null);
                       setBuilderMode("saved");
+                      if (urlProposalId) navigate("/roadmap", { replace: true });
                     }}
                   >
                     All proposals
                   </button>
                   <h1 className="roadmap-hero__title roadmap-hero__title--builder">
-                    {clientLabel.trim() || "New proposal"}
+                    {editorIdentityTitle}
                   </h1>
-                  {proposalDateRangeLabel(proposalStartDate, proposalEndDate) !== "—" ? (
-                    <p className="proposal-editor-identity__dates">
-                      {proposalDateRangeLabel(proposalStartDate, proposalEndDate)}
-                    </p>
-                  ) : null}
                   <p className="proposal-editor-identity__status">
                     Draft · {savedStatus}
                   </p>
@@ -3016,7 +3032,7 @@ export function RoadmapPlanningView() {
                     <div className="roadmap-field">
                       <div className="roadmap-field__cap-row">
                         <label className="roadmap-field__cap" htmlFor="proposal-roadmap-name">
-                          Roadmap name
+                          Project name
                         </label>
                         <span className="roadmap-field__tip-wrap">
                           <button

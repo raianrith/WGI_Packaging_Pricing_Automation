@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EntityLink } from "./EntityLink";
 import { packageOverviewPath, solutionOverviewPath } from "../lib/entityLinks";
 import type { CatalogDirectoryRow } from "../lib/buildCatalogDirectoryRows";
@@ -16,9 +16,11 @@ type Props = {
   onDeletePackage?: (packageId: string, packageName: string) => void;
 };
 
-function overviewFor(row: CatalogDirectoryRow, tiers: SolutionTier[]): string | null {
-  const firstId = row.tierRows[0]?.tierId;
-  const match = firstId ? tiers.find((t) => t.solution_tier_id === firstId) : null;
+type TierViewMode = "list" | "compare";
+
+function overviewTextForTier(tierId: string | null | undefined, tiers: SolutionTier[]): string | null {
+  if (!tierId) return null;
+  const match = tiers.find((t) => t.solution_tier_id === tierId);
   const text = match?.solution_tier_overview?.trim() || match?.solution_tier_what_is_it?.trim() || "";
   return text || null;
 }
@@ -26,6 +28,20 @@ function overviewFor(row: CatalogDirectoryRow, tiers: SolutionTier[]): string | 
 function isHourAddonRow(row: CatalogDirectoryRow): boolean {
   if ((row.priceNum ?? 0) > 0) return false;
   return /account management|continuous improvement/i.test(row.name);
+}
+
+function shortTierLabel(name: string): string {
+  if (!name.includes(" - ")) return name;
+  return name.slice(name.lastIndexOf(" - ") + 3).trim() || name;
+}
+
+function solutionIdForTier(
+  row: CatalogDirectoryRow,
+  tierId: string,
+  tiers: SolutionTier[]
+): string | null {
+  if (row.solutionId) return row.solutionId;
+  return tiers.find((t) => t.solution_tier_id === tierId)?.solution_id ?? null;
 }
 
 export function CatalogInspectorPanel({
@@ -37,10 +53,27 @@ export function CatalogInspectorPanel({
   onDeletePackage,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [tierView, setTierView] = useState<TierViewMode>("list");
+  const [focusedTierId, setFocusedTierId] = useState<string | null>(null);
 
   useEffect(() => {
     setMenuOpen(false);
+    setTierView("list");
+    setFocusedTierId(null);
   }, [row?.id]);
+
+  const tierLines = useMemo(() => {
+    if (!row) return [];
+    return (
+      row.tierLines ??
+      row.tierRows.map((tier) => ({
+        key: tier.tierId,
+        name: tier.tierName,
+        priceDisplay: tier.priceDisplay,
+        hoursDisplay: tier.hoursDisplay,
+      }))
+    );
+  }, [row]);
 
   if (!row) {
     return (
@@ -53,22 +86,17 @@ export function CatalogInspectorPanel({
     );
   }
 
-  const overview = overviewFor(row, tiers);
   const peopleLabel =
     row.peopleCount === 0 ? "—" : row.peopleCount === 1 ? "1" : String(row.peopleCount);
   const mixed = row.taxableLabel === "Mixed";
   const canDelete = Boolean(row.packageId && onDeletePackage);
-  const tierLines =
-    row.tierLines ??
-    row.tierRows.map((tier) => ({
-      key: tier.tierId,
-      name: tier.tierName,
-      priceDisplay: tier.priceDisplay,
-      hoursDisplay: tier.hoursDisplay,
-    }));
   const showTiers =
     tierLines.length > 1 ||
     (tierLines.length === 1 && tierLines[0]?.name.trim() !== row.name.trim());
+  const canCompare = tierLines.length > 1;
+  const overviewTierId = focusedTierId ?? tierLines[0]?.key ?? row.tierRows[0]?.tierId ?? null;
+  const overview = overviewTextForTier(overviewTierId, tiers);
+  const overviewIsFocused = Boolean(focusedTierId);
 
   return (
     <aside className="catalog-inspector" aria-label={`${row.name} details`}>
@@ -110,11 +138,7 @@ export function CatalogInspectorPanel({
       </header>
 
       <h2 className="catalog-inspector__title">{row.name}</h2>
-      {row.ownerLabel ? (
-        <p className="catalog-inspector__owner">
-          {row.ownerLabel}
-        </p>
-      ) : null}
+      {row.ownerLabel ? <p className="catalog-inspector__owner">{row.ownerLabel}</p> : null}
 
       <dl className="catalog-inspector__stats">
         <div>
@@ -155,23 +179,130 @@ export function CatalogInspectorPanel({
       <div className="catalog-inspector__body">
         {showTiers ? (
           <section className="catalog-inspector__section">
-            <h3 className="catalog-inspector__section-title">Tiers</h3>
-            <ul className="catalog-inspector__tiers">
-              {tierLines.map((tier) => (
-                <li key={tier.key}>
-                  <span className="catalog-inspector__tier-name">{tier.name}</span>
-                  <span className="catalog-inspector__tier-meta">
-                    {tier.priceDisplay} · {tier.hoursDisplay}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="catalog-inspector__section-head">
+              <h3 className="catalog-inspector__section-title">Tiers</h3>
+              {canCompare ? (
+                <div className="catalog-inspector__view-toggle" role="group" aria-label="Tier view">
+                  <button
+                    type="button"
+                    className={
+                      tierView === "list"
+                        ? "catalog-inspector__view-btn is-active"
+                        : "catalog-inspector__view-btn"
+                    }
+                    aria-pressed={tierView === "list"}
+                    onClick={() => setTierView("list")}
+                  >
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      tierView === "compare"
+                        ? "catalog-inspector__view-btn is-active"
+                        : "catalog-inspector__view-btn"
+                    }
+                    aria-pressed={tierView === "compare"}
+                    onClick={() => setTierView("compare")}
+                  >
+                    Compare
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {tierView === "compare" && canCompare ? (
+              <div className="catalog-inspector__compare-wrap">
+                <table className="catalog-inspector__compare">
+                  <thead>
+                    <tr>
+                      <th scope="col">Tier</th>
+                      <th scope="col">Price</th>
+                      <th scope="col">Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tierLines.map((tier) => {
+                      const solId = solutionIdForTier(row, tier.key, tiers);
+                      const href = solId ? solutionOverviewPath(solId, tier.key) : null;
+                      const isFocused = focusedTierId === tier.key;
+                      const label = shortTierLabel(tier.name);
+                      return (
+                        <tr
+                          key={tier.key}
+                          className={isFocused ? "is-focused" : undefined}
+                          onMouseEnter={() => setFocusedTierId(tier.key)}
+                          onFocus={() => setFocusedTierId(tier.key)}
+                        >
+                          <th scope="row">
+                            {href ? (
+                              <EntityLink
+                                className="catalog-inspector__tier-link"
+                                to={href}
+                                title={`Open overview · ${tier.name}`}
+                              >
+                                {label}
+                              </EntityLink>
+                            ) : (
+                              <span title={tier.name}>{label}</span>
+                            )}
+                          </th>
+                          <td>{tier.priceDisplay}</td>
+                          <td>{tier.hoursDisplay}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="catalog-inspector__compare-hint">
+                  Click a tier name to open its solution overview. Hover to preview overview below.
+                </p>
+              </div>
+            ) : (
+              <ul className="catalog-inspector__tiers">
+                {tierLines.map((tier) => {
+                  const solId = solutionIdForTier(row, tier.key, tiers);
+                  const href = solId ? solutionOverviewPath(solId, tier.key) : null;
+                  const isFocused = focusedTierId === tier.key;
+                  return (
+                    <li
+                      key={tier.key}
+                      className={isFocused ? "is-focused" : undefined}
+                      onMouseEnter={() => setFocusedTierId(tier.key)}
+                      onFocus={() => setFocusedTierId(tier.key)}
+                    >
+                      {href ? (
+                        <EntityLink
+                          className="catalog-inspector__tier-link"
+                          to={href}
+                          title={`Open overview · ${tier.name}`}
+                        >
+                          {tier.name}
+                        </EntityLink>
+                      ) : (
+                        <span className="catalog-inspector__tier-name">{tier.name}</span>
+                      )}
+                      <span className="catalog-inspector__tier-meta">
+                        {tier.priceDisplay} · {tier.hoursDisplay}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         ) : null}
 
         {overview ? (
           <section className="catalog-inspector__section">
-            <h3 className="catalog-inspector__section-title">Overview</h3>
+            <h3 className="catalog-inspector__section-title">
+              Overview
+              {overviewIsFocused && overviewTierId
+                ? ` · ${shortTierLabel(
+                    tierLines.find((t) => t.key === overviewTierId)?.name ?? "Tier"
+                  )}`
+                : null}
+            </h3>
             <p className="catalog-inspector__overview">{overview}</p>
           </section>
         ) : null}
@@ -203,7 +334,7 @@ export function CatalogInspectorPanel({
         {isCatalogSolutionType(row.type) && row.solutionId ? (
           <EntityLink
             className="catalog-inspector__btn catalog-inspector__btn--primary"
-            to={solutionOverviewPath(row.solutionId, row.tierRows[0]?.tierId ?? null)}
+            to={solutionOverviewPath(row.solutionId, overviewTierId)}
           >
             Open solution overview
           </EntityLink>

@@ -139,6 +139,7 @@ export function PackageBuilderSlotLimitsPanel({
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [editorTab, setEditorTab] = useState<EditorTab>("limits");
+  const [templateSearch, setTemplateSearch] = useState("");
   const [vaultTiers, setVaultTiers] = useState<VaultTierRow[]>([]);
   const [allowFilter, setAllowFilter] = useState("");
   const [preFilter, setPreFilter] = useState("");
@@ -199,7 +200,14 @@ export function PackageBuilderSlotLimitsPanel({
   }, [load]);
 
   const sortedTypes = useMemo(
-    () => [...types].sort((a, b) => a.sort_order - b.sort_order),
+    () =>
+      [...types].sort((a, b) => {
+        const an = a.name.trim().toLowerCase() || `template ${a.sort_order}`;
+        const bn = b.name.trim().toLowerCase() || `template ${b.sort_order}`;
+        const cmp = an.localeCompare(bn, undefined, { sensitivity: "base" });
+        if (cmp !== 0) return cmp;
+        return a.sort_order - b.sort_order;
+      }),
     [types]
   );
 
@@ -224,6 +232,15 @@ export function PackageBuilderSlotLimitsPanel({
       tiers: slotsForPackageType(slots, t.id),
     }));
   }, [sortedTypes, slots]);
+
+  const filteredCatalogByType = useMemo(() => {
+    const needle = templateSearch.trim().toLowerCase();
+    if (!needle) return catalogByType;
+    return catalogByType.filter(({ type: t }) => {
+      const name = t.name.trim().toLowerCase();
+      return name.includes(needle) || String(t.sort_order).includes(needle);
+    });
+  }, [catalogByType, templateSearch]);
 
   const totalTierCount = useMemo(
     () => catalogByType.reduce((n, row) => n + row.tiers.length, 0),
@@ -347,17 +364,18 @@ export function PackageBuilderSlotLimitsPanel({
     );
   };
 
-  const addBucket = (slotId: string) => {
+  const addBucket = (slotId: string, optional = false) => {
     setSlots((prev) =>
       prev.map((s) => {
         if (s.id !== slotId) return s;
         const maxOrder = s.buckets.reduce((m, b) => Math.max(m, b.sort_order), 0);
         const bucket: PackageBuilderSlotBucket = {
           id: newLocalBucketId(),
-          name: "Choice group",
+          name: optional ? "Optional choice group" : "Required choice group",
           pick_count: 1,
           sort_order: maxOrder + 1,
           member_tier_ids: [],
+          optional,
         };
         return { ...s, buckets: [...s.buckets, bucket] };
       })
@@ -397,16 +415,22 @@ export function PackageBuilderSlotLimitsPanel({
     setSlots((prev) =>
       prev.map((s) => {
         if (s.id !== slotId) return s;
-        const ordered = [...s.buckets].sort((a, b) => a.sort_order - b.sort_order);
-        const idx = ordered.findIndex((b) => b.id === bucketId);
+        const target = s.buckets.find((b) => b.id === bucketId);
+        if (!target) return s;
+        const same = [...s.buckets]
+          .filter((b) => Boolean(b.optional) === Boolean(target.optional))
+          .sort((a, b) => a.sort_order - b.sort_order);
+        const idx = same.findIndex((b) => b.id === bucketId);
         const swap = idx + dir;
-        if (idx < 0 || swap < 0 || swap >= ordered.length) return s;
-        const tmp = ordered[idx]!;
-        ordered[idx] = ordered[swap]!;
-        ordered[swap] = tmp;
+        if (idx < 0 || swap < 0 || swap >= same.length) return s;
+        const tmp = same[idx]!;
+        same[idx] = same[swap]!;
+        same[swap] = tmp;
+        const reorderedSame = same.map((b, i) => ({ ...b, sort_order: i + 1 }));
+        const other = s.buckets.filter((b) => Boolean(b.optional) !== Boolean(target.optional));
         return {
           ...s,
-          buckets: ordered.map((b, i) => ({ ...b, sort_order: i + 1 })),
+          buckets: normalizeSlotBuckets([...other, ...reorderedSame]),
         };
       })
     );
@@ -812,31 +836,136 @@ export function PackageBuilderSlotLimitsPanel({
   const selectedTypeName =
     types.find((t) => t.id === selectedTypeId)?.name?.trim() || "Template";
 
-  const layoutClass = selectedSlot
-    ? "admin-pkg-builder__layout admin-pkg-builder__layout--tier-focus"
-    : "admin-pkg-builder__layout";
-
   const sortedBuckets = selectedSlot
-    ? [...selectedSlot.buckets].sort((a, b) => a.sort_order - b.sort_order)
+    ? [...selectedSlot.buckets].sort(
+        (a, b) =>
+          Number(a.optional) - Number(b.optional) ||
+          a.sort_order - b.sort_order ||
+          a.name.localeCompare(b.name)
+      )
     : [];
+  const requiredBuckets = sortedBuckets.filter((b) => !b.optional);
+  const optionalBuckets = sortedBuckets.filter((b) => b.optional);
+
+  const renderBucketCard = (b: PackageBuilderSlotBucket, list: PackageBuilderSlotBucket[]) => {
+    const idx = list.findIndex((x) => x.id === b.id);
+    return (
+      <article key={b.id} className="admin-pkg-builder__bucket-card">
+        <div className="admin-pkg-builder__bucket-head">
+          <label className="admin-pkg-builder__field">
+            <span className="admin-pkg-builder__field-caption">Name</span>
+            <input
+              style={input}
+              value={b.name}
+              disabled={busy}
+              onChange={(e) => updateBucket(selectedSlot!.id, b.id, { name: e.target.value })}
+              aria-label={`${b.optional ? "Optional" : "Required"} bucket ${idx + 1} name`}
+            />
+          </label>
+          <label className="admin-pkg-builder__field admin-pkg-builder__field--pick">
+            <span className="admin-pkg-builder__field-caption">
+              {b.optional ? "Up to N" : "Pick N"}
+            </span>
+            <input
+              style={input}
+              type="number"
+              min={1}
+              step={1}
+              value={b.pick_count}
+              disabled={busy}
+              onChange={(e) =>
+                updateBucket(selectedSlot!.id, b.id, {
+                  pick_count: Math.max(1, Math.floor(Number(e.target.value)) || 1),
+                })
+              }
+              aria-label={`${b.optional ? "Optional" : "Required"} bucket ${idx + 1} pick count`}
+            />
+          </label>
+          <div className="admin-pkg-builder__bucket-actions">
+            <button
+              type="button"
+              className="admin-pkg-builder__icon-btn"
+              style={btnSm}
+              disabled={busy || idx <= 0}
+              aria-label="Move bucket up"
+              onClick={() => moveBucket(selectedSlot!.id, b.id, -1)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="admin-pkg-builder__icon-btn"
+              style={btnSm}
+              disabled={busy || idx >= list.length - 1}
+              aria-label="Move bucket down"
+              onClick={() => moveBucket(selectedSlot!.id, b.id, 1)}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="admin-pkg-builder__ghost-danger"
+              disabled={busy}
+              onClick={() => removeBucket(selectedSlot!.id, b.id)}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+        <p className="admin-pkg-builder__bucket-members-label">
+          Members · {b.member_tier_ids.length} selected
+        </p>
+        <div className="admin-pkg-builder__vault-grid admin-pkg-builder__vault-grid--bucket">
+          {bucketMemberCandidates.map((vt) => {
+            const checked = b.member_tier_ids.includes(vt.solution_tier_id);
+            return (
+              <label
+                key={vt.solution_tier_id}
+                className={
+                  checked
+                    ? "admin-pkg-builder__vault-check is-checked"
+                    : "admin-pkg-builder__vault-check"
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={busy}
+                  onChange={(e) =>
+                    toggleBucketMember(
+                      selectedSlot!.id,
+                      b.id,
+                      vt.solution_tier_id,
+                      e.target.checked
+                    )
+                  }
+                />
+                <span>{vt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </article>
+    );
+  };
 
   return (
     <div className="admin-pkg-builder">
       <header className="admin-pkg-builder__hero">
-        <h2 className="admin-pkg-builder__title">Configurable Package</h2>
-        <p className="admin-pkg-builder__lead" style={muted}>
-          Templates group your configurable packages. Select a template, then a solution, to set limits,
-          always-included components, choice buckets, and package content. Leave the allow-list empty
-          to permit any vault solution for additional picks.
-        </p>
-        <div className="admin-pkg-builder__stats" aria-label="Configuration summary">
-          <span className="admin-pkg-builder__stat">
-            {sortedTypes.length} template{sortedTypes.length === 1 ? "" : "s"}
-          </span>
-          <span className="admin-pkg-builder__stat">
-            {totalTierCount} solution{totalTierCount === 1 ? "" : "s"}
-          </span>
+        <div className="admin-pkg-builder__hero-top">
+          <h2 className="admin-pkg-builder__title">Configurable Package</h2>
+          <p className="admin-pkg-builder__stats" aria-label="Configuration summary">
+            <span className="admin-pkg-builder__stat">
+              {sortedTypes.length} template{sortedTypes.length === 1 ? "" : "s"}
+            </span>
+            <span className="admin-pkg-builder__stat">
+              {totalTierCount} solution{totalTierCount === 1 ? "" : "s"}
+            </span>
+          </p>
         </div>
+        <p className="admin-pkg-builder__lead" style={muted}>
+          Template → solution → edit. Save when you’re done.
+        </p>
       </header>
 
       {loadNote ? (
@@ -850,21 +979,41 @@ export function PackageBuilderSlotLimitsPanel({
         </p>
       ) : null}
 
-      <div className={layoutClass}>
+      <div className="admin-pkg-builder__layout">
         <aside className="admin-pkg-builder__types" aria-label="Templates">
           <div className="admin-pkg-builder__panel-head">
             <h3 className="admin-pkg-builder__panel-title">Templates</h3>
             <button type="button" style={btnSm} disabled={busy} onClick={addPackageType}>
-              Add template
+              Add
             </button>
           </div>
 
+          {sortedTypes.length > 0 ? (
+            <label className="admin-pkg-builder__type-search">
+              <span className="admin-visually-hidden">Search templates</span>
+              <input
+                className="admin-pkg-builder__type-search-input"
+                type="search"
+                value={templateSearch}
+                disabled={busy}
+                placeholder="Search templates…"
+                onChange={(e) => setTemplateSearch(e.target.value)}
+              />
+            </label>
+          ) : null}
+
           {sortedTypes.length === 0 ? (
-            <p style={{ ...muted, fontSize: "0.86rem", margin: 0 }}>No types yet.</p>
+            <p style={{ ...muted, fontSize: "0.86rem", margin: 0 }}>No templates yet.</p>
+          ) : filteredCatalogByType.length === 0 ? (
+            <p style={{ ...muted, fontSize: "0.86rem", margin: 0 }}>
+              No templates match “{templateSearch.trim()}”.
+            </p>
           ) : (
             <ul className="admin-pkg-builder__type-list">
-              {catalogByType.map(({ type: t, tiers }) => {
+              {filteredCatalogByType.map(({ type: t, tiers }, index) => {
                 const active = selectedTypeId === t.id;
+                const tagCount =
+                  t.phase_tags.length + t.category_tags.length + t.tactic_tags.length;
                 return (
                   <li
                     key={t.id}
@@ -874,63 +1023,37 @@ export function PackageBuilderSlotLimitsPanel({
                         : "admin-pkg-builder__type-item"
                     }
                   >
-                    <div className="admin-pkg-builder__type-card-wrap">
-                      <button
-                        type="button"
-                        className="admin-pkg-builder__type-card"
-                        disabled={busy}
-                        onClick={() => setSelectedTypeId(t.id)}
-                      >
-                        <span className="admin-pkg-builder__type-order">{t.sort_order}</span>
-                        <span className="admin-pkg-builder__type-body">
-                          <input
-                            className="admin-pkg-builder__type-name"
-                            style={input}
-                            value={t.name}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setType(t.id, { name: e.target.value })}
-                            onFocus={() => setSelectedTypeId(t.id)}
-                            aria-label={`Template ${t.sort_order} name`}
-                          />
-                          <span className="admin-pkg-builder__type-meta-row">
-                            <span className="admin-pkg-builder__type-meta">
-                              {tiers.length} solution{tiers.length === 1 ? "" : "s"}
-                            </span>
-                            {(() => {
-                              const tagCount =
-                                t.phase_tags.length + t.category_tags.length + t.tactic_tags.length;
-                              return tagCount > 0 ? (
-                                <span className="admin-pkg-builder__type-tag-count">
-                                  {tagCount} tag{tagCount === 1 ? "" : "s"}
-                                </span>
-                              ) : null;
-                            })()}
-                          </span>
-                          {tiers.length > 0 ? (
-                            <span className="admin-pkg-builder__tier-pills">
-                              {tiers.map((s) => (
-                                <span
-                                  key={s.id}
-                                  className="admin-pkg-builder__tier-pill"
-                                  title={slotLimitSummary(s)}
-                                >
-                                  {s.label.trim() || "Solution"}
-                                </span>
-                              ))}
-                            </span>
-                          ) : null}
+                    <button
+                      type="button"
+                      className="admin-pkg-builder__type-card"
+                      disabled={busy}
+                      onClick={() => setSelectedTypeId(t.id)}
+                    >
+                      <span className="admin-pkg-builder__type-order" aria-hidden>
+                        {index + 1}
+                      </span>
+                      <span className="admin-pkg-builder__type-body">
+                        <span className="admin-pkg-builder__type-name-text">
+                          {t.name.trim() || `Template ${t.sort_order}`}
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="admin-pkg-builder__type-remove"
-                        disabled={busy || types.length <= 1}
-                        onClick={() => removePackageType(t.id)}
-                        aria-label={`Remove ${t.name}`}
-                      >
-                        Remove
-                      </button>
-                    </div>
+                        <span className="admin-pkg-builder__type-meta">
+                          {tiers.length} solution{tiers.length === 1 ? "" : "s"}
+                          {tagCount > 0
+                            ? ` · ${tagCount} tag${tagCount === 1 ? "" : "s"}`
+                            : ""}
+                        </span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-pkg-builder__type-remove"
+                      disabled={busy || types.length <= 1}
+                      onClick={() => removePackageType(t.id)}
+                      aria-label={`Remove ${t.name}`}
+                      title={`Remove ${t.name.trim() || "template"}`}
+                    >
+                      ×
+                    </button>
                   </li>
                 );
               })}
@@ -939,46 +1062,75 @@ export function PackageBuilderSlotLimitsPanel({
         </aside>
 
         {!selectedTypeId ? (
-          <main className="admin-pkg-builder__main" aria-label="Package solutions">
+          <main className="admin-pkg-builder__workspace" aria-label="Package workspace">
             <p className="admin-pkg-builder__empty" style={muted}>
               Select a template to configure its solutions.
             </p>
           </main>
         ) : (
-          <>
-            <div className="admin-pkg-builder__tiers-pane" aria-label="Template solutions">
-              <div className="admin-pkg-builder__main-head">
-                <div>
+          <main
+            className={
+              selectedSlot
+                ? "admin-pkg-builder__workspace admin-pkg-builder__workspace--editing"
+                : "admin-pkg-builder__workspace"
+            }
+            aria-label="Package workspace"
+          >
+            <div className="admin-pkg-builder__workspace-bar">
+              <div className="admin-pkg-builder__workspace-bar-copy">
+                {selectedType ? (
+                  <label className="admin-pkg-builder__template-rename">
+                    <span className="admin-pkg-builder__field-caption">Template name</span>
+                    <input
+                      className="admin-pkg-builder__template-rename-input"
+                      value={selectedType.name}
+                      disabled={busy}
+                      onChange={(e) => setType(selectedType.id, { name: e.target.value })}
+                      aria-label="Template name"
+                    />
+                  </label>
+                ) : (
                   <h3 className="admin-pkg-builder__main-title">{selectedTypeName}</h3>
+                )}
+                {!selectedSlot ? (
                   <p className="admin-pkg-builder__main-hint" style={muted}>
-                    Select a solution to edit limits, components, tags, and package content.
+                    Choose a solution to open the editor.
                   </p>
-                </div>
-                <div className="admin-pkg-builder__main-actions">
-                  <button
-                    type="button"
-                    className="admin-btn-primary admin-pkg-builder__save-btn"
-                    style={btnPrimary}
-                    disabled={busy}
-                    onClick={() => void save()}
-                  >
-                    {busy ? "Saving…" : "Save configuration"}
-                  </button>
-                  <button
-                    type="button"
-                    className="admin-pkg-builder__add-tier-btn"
-                    style={btnSm}
-                    disabled={busy}
-                    onClick={addSlot}
-                  >
-                    Add solution
-                  </button>
-                </div>
+                ) : null}
               </div>
+              <div className="admin-pkg-builder__main-actions">
+                <button
+                  type="button"
+                  className="admin-btn-primary admin-pkg-builder__save-btn"
+                  style={btnPrimary}
+                  disabled={busy}
+                  onClick={() => void save()}
+                >
+                  {busy ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="admin-pkg-builder__add-tier-btn"
+                  style={btnSm}
+                  disabled={busy}
+                  onClick={addSlot}
+                >
+                  Add solution
+                </button>
+                <button type="button" style={btnSm} disabled={busy} onClick={() => void load()}>
+                  Reload
+                </button>
+              </div>
+            </div>
 
-              {selectedType ? (
-                <label className="admin-pkg-builder__card-desc">
-                  <span className="admin-pkg-builder__field-caption">Package Card Description</span>
+            {selectedType ? (
+              <details className="admin-pkg-builder__card-desc">
+                <summary className="admin-pkg-builder__card-desc-summary">
+                  Package card description
+                  {selectedType.card_description?.trim() ? "" : " (empty)"}
+                </summary>
+                <label className="admin-pkg-builder__card-desc-field">
+                  <span className="admin-visually-hidden">Package Card Description</span>
                   <textarea
                     style={textarea}
                     rows={3}
@@ -992,104 +1144,148 @@ export function PackageBuilderSlotLimitsPanel({
                     }
                   />
                 </label>
-              ) : null}
+              </details>
+            ) : null}
 
-              <div className="admin-pkg-builder__tier-list">
-                {typeSlots.map((r) => {
-                  const active = selectedSlotId === r.id;
-                  const rulesSummary = selectionRulesSummary(r);
-                  return (
-                    <div
-                      key={r.id}
-                      className={
-                        active
-                          ? "admin-pkg-builder__tier-row is-active"
-                          : "admin-pkg-builder__tier-row"
-                      }
-                    >
+            <section
+              className={
+                selectedSlot
+                  ? "admin-pkg-builder__solution-strip admin-pkg-builder__solution-strip--compact"
+                  : "admin-pkg-builder__solution-strip"
+              }
+              aria-label="Template solutions"
+            >
+              {!selectedSlot ? (
+                <div className="admin-pkg-builder__solution-strip-head">
+                  <h4 className="admin-pkg-builder__solution-strip-title">Solutions</h4>
+                  <span className="admin-pkg-builder__solution-strip-count">
+                    {typeSlots.length}
+                  </span>
+                </div>
+              ) : null}
+              {typeSlots.length === 0 ? (
+                <p className="admin-pkg-builder__empty-inline" style={muted}>
+                  No solutions yet. Add one to start configuring limits and components.
+                </p>
+              ) : selectedSlot ? (
+                <div
+                  className="admin-pkg-builder__solution-tabs"
+                  role="tablist"
+                  aria-label="Solutions"
+                >
+                  {typeSlots.map((r) => {
+                    const active = selectedSlotId === r.id;
+                    return (
                       <button
+                        key={r.id}
                         type="button"
-                        className="admin-pkg-builder__tier-row-main"
+                        role="tab"
+                        aria-selected={active}
+                        title={slotLimitSummary(r)}
                         disabled={busy}
+                        className={
+                          active
+                            ? "admin-pkg-builder__solution-tab is-active"
+                            : "admin-pkg-builder__solution-tab"
+                        }
                         onClick={() => {
                           setSelectedSlotId(r.id);
                           setEditorTab("limits");
                         }}
                       >
-                        <span className="admin-pkg-builder__tier-order">{r.sort_order}</span>
-                        <span className="admin-pkg-builder__tier-row-body">
-                          <input
-                            className="admin-pkg-builder__tier-label"
-                            style={input}
-                            value={r.label}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setSlot(r.id, { label: e.target.value })}
-                            onFocus={() => setSelectedSlotId(r.id)}
-                            aria-label={`Solution ${r.sort_order} label`}
-                          />
-                          <span className="admin-pkg-builder__tier-row-meta" style={muted}>
-                            {slotLimitSummary(r)}
-                            {rulesSummary ? ` · ${rulesSummary}` : ""}
-                          </span>
-                        </span>
+                        {r.label.trim() || `Solution ${r.sort_order}`}
                       </button>
-                      <div className="admin-pkg-builder__tier-toolbar">
-                        <select
-                          className="admin-pkg-builder__copy-select"
-                          style={input}
-                          defaultValue=""
-                          disabled={busy || typeSlots.length <= 1}
-                          aria-label={`Copy settings into ${r.label}`}
-                          onChange={(e) => {
-                            const sourceId = e.target.value;
-                            if (sourceId) copySettingsFromTier(r.id, sourceId);
-                            e.target.value = "";
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="admin-pkg-builder__tier-list" role="list">
+                  {typeSlots.map((r) => {
+                    const rulesSummary = selectionRulesSummary(r);
+                    return (
+                      <div key={r.id} role="listitem" className="admin-pkg-builder__tier-row">
+                        <button
+                          type="button"
+                          className="admin-pkg-builder__tier-row-main"
+                          disabled={busy}
+                          onClick={() => {
+                            setSelectedSlotId(r.id);
+                            setEditorTab("limits");
                           }}
                         >
-                          <option value="">Copy from…</option>
-                          {typeSlots
-                            .filter((s) => s.id !== r.id)
-                            .map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.label.trim() || `Solution ${s.sort_order}`}
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          type="button"
-                          style={btnSm}
-                          disabled={busy}
-                          title="Duplicate solution with same limits and selection rules"
-                          onClick={() => duplicateSlot(r.id)}
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          type="button"
-                          style={btnDangerSm}
-                          disabled={busy || typeSlots.length <= 1}
-                          onClick={() => removeSlot(r.id)}
-                        >
-                          Remove
+                          <span className="admin-pkg-builder__tier-order">{r.sort_order}</span>
+                          <span className="admin-pkg-builder__tier-row-body">
+                            <span className="admin-pkg-builder__tier-label-text">
+                              {r.label.trim() || `Solution ${r.sort_order}`}
+                            </span>
+                            <span className="admin-pkg-builder__tier-row-meta" style={muted}>
+                              {slotLimitSummary(r)}
+                              {rulesSummary ? ` · ${rulesSummary}` : ""}
+                            </span>
+                          </span>
                         </button>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
             {selectedSlot ? (
               <div className="admin-pkg-builder__tier-editor" aria-label="Solution editor">
                 <header className="admin-pkg-builder__editor-head">
                   <div className="admin-pkg-builder__editor-head-text">
-                    <p className="admin-pkg-builder__editor-kicker">Editing solution</p>
-                    <h3 className="admin-pkg-builder__editor-title">
-                      {selectedSlot.label.trim() || `Solution ${selectedSlot.sort_order}`}
-                    </h3>
-                    <p className="admin-pkg-builder__editor-meta">
-                      {slotLimitSummary(selectedSlot)}
-                    </p>
+                    <label className="admin-pkg-builder__editor-rename">
+                      <span className="admin-pkg-builder__field-caption">Solution name</span>
+                      <input
+                        className="admin-pkg-builder__tier-label"
+                        style={input}
+                        value={selectedSlot.label}
+                        disabled={busy}
+                        onChange={(e) => setSlot(selectedSlot.id, { label: e.target.value })}
+                        aria-label={`Solution ${selectedSlot.sort_order} label`}
+                      />
+                    </label>
+                  </div>
+                  <div className="admin-pkg-builder__editor-head-actions">
+                    <select
+                      className="admin-pkg-builder__copy-select"
+                      style={input}
+                      defaultValue=""
+                      disabled={busy || typeSlots.length <= 1}
+                      aria-label={`Copy settings into ${selectedSlot.label}`}
+                      onChange={(e) => {
+                        const sourceId = e.target.value;
+                        if (sourceId) copySettingsFromTier(selectedSlot.id, sourceId);
+                        e.target.value = "";
+                      }}
+                    >
+                      <option value="">Copy from…</option>
+                      {typeSlots
+                        .filter((s) => s.id !== selectedSlot.id)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label.trim() || `Solution ${s.sort_order}`}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      type="button"
+                      style={btnSm}
+                      disabled={busy}
+                      title="Duplicate solution with same limits and selection rules"
+                      onClick={() => duplicateSlot(selectedSlot.id)}
+                    >
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      style={btnDangerSm}
+                      disabled={busy || typeSlots.length <= 1}
+                      onClick={() => removeSlot(selectedSlot.id)}
+                    >
+                      Remove
+                    </button>
                   </div>
                 </header>
                 <div className="admin-pkg-builder__editor-tabs" role="tablist">
@@ -1440,17 +1636,26 @@ export function PackageBuilderSlotLimitsPanel({
                       </div>
                     </section>
 
+                    <input
+                      className="admin-pkg-builder__vault-search"
+                      style={input}
+                      type="search"
+                      placeholder="Filter bucket members…"
+                      value={bucketMemberFilter}
+                      onChange={(e) => setBucketMemberFilter(e.target.value)}
+                    />
+
                     <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
                       <div className="admin-pkg-builder__section-head admin-pkg-builder__section-head--row">
                         <div className="admin-pkg-builder__section-copy">
                           <h4 className="admin-pkg-builder__section-title">
-                            Choice buckets
+                            Required Choice Buckets
                             <span className="admin-pkg-builder__section-count">
-                              {sortedBuckets.length}
+                              {requiredBuckets.length}
                             </span>
                           </h4>
                           <p className="admin-pkg-builder__section-lead" style={muted}>
-                            Users pick exactly N distinct members from each bucket.
+                            Builders must pick exactly N distinct members from each bucket.
                           </p>
                         </div>
                         <button
@@ -1458,122 +1663,48 @@ export function PackageBuilderSlotLimitsPanel({
                           className="admin-pkg-builder__btn-quiet"
                           style={btnSm}
                           disabled={busy}
-                          onClick={() => addBucket(selectedSlot.id)}
+                          onClick={() => addBucket(selectedSlot.id, false)}
                         >
                           Add bucket
                         </button>
                       </div>
-                      <input
-                        className="admin-pkg-builder__vault-search"
-                        style={input}
-                        type="search"
-                        placeholder="Filter bucket members…"
-                        value={bucketMemberFilter}
-                        onChange={(e) => setBucketMemberFilter(e.target.value)}
-                      />
-                      {sortedBuckets.length === 0 ? (
+                      {requiredBuckets.length === 0 ? (
                         <p className="admin-pkg-builder__empty-inline" style={muted}>
-                          No choice groups yet. Add a bucket to let builders pick from a set.
+                          No required buckets yet. Add one when builders must choose from a set.
                         </p>
                       ) : null}
-                      {sortedBuckets.map((b, idx) => (
-                        <article key={b.id} className="admin-pkg-builder__bucket-card">
-                          <div className="admin-pkg-builder__bucket-head">
-                            <label className="admin-pkg-builder__field">
-                              <span className="admin-pkg-builder__field-caption">Name</span>
-                              <input
-                                style={input}
-                                value={b.name}
-                                disabled={busy}
-                                onChange={(e) =>
-                                  updateBucket(selectedSlot.id, b.id, { name: e.target.value })
-                                }
-                                aria-label={`Bucket ${idx + 1} name`}
-                              />
-                            </label>
-                            <label className="admin-pkg-builder__field admin-pkg-builder__field--pick">
-                              <span className="admin-pkg-builder__field-caption">Pick N</span>
-                              <input
-                                style={input}
-                                type="number"
-                                min={1}
-                                step={1}
-                                value={b.pick_count}
-                                disabled={busy}
-                                onChange={(e) =>
-                                  updateBucket(selectedSlot.id, b.id, {
-                                    pick_count: Math.max(1, Math.floor(Number(e.target.value)) || 1),
-                                  })
-                                }
-                                aria-label={`Bucket ${idx + 1} pick count`}
-                              />
-                            </label>
-                            <div className="admin-pkg-builder__bucket-actions">
-                              <button
-                                type="button"
-                                className="admin-pkg-builder__icon-btn"
-                                style={btnSm}
-                                disabled={busy || idx === 0}
-                                aria-label="Move bucket up"
-                                onClick={() => moveBucket(selectedSlot.id, b.id, -1)}
-                              >
-                                ↑
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-pkg-builder__icon-btn"
-                                style={btnSm}
-                                disabled={busy || idx >= sortedBuckets.length - 1}
-                                aria-label="Move bucket down"
-                                onClick={() => moveBucket(selectedSlot.id, b.id, 1)}
-                              >
-                                ↓
-                              </button>
-                              <button
-                                type="button"
-                                className="admin-pkg-builder__ghost-danger"
-                                disabled={busy}
-                                onClick={() => removeBucket(selectedSlot.id, b.id)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                          <p className="admin-pkg-builder__bucket-members-label">
-                            Members · {b.member_tier_ids.length} selected
+                      {requiredBuckets.map((b) => renderBucketCard(b, requiredBuckets))}
+                    </section>
+
+                    <section className="admin-pkg-builder__section admin-pkg-builder__section--card">
+                      <div className="admin-pkg-builder__section-head admin-pkg-builder__section-head--row">
+                        <div className="admin-pkg-builder__section-copy">
+                          <h4 className="admin-pkg-builder__section-title">
+                            Optional Choice Bucket
+                            <span className="admin-pkg-builder__section-count">
+                              {optionalBuckets.length}
+                            </span>
+                          </h4>
+                          <p className="admin-pkg-builder__section-lead" style={muted}>
+                            Builders may skip these, or pick up to N distinct members.
                           </p>
-                          <div className="admin-pkg-builder__vault-grid admin-pkg-builder__vault-grid--bucket">
-                            {bucketMemberCandidates.map((vt) => {
-                              const checked = b.member_tier_ids.includes(vt.solution_tier_id);
-                              return (
-                                <label
-                                  key={vt.solution_tier_id}
-                                  className={
-                                    checked
-                                      ? "admin-pkg-builder__vault-check is-checked"
-                                      : "admin-pkg-builder__vault-check"
-                                  }
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={busy}
-                                    onChange={(e) =>
-                                      toggleBucketMember(
-                                        selectedSlot.id,
-                                        b.id,
-                                        vt.solution_tier_id,
-                                        e.target.checked
-                                      )
-                                    }
-                                  />
-                                  <span>{vt.label}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </article>
-                      ))}
+                        </div>
+                        <button
+                          type="button"
+                          className="admin-pkg-builder__btn-quiet"
+                          style={btnSm}
+                          disabled={busy}
+                          onClick={() => addBucket(selectedSlot.id, true)}
+                        >
+                          Add bucket
+                        </button>
+                      </div>
+                      {optionalBuckets.length === 0 ? (
+                        <p className="admin-pkg-builder__empty-inline" style={muted}>
+                          No optional buckets yet. Add one when builders can skip the choice.
+                        </p>
+                      ) : null}
+                      {optionalBuckets.map((b) => renderBucketCard(b, optionalBuckets))}
                     </section>
                   </div>
                 ) : null}
@@ -1738,25 +1869,14 @@ export function PackageBuilderSlotLimitsPanel({
                   </div>
                 ) : null}
               </div>
-            ) : null}
-          </>
+            ) : (
+              <p className="admin-pkg-builder__editor-empty" style={muted}>
+                Select a solution above to edit limits, components, tags, content, and discount.
+              </p>
+            )}
+          </main>
         )}
       </div>
-
-      <footer className="admin-pkg-builder__footer admin-actions-row">
-        <button
-          type="button"
-          className="admin-btn-primary"
-          style={btnPrimary}
-          disabled={busy}
-          onClick={() => void save()}
-        >
-          {busy ? "Saving…" : "Save configuration"}
-        </button>
-        <button type="button" style={btnSm} disabled={busy} onClick={() => void load()}>
-          Reload
-        </button>
-      </footer>
     </div>
   );
 }

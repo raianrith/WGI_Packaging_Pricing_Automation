@@ -77,6 +77,7 @@ export function routePresenceLabel(pathname: string | null | undefined): string 
   if (path === "/packages") return "Catalog";
   if (path.startsWith("/package/")) return "Package Workspace";
   if (path === "/roadmap" || path.startsWith("/roadmap/")) return "Proposal Builder";
+  if (path === "/feedback") return "Feedback";
   if (path === "/solution-requests") return "Solution Requests";
   if (path === "/admin" || path.startsWith("/admin/")) return "Admin";
   return path;

@@ -7,7 +7,8 @@ export function isAgencyRoute(pathname: string): boolean {
     pathname.startsWith("/package/") ||
     pathname === "/catalog" ||
     pathname === "/custom-solutions" ||
-    pathname === "/solution-requests"
+    pathname === "/solution-requests" ||
+    pathname === "/feedback"
   );
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { SolutionRequestModal } from "../components/SolutionRequestModal";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -340,7 +341,11 @@ export function SolutionRequestsView() {
             <h1 className="solution-requests__title">New Solution Requests</h1>
             <p className="solution-requests__lede">
               Capture ideas to productize, track review, and send approved work into Productive as a
-              five-step task list.
+              five-step task list. New submissions also live under{" "}
+              <Link className="agency-hub__link" to="/feedback?category=new_solution&new=1">
+                Feedback
+              </Link>
+              .
             </p>
           </div>
           <button type="button" className="solution-requests__cta" onClick={() => setModalOpen(true)}>

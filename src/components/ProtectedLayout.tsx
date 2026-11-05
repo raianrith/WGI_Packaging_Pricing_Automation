@@ -221,17 +221,17 @@ export function ProtectedLayout() {
           <div className="app-top-bar__account">
             <div className="app-top-bar__account-controls">
               <GuardedNavLink
-                to="/solution-requests"
+                to="/feedback"
                 className={({ isActive }) =>
                   `app-new-solution-request${isActive ? " is-active" : ""}`
                 }
-                title="New Solution Request queue"
+                title="Feedback / New Solution Request"
               >
                 <span className="app-new-solution-request__label app-new-solution-request__label--full">
-                  New Solution Request
+                  Feedback / New Solution Request
                 </span>
                 <span className="app-new-solution-request__label app-new-solution-request__label--short">
-                  New Request
+                  Feedback
                 </span>
               </GuardedNavLink>
               <AppUserMenu />

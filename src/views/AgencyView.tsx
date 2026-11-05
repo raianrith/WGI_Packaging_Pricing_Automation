@@ -2323,7 +2323,7 @@ export function AgencyView({ mode, catalogSubview = "directory" }: AgencyViewPro
                   currentDisplayName={displayName}
                   selectedRowId={selectedCatalogRowId}
                   onSelectRow={(row) => setSelectedCatalogRowId(row.id)}
-                  newRequestHref="/solution-requests"
+                  newRequestHref="/feedback?category=new_solution&new=1"
                 />
                 {selectedCatalogRowId ? (
                   <CatalogInspectorPanel

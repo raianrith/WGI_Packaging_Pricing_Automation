@@ -571,7 +571,7 @@ export function CatalogDirectoryBrowser({
           <div className="catalog-toolbar__end">
             {newRequestHref ? (
               <Link className="catalog-toolbar__request" to={newRequestHref}>
-                New request
+                Request solution
               </Link>
             ) : null}
           </div>

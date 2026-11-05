@@ -11,6 +11,7 @@ import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminView } from "./views/AdminView";
 import { AuthPage } from "./views/AuthPage";
 import { RoadmapPlanningView } from "./views/RoadmapPlanningView";
+import { FeedbackView } from "./views/FeedbackView";
 import { SolutionRequestsView } from "./views/SolutionRequestsView";
 import { CatalogCustomSolutionsView } from "./views/CatalogCustomSolutionsView";
 
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/roadmap" element={<RoadmapPlanningView />} />
           <Route path="/roadmap/:proposalId" element={<RoadmapPlanningView />} />
           <Route path="/package-builder" element={<AgencyPackageBuilderView />} />
+          <Route path="/feedback" element={<FeedbackView />} />
           <Route path="/solution-requests" element={<SolutionRequestsView />} />
           <Route path="/" element={<AgencyHomeView />} />
           <Route element={<AgencyTabsShell />}>

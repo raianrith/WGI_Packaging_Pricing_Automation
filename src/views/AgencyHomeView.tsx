@@ -97,7 +97,7 @@ export function AgencyHomeView() {
     { to: "/solutions", label: "Catalog", hint: "Solutions and packages in one table" },
     { to: "/directory-details", label: "Solutions Overview", hint: "Scope, process, tasks, and pricing" },
     { to: "/custom-solutions", label: "Custom Solutions", hint: "Scoping requests and ops-built custom lines" },
-    { to: "/solution-requests", label: "New Solution Request", hint: "Ask for a solution that isn't in the vault" },
+    { to: "/feedback", label: "Feedback", hint: "Bugs, upgrades, content gaps, and new solution requests" },
   ];
   if (!profileLoading && isAdmin) {
     jumps.push({ to: "/admin", label: "Admin", hint: "Edit vault data, templates, and settings" });

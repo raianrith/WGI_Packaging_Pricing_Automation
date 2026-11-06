@@ -439,7 +439,7 @@ export function AdminView() {
         <div className="admin-hero-top">
           <div className="admin-hero-top__copy">
             <span className="admin-hero__eyebrow">Admin</span>
-            <h1 className="admin-hero__title admin-hero__title--section" style={title}>
+            <h1 className="admin-hero__title admin-hero__title--section">
               {activeNav?.item.label ?? "Admin"}
             </h1>
             <p className="admin-hero__desc admin-hero__desc--compact" style={subtitle}>
@@ -2639,14 +2639,6 @@ function DataGlossaryPanel() {
 
 const shell: CSSProperties = {
   minHeight: "100%",
-};
-
-const title: CSSProperties = {
-  margin: "0 0 0.45rem",
-  fontSize: "1.65rem",
-  fontWeight: 700,
-  letterSpacing: "-0.04em",
-  lineHeight: 1.2,
 };
 
 const subtitle: CSSProperties = {

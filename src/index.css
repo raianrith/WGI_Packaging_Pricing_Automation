@@ -3278,13 +3278,13 @@ button {
 .admin-hero__eyebrow {
   display: inline-flex;
   align-items: center;
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.45rem;
   padding: 0;
   border: none;
   border-radius: 0;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--header);
   background: transparent;
@@ -3298,9 +3298,9 @@ button {
 .admin-hero__title--section {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.85rem, 3.2vw, 2.45rem);
+  font-size: clamp(2.35rem, 4.2vw, 3.25rem);
   font-weight: 400;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   line-height: 0.95;
   text-transform: uppercase;
   color: var(--suede);
@@ -29861,6 +29861,15 @@ html[data-theme="dark"] .app-new-solution-request.is-active {
   font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--header);
+}
+
+.app-feedback__legacy-tag {
+  margin-left: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .app-feedback__table th:nth-child(2),

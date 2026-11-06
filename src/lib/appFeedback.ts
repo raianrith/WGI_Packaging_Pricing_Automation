@@ -419,3 +419,108 @@ export function parseAppFeedbackCategoryParam(
     ? (raw as AppFeedbackCategory)
     : "";
 }
+
+/** Board row that may come from `app_feedback` or legacy `solution_requests`. */
+export type FeedbackBoardRow = AppFeedback & {
+  source: "app_feedback" | "solution_request";
+};
+
+type LegacySolutionRequestRow = {
+  id: string;
+  status: string;
+  priority: string;
+  solution_name: string;
+  requested_by_name: string;
+  requested_by_email: string;
+  requested_by_user_id: string | null;
+  client_need: string;
+  typical_use_case: string;
+  suggested_phase: string | null;
+  suggested_category: string | null;
+  suggested_tactic: string | null;
+  desired_deliverables: string;
+  in_scope?: string | null;
+  out_of_scope?: string | null;
+  known_work?: string | null;
+  why_productize: string;
+  related_offerings?: string | null;
+  additional_notes: string | null;
+  review_notes: string | null;
+  status_updated_by_email: string | null;
+  status_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function mapSolutionRequestToFeedbackBoardRow(
+  row: LegacySolutionRequestRow
+): FeedbackBoardRow {
+  const status: AppFeedbackStatus =
+    row.status === "approved"
+      ? "reviewing"
+      : row.status === "in_progress"
+        ? "in_progress"
+        : row.status === "not_approved"
+          ? "deferred"
+          : "pending";
+  const priority: AppFeedbackPriority =
+    row.priority === "high" ? "high" : row.priority === "low" ? "low" : "medium";
+  const extras = [
+    row.in_scope?.trim() ? `In scope: ${row.in_scope.trim()}` : "",
+    row.out_of_scope?.trim() ? `Out of scope: ${row.out_of_scope.trim()}` : "",
+    row.known_work?.trim() ? `Known work: ${row.known_work.trim()}` : "",
+    row.related_offerings?.trim() ? `Related: ${row.related_offerings.trim()}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return {
+    id: row.id,
+    source: "solution_request",
+    status,
+    priority,
+    category: "new_solution",
+    area: "solutions_catalog",
+    title: row.solution_name,
+    details: row.client_need || row.typical_use_case || "",
+    page_or_url: null,
+    steps_to_reproduce: null,
+    expected_behavior: null,
+    actual_behavior: null,
+    related_name: row.solution_name,
+    impact: null,
+    client_need: row.client_need,
+    typical_use_case: row.typical_use_case,
+    desired_deliverables: row.desired_deliverables,
+    why_productize: row.why_productize,
+    suggested_phase: row.suggested_phase,
+    suggested_category: row.suggested_category,
+    suggested_tactic: row.suggested_tactic,
+    additional_notes: [row.additional_notes?.trim(), extras].filter(Boolean).join("\n\n") || null,
+    review_notes: row.review_notes,
+    requested_by_name: row.requested_by_name,
+    requested_by_email: row.requested_by_email,
+    requested_by_user_id: row.requested_by_user_id,
+    status_updated_by_email: row.status_updated_by_email,
+    status_updated_at: row.status_updated_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/** Map feedback board stage back onto legacy `solution_requests.status`. */
+export function feedbackStatusToSolutionRequestStatus(
+  status: AppFeedbackStatus
+): "pending" | "approved" | "in_progress" | "not_approved" {
+  switch (status) {
+    case "reviewing":
+    case "resolved":
+      return "approved";
+    case "in_progress":
+      return "in_progress";
+    case "deferred":
+      return "not_approved";
+    case "pending":
+    default:
+      return "pending";
+  }
+}

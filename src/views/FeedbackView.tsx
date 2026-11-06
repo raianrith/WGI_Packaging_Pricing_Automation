@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { FeedbackModal } from "../components/FeedbackModal";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -12,12 +12,15 @@ import {
   appFeedbackInsertRow,
   appFeedbackPriorityLabel,
   appFeedbackStatusLabel,
+  feedbackStatusToSolutionRequestStatus,
   formatAppFeedbackDate,
+  mapSolutionRequestToFeedbackBoardRow,
   parseAppFeedbackCategoryParam,
   type AppFeedback,
   type AppFeedbackCategory,
   type AppFeedbackFormInput,
   type AppFeedbackStatus,
+  type FeedbackBoardRow,
 } from "../lib/appFeedback";
 import { canEditProposalPricing } from "../lib/proposalPricingAccess";
 import { getSupabase } from "../lib/supabase";
@@ -38,7 +41,7 @@ function requesterDisplayName(user: ReturnType<typeof useAuth>["user"]): string 
 }
 
 function canDeleteFeedback(
-  row: AppFeedback,
+  row: FeedbackBoardRow,
   user: ReturnType<typeof useAuth>["user"],
   canManageStatus: boolean
 ): boolean {
@@ -48,7 +51,7 @@ function canDeleteFeedback(
   return Boolean(email && row.requested_by_email.trim().toLowerCase() === email);
 }
 
-function searchBlob(row: AppFeedback): string {
+function searchBlob(row: FeedbackBoardRow): string {
   return [
     row.title,
     row.details,
@@ -128,8 +131,9 @@ export function FeedbackView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAdmin } = useAuth();
   const { toastSuccess, toastError } = useToast();
-  const [rows, setRows] = useState<AppFeedback[]>([]);
+  const [rows, setRows] = useState<FeedbackBoardRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [legacyCount, setLegacyCount] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -160,20 +164,38 @@ export function FeedbackView() {
     const client = getSupabase();
     if (!client) {
       setRows([]);
+      setLegacyCount(0);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const { data, error } = await client
-      .from("app_feedback")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toastError(error.message || "Could not load feedback.");
+    const [feedbackRes, legacyRes] = await Promise.all([
+      client.from("app_feedback").select("*").order("created_at", { ascending: false }),
+      client.from("solution_requests").select("*").order("created_at", { ascending: false }),
+    ]);
+    if (feedbackRes.error) {
+      toastError(feedbackRes.error.message || "Could not load feedback.");
       setRows([]);
-    } else {
-      setRows((data ?? []) as AppFeedback[]);
+      setLegacyCount(0);
+      setLoading(false);
+      return;
     }
+    const feedbackRows: FeedbackBoardRow[] = ((feedbackRes.data ?? []) as AppFeedback[]).map(
+      (row) => ({ ...row, source: "app_feedback" as const })
+    );
+    const legacyRows: FeedbackBoardRow[] = legacyRes.error
+      ? []
+      : ((legacyRes.data ?? []) as Parameters<typeof mapSolutionRequestToFeedbackBoardRow>[0][]).map(
+          mapSolutionRequestToFeedbackBoardRow
+        );
+    if (legacyRes.error) {
+      console.warn("[feedback] could not load legacy solution_requests", legacyRes.error.message);
+    }
+    const merged = [...feedbackRows, ...legacyRows].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    setRows(merged);
+    setLegacyCount(legacyRows.length);
     setLoading(false);
   }, [toastError]);
 
@@ -222,7 +244,7 @@ export function FeedbackView() {
       setSubmitting(false);
       return;
     }
-    const created = data as AppFeedback;
+    const created: FeedbackBoardRow = { ...(data as AppFeedback), source: "app_feedback" };
     toastSuccess("Feedback submitted. It’s on the board.");
     setRows((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
     setSelectedId(created.id);
@@ -241,14 +263,37 @@ export function FeedbackView() {
       toastError("Supabase is not configured.");
       return;
     }
+    const current = rows.find((r) => r.id === id);
+    if (!current) return;
     setStatusBusyId(id);
+    const stamp = {
+      status_updated_by_email: user?.email ?? null,
+      status_updated_at: new Date().toISOString(),
+    };
+    if (current.source === "solution_request") {
+      const legacyStatus = feedbackStatusToSolutionRequestStatus(status);
+      const { data, error } = await client
+        .from("solution_requests")
+        .update({ status: legacyStatus, ...stamp })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) {
+        toastError(error.message || "Could not update status.");
+        setStatusBusyId(null);
+        return;
+      }
+      const updated = mapSolutionRequestToFeedbackBoardRow(
+        data as Parameters<typeof mapSolutionRequestToFeedbackBoardRow>[0]
+      );
+      toastSuccess(`Marked as ${appFeedbackStatusLabel(status)}.`);
+      setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      setStatusBusyId(null);
+      return;
+    }
     const { data, error } = await client
       .from("app_feedback")
-      .update({
-        status,
-        status_updated_by_email: user?.email ?? null,
-        status_updated_at: new Date().toISOString(),
-      })
+      .update({ status, ...stamp })
       .eq("id", id)
       .select("*")
       .single();
@@ -257,13 +302,13 @@ export function FeedbackView() {
       setStatusBusyId(null);
       return;
     }
-    const updated = data as AppFeedback;
+    const updated: FeedbackBoardRow = { ...(data as AppFeedback), source: "app_feedback" };
     toastSuccess(`Marked as ${appFeedbackStatusLabel(status)}.`);
     setRows((prev) => prev.map((r) => (r.id === id ? updated : r)));
     setStatusBusyId(null);
   };
 
-  const deleteFeedback = async (row: AppFeedback) => {
+  const deleteFeedback = async (row: FeedbackBoardRow) => {
     if (!canDeleteFeedback(row, user, canManageStatus)) return;
     const ok = window.confirm(`Delete “${row.title}”? This cannot be undone.`);
     if (!ok) return;
@@ -273,13 +318,15 @@ export function FeedbackView() {
       return;
     }
     setDeletingId(row.id);
-    const { error } = await client.from("app_feedback").delete().eq("id", row.id);
+    const table = row.source === "solution_request" ? "solution_requests" : "app_feedback";
+    const { error } = await client.from(table).delete().eq("id", row.id);
     setDeletingId(null);
     if (error) {
       toastError(error.message || "Could not delete feedback.");
       return;
     }
     setRows((prev) => prev.filter((r) => r.id !== row.id));
+    if (row.source === "solution_request") setLegacyCount((n) => Math.max(0, n - 1));
     setSelectedId((id) => (id === row.id ? null : id));
     toastSuccess(`Deleted “${row.title}”.`);
   };
@@ -301,6 +348,25 @@ export function FeedbackView() {
             <p className="solution-requests__lede">
               One place for bugs, upgrades, content gaps, package notes, and new solution requests —
               with stages so you can see what’s open and who’s asking.
+              {legacyCount > 0 ? (
+                <>
+                  {" "}
+                  Includes {legacyCount} earlier{" "}
+                  <Link className="agency-hub__link" to="/solution-requests">
+                    New Solution Request{legacyCount === 1 ? "" : "s"}
+                  </Link>{" "}
+                  from the solutions queue.
+                </>
+              ) : (
+                <>
+                  {" "}
+                  Dedicated Productive handoff still lives under{" "}
+                  <Link className="agency-hub__link" to="/solution-requests">
+                    New Solution Requests
+                  </Link>
+                  .
+                </>
+              )}
             </p>
           </div>
           <button
@@ -422,7 +488,7 @@ export function FeedbackView() {
                         "";
                       return (
                         <tr
-                          key={row.id}
+                          key={`${row.source}:${row.id}`}
                           className={`agency-catalog-directory__parent${selectedRow ? " is-selected" : ""}`}
                           role="button"
                           tabIndex={0}
@@ -439,6 +505,9 @@ export function FeedbackView() {
                               <div className="agency-catalog-directory__name-copy">
                                 <span className="agency-catalog-tier-sheet__tier-title">
                                   {row.title}
+                                  {row.source === "solution_request" ? (
+                                    <span className="app-feedback__legacy-tag"> Legacy</span>
+                                  ) : null}
                                 </span>
                                 {preview ? (
                                   <span className="agency-catalog-directory__inline-meta">
@@ -517,7 +586,7 @@ function FeedbackInspector({
   onStatus,
   onDelete,
 }: {
-  row: AppFeedback;
+  row: FeedbackBoardRow;
   busy: boolean;
   deleting: boolean;
   canManageStatus: boolean;
@@ -531,7 +600,10 @@ function FeedbackInspector({
   return (
     <aside className="catalog-inspector" aria-label={`${row.title} details`}>
       <header className="catalog-inspector__head">
-        <p className="catalog-inspector__type">{appFeedbackStatusLabel(row.status)}</p>
+        <p className="catalog-inspector__type">
+          {appFeedbackStatusLabel(row.status)}
+          {row.source === "solution_request" ? " · Legacy request" : ""}
+        </p>
         <div className="catalog-inspector__head-actions">
           <button
             type="button"

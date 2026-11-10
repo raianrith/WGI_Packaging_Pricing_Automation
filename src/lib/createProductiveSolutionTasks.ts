@@ -73,6 +73,45 @@ export function requestPayloadFromFeedbackBoardRow(row: FeedbackBoardRow): Produ
   };
 }
 
+async function readFunctionsInvokeError(
+  error: { message?: string; context?: unknown },
+  data: unknown
+): Promise<string> {
+  if (data && typeof data === "object" && "error" in data && (data as { error?: unknown }).error) {
+    return String((data as { error: unknown }).error);
+  }
+  const ctx = error.context;
+  if (ctx && typeof ctx === "object") {
+    const response = ctx as {
+      json?: () => Promise<unknown>;
+      text?: () => Promise<string>;
+      clone?: () => { json?: () => Promise<unknown>; text?: () => Promise<string> };
+    };
+    const bodySource = typeof response.clone === "function" ? response.clone() : response;
+    try {
+      if (typeof bodySource.json === "function") {
+        const body = await bodySource.json();
+        if (body && typeof body === "object" && "error" in body && (body as { error?: unknown }).error) {
+          return String((body as { error: unknown }).error);
+        }
+        if (typeof body === "string" && body.trim()) return body.trim();
+        if (body && typeof body === "object") return JSON.stringify(body);
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      if (typeof bodySource.text === "function") {
+        const text = (await bodySource.text()).trim();
+        if (text) return text.slice(0, 400);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return error.message?.trim() || "Edge Function returned a non-2xx status code";
+}
+
 async function invokeProductiveTaskList(args: {
   requestId: string;
   source: ProductiveTaskListSource;
@@ -94,12 +133,9 @@ async function invokeProductiveTaskList(args: {
     });
 
     if (error) {
-      console.warn("[create-productive-solution-tasks]", error.message, data);
-      const nested =
-        data && typeof data === "object" && "error" in data
-          ? String((data as { error: unknown }).error)
-          : "";
-      return { ok: false, error: nested || error.message };
+      const msg = await readFunctionsInvokeError(error, data);
+      console.warn("[create-productive-solution-tasks]", msg, data);
+      return { ok: false, error: msg };
     }
     if (data && typeof data === "object" && "error" in data && (data as { error?: unknown }).error) {
       const msg = String((data as { error: unknown }).error);

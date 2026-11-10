@@ -221,6 +221,32 @@ async function productive(method: string, path: string, body?: unknown) {
   return asRecord(parsed);
 }
 
+/** Prefer configured folder when it belongs to the project; otherwise use the first active folder. */
+async function resolveFolderId(projectId: number): Promise<number> {
+  const preferred = PRODUCTIVE_FOLDER_ID > 0 ? PRODUCTIVE_FOLDER_ID : 0;
+  try {
+    const listed = await productive(
+      "GET",
+      `/folders?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
+    );
+    const rows = Array.isArray(listed.data) ? listed.data : [];
+    const ids = rows
+      .map((row) => Number(str(asRecord(row).id)))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (preferred && ids.includes(preferred)) return preferred;
+    if (ids[0]) return ids[0];
+  } catch (err) {
+    console.warn(
+      "[create-productive-solution-tasks] folder lookup failed",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  if (preferred) return preferred;
+  throw new Error(
+    `No Productive folders found for project ${projectId}. Open the project and create a folder, then retry.`,
+  );
+}
+
 async function loadRequest(
   requestId: string,
   source: TaskListSource,
@@ -310,13 +336,14 @@ Deno.serve(async (req) => {
   const listName = (snap.solutionName || str(dbRow?.title) || "Untitled solution").slice(0, 120);
 
   try {
+    const folderId = await resolveFolderId(PRODUCTIVE_PROJECT_ID);
     const createdList = await productive("POST", "/task_lists", {
       data: {
         type: "task_lists",
         attributes: {
           name: listName,
           project_id: PRODUCTIVE_PROJECT_ID,
-          folder_id: PRODUCTIVE_FOLDER_ID,
+          folder_id: folderId,
         },
       },
     });
@@ -358,6 +385,7 @@ Deno.serve(async (req) => {
       skipped: false,
       taskListId,
       url,
+      folderId,
       taskIds,
       taskErrors: taskErrors.length ? taskErrors : undefined,
     });

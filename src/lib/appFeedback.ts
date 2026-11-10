@@ -58,6 +58,8 @@ export type AppFeedback = {
   requested_by_user_id: string | null;
   status_updated_by_email: string | null;
   status_updated_at: string | null;
+  productive_task_list_id?: string | null;
+  productive_task_list_url?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -448,6 +450,8 @@ type LegacySolutionRequestRow = {
   review_notes: string | null;
   status_updated_by_email: string | null;
   status_updated_at: string | null;
+  productive_task_list_id?: string | null;
+  productive_task_list_url?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -502,6 +506,8 @@ export function mapSolutionRequestToFeedbackBoardRow(
     requested_by_user_id: row.requested_by_user_id,
     status_updated_by_email: row.status_updated_by_email,
     status_updated_at: row.status_updated_at,
+    productive_task_list_id: row.productive_task_list_id ?? null,
+    productive_task_list_url: row.productive_task_list_url ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

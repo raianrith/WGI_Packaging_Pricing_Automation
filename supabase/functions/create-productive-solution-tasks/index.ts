@@ -21,12 +21,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const PRODUCTIVE_API = "https://api.productive.io/api/v2";
 const PRODUCTIVE_API_TOKEN = Deno.env.get("PRODUCTIVE_API_TOKEN")?.trim() ?? "";
 const PRODUCTIVE_ORG_ID = Deno.env.get("PRODUCTIVE_ORG_ID")?.trim() || "47945";
-const PRODUCTIVE_PROJECT_ID = Number(Deno.env.get("PRODUCTIVE_PROJECT_ID")?.trim() || "825703");
-const PRODUCTIVE_FOLDER_ID = Number(Deno.env.get("PRODUCTIVE_FOLDER_ID")?.trim() || "1004078");
+const PRODUCTIVE_PROJECT_ID = Number(Deno.env.get("PRODUCTIVE_PROJECT_ID")?.trim() || "1099649");
+const PRODUCTIVE_FOLDER_ID = Number(Deno.env.get("PRODUCTIVE_FOLDER_ID")?.trim() || "4091165");
 const PRODUCTIVE_WORKFLOW_STATUS_ID = Number(
   Deno.env.get("PRODUCTIVE_WORKFLOW_STATUS_ID")?.trim() || "160919",
 );
-const PRODUCTIVE_APP_SLUG = Deno.env.get("PRODUCTIVE_APP_SLUG")?.trim() || "weidert-group";
+const PRODUCTIVE_APP_SLUG = Deno.env.get("PRODUCTIVE_APP_SLUG")?.trim() || "47945-weidert-group";
 
 const ASSIGNEE = {
   chelsea: Number(Deno.env.get("PRODUCTIVE_ASSIGNEE_CHELSEA")?.trim() || "1072559"),
@@ -132,7 +132,7 @@ function paragraph(label: string, value: string): string {
 function snapshotFromUnknown(raw: unknown): RequestSnapshot {
   const r = asRecord(raw);
   return {
-    solutionName: str(r.solutionName) || str(r.solution_name) || "Untitled solution",
+    solutionName: str(r.solutionName) || str(r.solution_name) || str(r.title) || "Untitled solution",
     requestedByName: str(r.requestedByName) || str(r.requested_by_name),
     requestedByEmail: str(r.requestedByEmail) || str(r.requested_by_email),
     clientNeed: str(r.clientNeed) || str(r.client_need),
@@ -155,11 +155,24 @@ function listUrl(taskListId: string): string {
   return `https://app.productive.io/${PRODUCTIVE_APP_SLUG}/projects/${PRODUCTIVE_PROJECT_ID}/task-lists/${taskListId}`;
 }
 
-function taskDescription(step: (typeof STEPS)[number], snap: RequestSnapshot, appUrl: string): string {
+type TaskListSource = "solution_request" | "app_feedback";
+
+function sourceTable(source: TaskListSource): "solution_requests" | "app_feedback" {
+  return source === "app_feedback" ? "app_feedback" : "solution_requests";
+}
+
+function taskDescription(
+  step: (typeof STEPS)[number],
+  snap: RequestSnapshot,
+  appUrl: string,
+  source: TaskListSource,
+): string {
   const placement = [snap.suggestedPhase, snap.suggestedCategory, snap.suggestedTactic]
     .filter(Boolean)
     .join(" · ");
-  const openLink = appUrl ? `${appUrl.replace(/\/$/, "")}/solution-requests` : "";
+  const path = source === "app_feedback" ? "/feedback" : "/solution-requests";
+  const openLink = appUrl ? `${appUrl.replace(/\/$/, "")}${path}` : "";
+  const openLabel = source === "app_feedback" ? "Open in Feedback" : "Open in Solutions Directory";
   return [
     `<p><strong>${esc(step.owner)}</strong> — ${esc(step.summary)}</p>`,
     paragraph("Solution", snap.solutionName),
@@ -175,7 +188,7 @@ function taskDescription(step: (typeof STEPS)[number], snap: RequestSnapshot, ap
     paragraph("Known work", snap.knownWork),
     paragraph("Related offerings", snap.relatedOfferings),
     paragraph("Additional notes", snap.additionalNotes),
-    openLink ? `<p><a href="${esc(openLink)}">Open in Solutions Directory</a></p>` : "",
+    openLink ? `<p><a href="${esc(openLink)}">${esc(openLabel)}</a></p>` : "",
   ]
     .filter(Boolean)
     .join("");
@@ -208,9 +221,13 @@ async function productive(method: string, path: string, body?: unknown) {
   return asRecord(parsed);
 }
 
-async function loadRequest(requestId: string): Promise<Record<string, unknown> | null> {
+async function loadRequest(
+  requestId: string,
+  source: TaskListSource,
+): Promise<Record<string, unknown> | null> {
   if (!SUPABASE_URL || !SERVICE_ROLE || !requestId) return null;
-  const url = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/solution_requests?id=eq.${encodeURIComponent(requestId)}&select=*`;
+  const table = sourceTable(source);
+  const url = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/${table}?id=eq.${encodeURIComponent(requestId)}&select=*`;
   const res = await fetch(url, {
     headers: {
       apikey: SERVICE_ROLE,
@@ -222,9 +239,15 @@ async function loadRequest(requestId: string): Promise<Record<string, unknown> |
   return Array.isArray(rows) && rows[0] ? asRecord(rows[0]) : null;
 }
 
-async function persistTaskList(requestId: string, taskListId: string, url: string) {
+async function persistTaskList(
+  requestId: string,
+  source: TaskListSource,
+  taskListId: string,
+  url: string,
+) {
   if (!SUPABASE_URL || !SERVICE_ROLE || !requestId) return;
-  const endpoint = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/solution_requests?id=eq.${encodeURIComponent(requestId)}`;
+  const table = sourceTable(source);
+  const endpoint = `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/${table}?id=eq.${encodeURIComponent(requestId)}`;
   await fetch(endpoint, {
     method: "PATCH",
     headers: {
@@ -264,9 +287,11 @@ Deno.serve(async (req) => {
 
   const requestId = str(body.requestId);
   const appUrl = str(body.appUrl);
+  const source: TaskListSource =
+    str(body.source) === "app_feedback" ? "app_feedback" : "solution_request";
   const existingFromClient = str(body.existingTaskListId) || str(body.productiveTaskListId);
 
-  const dbRow = requestId ? await loadRequest(requestId) : null;
+  const dbRow = requestId ? await loadRequest(requestId, source) : null;
   const existingId =
     existingFromClient || str(dbRow?.productive_task_list_id);
   const existingUrl = str(dbRow?.productive_task_list_url);
@@ -282,7 +307,7 @@ Deno.serve(async (req) => {
   }
 
   const snap = snapshotFromUnknown({ ...dbRow, ...asRecord(body.request) });
-  const listName = snap.solutionName.slice(0, 120);
+  const listName = (snap.solutionName || str(dbRow?.title) || "Untitled solution").slice(0, 120);
 
   try {
     const createdList = await productive("POST", "/task_lists", {
@@ -309,7 +334,7 @@ Deno.serve(async (req) => {
             type: "tasks",
             attributes: {
               title: step.title,
-              description: taskDescription(step, snap, appUrl),
+              description: taskDescription(step, snap, appUrl, source),
               project_id: PRODUCTIVE_PROJECT_ID,
               task_list_id: Number(taskListId),
               workflow_status_id: PRODUCTIVE_WORKFLOW_STATUS_ID,
@@ -326,7 +351,7 @@ Deno.serve(async (req) => {
     }
 
     const url = listUrl(taskListId);
-    await persistTaskList(requestId, taskListId, url);
+    await persistTaskList(requestId, source, taskListId, url);
 
     return json(200, {
       ok: true,

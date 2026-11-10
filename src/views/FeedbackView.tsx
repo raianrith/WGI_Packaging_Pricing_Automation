@@ -22,6 +22,7 @@ import {
   type AppFeedbackStatus,
   type FeedbackBoardRow,
 } from "../lib/appFeedback";
+import { createProductiveTasksForFeedbackRow } from "../lib/createProductiveSolutionTasks";
 import { canEditProposalPricing } from "../lib/proposalPricingAccess";
 import { getSupabase } from "../lib/supabase";
 
@@ -331,6 +332,64 @@ export function FeedbackView() {
     toastSuccess(`Deleted “${row.title}”.`);
   };
 
+  const persistProductiveLink = async (
+    row: FeedbackBoardRow,
+    taskListId: string,
+    url: string
+  ): Promise<FeedbackBoardRow> => {
+    const merged: FeedbackBoardRow = {
+      ...row,
+      productive_task_list_id: taskListId,
+      productive_task_list_url: url,
+    };
+    const client = getSupabase();
+    if (!client) return merged;
+    const table = row.source === "solution_request" ? "solution_requests" : "app_feedback";
+    const { data, error } = await client
+      .from(table)
+      .update({
+        productive_task_list_id: taskListId,
+        productive_task_list_url: url,
+      })
+      .eq("id", row.id)
+      .select("*")
+      .single();
+    if (error) {
+      console.warn(`[${table}] could not store Productive link`, error.message);
+      return merged;
+    }
+    if (row.source === "solution_request") {
+      return mapSolutionRequestToFeedbackBoardRow(
+        data as Parameters<typeof mapSolutionRequestToFeedbackBoardRow>[0]
+      );
+    }
+    return { ...(data as AppFeedback), source: "app_feedback" };
+  };
+
+  const createProductiveList = async (row: FeedbackBoardRow) => {
+    if (row.category !== "new_solution") return;
+    setStatusBusyId(row.id);
+    if (row.productive_task_list_id && row.productive_task_list_url) {
+      toastSuccess("A Productive task list already exists for this request.");
+      setStatusBusyId(null);
+      return;
+    }
+    const result = await createProductiveTasksForFeedbackRow(row);
+    if (!result.ok || !result.taskListId || !result.url) {
+      toastError(result.error || "Productive task list was not created.");
+      setStatusBusyId(null);
+      return;
+    }
+    const saved = await persistProductiveLink(row, result.taskListId, result.url);
+    setRows((prev) => prev.map((r) => (r.id === row.id ? saved : r)));
+    if (result.skipped) {
+      toastSuccess("A Productive task list already exists for this request.");
+    } else {
+      toastSuccess("Created a Productive task list for Chelsea, Laura, Jo, and Nicole.");
+    }
+    setStatusBusyId(null);
+  };
+
   const inspectorOpen = Boolean(selected);
 
   const emptyCopy =
@@ -355,16 +414,13 @@ export function FeedbackView() {
                   <Link className="agency-hub__link" to="/solution-requests">
                     New Solution Request{legacyCount === 1 ? "" : "s"}
                   </Link>{" "}
-                  from the solutions queue.
+                  from the solutions queue. Open a new-solution row to create or open its Productive
+                  task list.
                 </>
               ) : (
                 <>
                   {" "}
-                  Dedicated Productive handoff still lives under{" "}
-                  <Link className="agency-hub__link" to="/solution-requests">
-                    New Solution Requests
-                  </Link>
-                  .
+                  Open a new-solution request to create its Productive task list from here.
                 </>
               )}
             </p>
@@ -554,6 +610,7 @@ export function FeedbackView() {
             onClose={() => setSelectedId(null)}
             onStatus={(status) => void updateStatus(selected.id, status)}
             onDelete={() => void deleteFeedback(selected)}
+            onCreateProductive={() => void createProductiveList(selected)}
           />
         ) : null}
       </div>
@@ -585,6 +642,7 @@ function FeedbackInspector({
   onClose,
   onStatus,
   onDelete,
+  onCreateProductive,
 }: {
   row: FeedbackBoardRow;
   busy: boolean;
@@ -594,9 +652,12 @@ function FeedbackInspector({
   onClose: () => void;
   onStatus: (status: AppFeedbackStatus) => void;
   onDelete: () => void;
+  onCreateProductive: () => void;
 }) {
   const fields = inspectorFields(row);
   const locked = busy || deleting;
+  const isNewSolution = row.category === "new_solution";
+  const hasProductive = Boolean(row.productive_task_list_id && row.productive_task_list_url);
   return (
     <aside className="catalog-inspector" aria-label={`${row.title} details`}>
       <header className="catalog-inspector__head">
@@ -632,8 +693,14 @@ function FeedbackInspector({
           <dd>{appFeedbackPriorityLabel(row.priority)}</dd>
         </div>
         <div>
-          <dt>Category</dt>
-          <dd>{appFeedbackCategoryShort(row.category)}</dd>
+          <dt>{isNewSolution ? "Productive" : "Category"}</dt>
+          <dd>
+            {isNewSolution
+              ? hasProductive
+                ? "Linked"
+                : "Not created"
+              : appFeedbackCategoryShort(row.category)}
+          </dd>
         </div>
       </dl>
       <div className="catalog-inspector__body">
@@ -645,6 +712,31 @@ function FeedbackInspector({
         ))}
       </div>
       <div className="catalog-inspector__actions">
+        {isNewSolution && hasProductive && row.productive_task_list_url ? (
+          <a
+            className="catalog-inspector__btn catalog-inspector__btn--primary"
+            href={row.productive_task_list_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open Productive
+          </a>
+        ) : null}
+        {isNewSolution && canManageStatus && !hasProductive ? (
+          <button
+            type="button"
+            className="catalog-inspector__btn catalog-inspector__btn--primary"
+            disabled={locked}
+            onClick={onCreateProductive}
+          >
+            {busy ? "Creating…" : "Create Productive tasks"}
+          </button>
+        ) : null}
+        {isNewSolution && hasProductive ? (
+          <p className="catalog-inspector__overview" style={{ margin: 0 }}>
+            A Productive task list already exists for this request.
+          </p>
+        ) : null}
         {canDelete ? (
           <button
             type="button"

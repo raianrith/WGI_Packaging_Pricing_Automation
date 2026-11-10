@@ -1,3 +1,4 @@
+import type { FeedbackBoardRow } from "./appFeedback";
 import { getSupabase } from "./supabase";
 import type { SolutionRequest } from "./solutionRequests";
 
@@ -9,7 +10,28 @@ export type ProductiveTaskListResult = {
   error?: string;
 };
 
-function requestPayload(row: SolutionRequest) {
+export type ProductiveTaskListSource = "solution_request" | "app_feedback";
+
+type ProductiveRequestPayload = {
+  solutionName: string;
+  requestedByName: string;
+  requestedByEmail: string;
+  clientNeed: string;
+  typicalUseCase: string;
+  desiredDeliverables: string;
+  whyProductize: string;
+  suggestedPhase: string;
+  suggestedCategory: string;
+  suggestedTactic: string;
+  inScope: string;
+  outOfScope: string;
+  knownWork: string;
+  relatedOfferings: string;
+  additionalNotes: string;
+  priority: string;
+};
+
+function requestPayloadFromSolutionRequest(row: SolutionRequest): ProductiveRequestPayload {
   return {
     solutionName: row.solution_name,
     requestedByName: row.requested_by_name,
@@ -30,22 +52,43 @@ function requestPayload(row: SolutionRequest) {
   };
 }
 
-/**
- * Creates (or returns) the Productive task list for an approved solution request.
- * Failures are returned to the caller so approval can still succeed.
- */
-export async function createProductiveSolutionTasks(
-  row: SolutionRequest
-): Promise<ProductiveTaskListResult> {
+export function requestPayloadFromFeedbackBoardRow(row: FeedbackBoardRow): ProductiveRequestPayload {
+  return {
+    solutionName: row.title,
+    requestedByName: row.requested_by_name,
+    requestedByEmail: row.requested_by_email,
+    clientNeed: row.client_need ?? row.details ?? "",
+    typicalUseCase: row.typical_use_case ?? "",
+    desiredDeliverables: row.desired_deliverables ?? "",
+    whyProductize: row.why_productize ?? "",
+    suggestedPhase: row.suggested_phase ?? "",
+    suggestedCategory: row.suggested_category ?? "",
+    suggestedTactic: row.suggested_tactic ?? "",
+    inScope: "",
+    outOfScope: "",
+    knownWork: "",
+    relatedOfferings: "",
+    additionalNotes: row.additional_notes ?? "",
+    priority: row.priority,
+  };
+}
+
+async function invokeProductiveTaskList(args: {
+  requestId: string;
+  source: ProductiveTaskListSource;
+  existingTaskListId?: string | null;
+  request: ProductiveRequestPayload;
+}): Promise<ProductiveTaskListResult> {
   const client = getSupabase();
   if (!client) return { ok: false, error: "Supabase not configured" };
 
   try {
     const { data, error } = await client.functions.invoke("create-productive-solution-tasks", {
       body: {
-        requestId: row.id,
-        existingTaskListId: row.productive_task_list_id ?? null,
-        request: requestPayload(row),
+        requestId: args.requestId,
+        source: args.source,
+        existingTaskListId: args.existingTaskListId ?? null,
+        request: args.request,
         appUrl: typeof window !== "undefined" ? window.location.origin : null,
       },
     });
@@ -86,4 +129,31 @@ export async function createProductiveSolutionTasks(
     console.warn("[create-productive-solution-tasks]", msg);
     return { ok: false, error: msg };
   }
+}
+
+/**
+ * Creates (or returns) the Productive task list for an approved solution request.
+ * Failures are returned to the caller so approval can still succeed.
+ */
+export async function createProductiveSolutionTasks(
+  row: SolutionRequest
+): Promise<ProductiveTaskListResult> {
+  return invokeProductiveTaskList({
+    requestId: row.id,
+    source: "solution_request",
+    existingTaskListId: row.productive_task_list_id ?? null,
+    request: requestPayloadFromSolutionRequest(row),
+  });
+}
+
+/** Creates (or returns) Productive tasks for a Feedback new-solution row (legacy or app_feedback). */
+export async function createProductiveTasksForFeedbackRow(
+  row: FeedbackBoardRow
+): Promise<ProductiveTaskListResult> {
+  return invokeProductiveTaskList({
+    requestId: row.id,
+    source: row.source,
+    existingTaskListId: row.productive_task_list_id ?? null,
+    request: requestPayloadFromFeedbackBoardRow(row),
+  });
 }

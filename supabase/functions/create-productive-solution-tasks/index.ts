@@ -22,7 +22,7 @@ const PRODUCTIVE_API = "https://api.productive.io/api/v2";
 const PRODUCTIVE_API_TOKEN = Deno.env.get("PRODUCTIVE_API_TOKEN")?.trim() ?? "";
 const PRODUCTIVE_ORG_ID = Deno.env.get("PRODUCTIVE_ORG_ID")?.trim() || "47945";
 const PRODUCTIVE_PROJECT_ID = Number(Deno.env.get("PRODUCTIVE_PROJECT_ID")?.trim() || "1099649");
-const PRODUCTIVE_FOLDER_ID = Number(Deno.env.get("PRODUCTIVE_FOLDER_ID")?.trim() || "4091165");
+const PRODUCTIVE_FOLDER_ID = Number(Deno.env.get("PRODUCTIVE_FOLDER_ID")?.trim() || "0");
 const PRODUCTIVE_WORKFLOW_STATUS_ID = Number(
   Deno.env.get("PRODUCTIVE_WORKFLOW_STATUS_ID")?.trim() || "160919",
 );
@@ -216,35 +216,92 @@ async function productive(method: string, path: string, body?: unknown) {
     const first = Array.isArray(errors) ? asRecord(errors[0]) : {};
     const detail =
       str(first.detail) || str(first.title) || (typeof parsed === "string" ? parsed.slice(0, 400) : `HTTP ${res.status}`);
-    throw new Error(detail || `Productive ${method} ${path} failed (${res.status})`);
+    const pointer = str(asRecord(first.source).pointer);
+    const attr = pointer.replace(/^\/data\/attributes\//, "");
+    const labeled = attr ? `${detail} (${attr})` : detail;
+    throw new Error(labeled || `Productive ${method} ${path} failed (${res.status})`);
   }
   return asRecord(parsed);
 }
 
-/** Prefer configured folder when it belongs to the project; otherwise use the first active folder. */
-async function resolveFolderId(projectId: number): Promise<number> {
-  const preferred = PRODUCTIVE_FOLDER_ID > 0 ? PRODUCTIVE_FOLDER_ID : 0;
+function idsFromListPayload(payload: Record<string, unknown>): number[] {
+  const rows = Array.isArray(payload.data) ? payload.data : [];
+  return rows
+    .map((row) => Number(str(asRecord(row).id)))
+    .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+async function listFolderIds(projectId: number): Promise<number[]> {
+  const seen = new Set<number>();
+  const add = (ids: number[]) => {
+    for (const id of ids) seen.add(id);
+  };
   try {
-    const listed = await productive(
+    const folders = await productive(
       "GET",
       `/folders?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
     );
-    const rows = Array.isArray(listed.data) ? listed.data : [];
-    const ids = rows
-      .map((row) => Number(str(asRecord(row).id)))
-      .filter((id) => Number.isFinite(id) && id > 0);
-    if (preferred && ids.includes(preferred)) return preferred;
-    if (ids[0]) return ids[0];
+    add(idsFromListPayload(folders));
   } catch (err) {
     console.warn(
       "[create-productive-solution-tasks] folder lookup failed",
       err instanceof Error ? err.message : String(err),
     );
   }
-  if (preferred) return preferred;
-  throw new Error(
-    `No Productive folders found for project ${projectId}. Open the project and create a folder, then retry.`,
-  );
+  // Boards are the same objects as folders in Productive's API.
+  if (seen.size === 0) {
+    try {
+      const boards = await productive(
+        "GET",
+        `/boards?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
+      );
+      add(idsFromListPayload(boards));
+    } catch (err) {
+      console.warn(
+        "[create-productive-solution-tasks] board lookup failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+  return [...seen];
+}
+
+async function ensureFolderId(projectId: number): Promise<number[]> {
+  const preferred = PRODUCTIVE_FOLDER_ID > 0 ? PRODUCTIVE_FOLDER_ID : 0;
+  const existing = await listFolderIds(projectId);
+  const ordered = [
+    ...(preferred && existing.includes(preferred) ? [preferred] : []),
+    ...existing.filter((id) => id !== preferred),
+  ];
+  if (ordered.length) return ordered;
+
+  const created = await productive("POST", "/folders", {
+    data: {
+      type: "folders",
+      attributes: {
+        name: "Solutions Directory",
+        project_id: projectId,
+      },
+    },
+  });
+  const createdId = Number(str(asRecord(created.data).id));
+  if (!Number.isFinite(createdId) || createdId <= 0) {
+    throw new Error(`Could not create a Productive folder in project ${projectId}.`);
+  }
+  return [createdId];
+}
+
+async function createTaskList(listName: string, projectId: number, folderId: number) {
+  return productive("POST", "/task_lists", {
+    data: {
+      type: "task_lists",
+      attributes: {
+        name: listName,
+        project_id: projectId,
+        folder_id: folderId,
+      },
+    },
+  });
 }
 
 async function loadRequest(
@@ -336,17 +393,27 @@ Deno.serve(async (req) => {
   const listName = (snap.solutionName || str(dbRow?.title) || "Untitled solution").slice(0, 120);
 
   try {
-    const folderId = await resolveFolderId(PRODUCTIVE_PROJECT_ID);
-    const createdList = await productive("POST", "/task_lists", {
-      data: {
-        type: "task_lists",
-        attributes: {
-          name: listName,
-          project_id: PRODUCTIVE_PROJECT_ID,
-          folder_id: folderId,
-        },
-      },
-    });
+    const folderCandidates = await ensureFolderId(PRODUCTIVE_PROJECT_ID);
+    let createdList: Record<string, unknown> | null = null;
+    let folderId = 0;
+    const folderErrors: string[] = [];
+    for (const candidate of folderCandidates) {
+      try {
+        createdList = await createTaskList(listName, PRODUCTIVE_PROJECT_ID, candidate);
+        folderId = candidate;
+        break;
+      } catch (err) {
+        folderErrors.push(
+          `folder ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (!createdList) {
+      throw new Error(
+        folderErrors[0] ||
+          `Could not create a Productive task list in project ${PRODUCTIVE_PROJECT_ID}.`,
+      );
+    }
     const listData = asRecord(createdList.data);
     const taskListId = str(listData.id);
     if (!taskListId) throw new Error("Productive did not return a task list id.");

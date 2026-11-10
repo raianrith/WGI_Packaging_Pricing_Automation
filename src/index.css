@@ -29420,6 +29420,10 @@ html[data-theme="dark"] .proposal-editor-identity__status {
   color: var(--muted);
 }
 
+html[data-theme="dark"] .proposal-editor-identity__sep {
+  color: rgba(232, 220, 205, 0.35);
+}
+
 html[data-theme="dark"] .proposal-step-panel__lead,
 html[data-theme="dark"] .proposal-step-panel__meta {
   color: var(--muted);
@@ -32132,13 +32136,13 @@ html[data-theme="dark"] .playbook-config__note {
 
 .proposal-editor-identity {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.7rem;
   min-width: 0;
 }
 
 .proposal-editor-identity__back {
   justify-self: start;
-  margin: 0 0 0.15rem;
+  margin: 0;
   padding: 0;
   border: none;
   background: none;
@@ -32154,14 +32158,34 @@ html[data-theme="dark"] .playbook-config__note {
   color: var(--suede);
 }
 
-.proposal-editor-identity .roadmap-hero__title--builder {
-  line-height: 1.15;
-  max-width: 52rem;
-  overflow-wrap: anywhere;
+.proposal-editor-identity .roadmap-hero__title--builder,
+.proposal-editor-identity__title {
+  max-width: min(72rem, 100%);
+  font-size: clamp(1.35rem, 1.8vw, 1.85rem);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  text-transform: none;
+  overflow-wrap: break-word;
+}
+
+.proposal-editor-identity__part {
+  display: inline;
+}
+
+.proposal-editor-identity__sep {
+  display: inline-block;
+  margin: 0 0.55em;
+  font-weight: 400;
+  color: rgba(17, 39, 33, 0.35);
+}
+
+.proposal-editor-identity__segment {
+  display: inline;
 }
 
 .proposal-editor-identity__status {
-  margin: 0.25rem 0 0;
+  margin: 0;
   font-size: 0.98rem;
   color: var(--muted);
 }

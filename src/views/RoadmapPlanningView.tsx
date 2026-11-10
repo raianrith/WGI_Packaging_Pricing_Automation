@@ -2842,7 +2842,7 @@ export function RoadmapPlanningView() {
   );
   const savedStatus = formatSavedAgo(lastSavedAt, savingProposal);
   void saveClock;
-  const editorIdentityTitle = (() => {
+  const editorIdentityParts = (() => {
     const parts: string[] = [];
     const client = clientLabel.trim();
     const title = roadmapTitle.trim();
@@ -2850,7 +2850,7 @@ export function RoadmapPlanningView() {
     if (client) parts.push(client);
     if (title && title.toLowerCase() !== "untitled proposal") parts.push(title);
     if (dates !== "—") parts.push(dates);
-    return parts.length > 0 ? parts.join(" | ") : "New proposal";
+    return parts;
   })();
 
   const goAddScopeNext = () => {
@@ -2887,8 +2887,21 @@ export function RoadmapPlanningView() {
                   >
                     All proposals
                   </button>
-                  <h1 className="roadmap-hero__title roadmap-hero__title--builder">
-                    {editorIdentityTitle}
+                  <h1 className="roadmap-hero__title roadmap-hero__title--builder proposal-editor-identity__title">
+                    {editorIdentityParts.length > 0 ? (
+                      editorIdentityParts.map((part, i) => (
+                        <span key={`${i}-${part}`} className="proposal-editor-identity__part">
+                          {i > 0 ? (
+                            <span className="proposal-editor-identity__sep" aria-hidden="true">
+                              |
+                            </span>
+                          ) : null}
+                          <span className="proposal-editor-identity__segment">{part}</span>
+                        </span>
+                      ))
+                    ) : (
+                      "New proposal"
+                    )}
                   </h1>
                   <p className="proposal-editor-identity__status">
                     Draft · {savedStatus}

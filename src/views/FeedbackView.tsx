@@ -7,6 +7,7 @@ import {
   APP_FEEDBACK_CATEGORIES,
   APP_FEEDBACK_STATUSES,
   appFeedbackAreaLabel,
+  appFeedbackAssigneeLabel,
   appFeedbackCategoryLabel,
   appFeedbackCategoryShort,
   appFeedbackInsertRow,
@@ -25,6 +26,21 @@ import {
 import { createProductiveTasksForFeedbackRow } from "../lib/createProductiveSolutionTasks";
 import { canEditProposalPricing } from "../lib/proposalPricingAccess";
 import { getSupabase } from "../lib/supabase";
+import type { ProfileRow } from "../types";
+
+type AssigneeOption = {
+  id: string;
+  label: string;
+  name: string;
+  email: string;
+};
+
+function profileToAssigneeOption(row: ProfileRow): AssigneeOption {
+  const name = row.full_name?.trim() || "";
+  const email = row.email?.trim() || "";
+  const label = name && email ? `${name} · ${email}` : name || email || row.id;
+  return { id: row.id, label, name: name || email || "Teammate", email };
+}
 
 type StatusFilter = "all" | AppFeedbackStatus;
 type CategoryFilter = "all" | AppFeedbackCategory;
@@ -61,6 +77,8 @@ function searchBlob(row: FeedbackBoardRow): string {
     row.related_name,
     row.requested_by_name,
     row.requested_by_email,
+    row.assigned_to_name,
+    row.assigned_to_email,
     row.impact,
     row.client_need,
     row.typical_use_case,
@@ -87,6 +105,7 @@ function inspectorFields(row: AppFeedback): { label: string; value: string }[] {
   const fields: { label: string; value: string }[] = [];
   fields.push({ label: "Category", value: appFeedbackCategoryLabel(row.category) });
   fields.push({ label: "Area", value: appFeedbackAreaLabel(row.area) });
+  fields.push({ label: "Assigned to", value: appFeedbackAssigneeLabel(row) });
   if (row.related_name?.trim()) fields.push({ label: "Related item", value: row.related_name });
   if (row.page_or_url?.trim()) fields.push({ label: "Page / URL", value: row.page_or_url });
   if (row.details.trim()) fields.push({ label: "Details", value: row.details });
@@ -144,10 +163,39 @@ export function FeedbackView() {
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [initialCategory, setInitialCategory] = useState<AppFeedbackCategory | "">("");
+  const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
 
   const canManageStatus = isAdmin || canEditProposalPricing(user);
   const defaultName = requesterDisplayName(user);
   const defaultEmail = user?.email?.trim() ?? "";
+
+  useEffect(() => {
+    const client = getSupabase();
+    if (!client) {
+      setAssignees([]);
+      return;
+    }
+    let cancelled = false;
+    void client
+      .from("profiles")
+      .select("id, full_name, email, is_admin")
+      .order("full_name", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.warn("[feedback] could not load assignees", error.message);
+          setAssignees([]);
+          return;
+        }
+        const rows = ((data ?? []) as ProfileRow[])
+          .map(profileToAssigneeOption)
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+        setAssignees(rows);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const fromQuery = parseAppFeedbackCategoryParam(searchParams.get("category"));
@@ -366,6 +414,44 @@ export function FeedbackView() {
     return { ...(data as AppFeedback), source: "app_feedback" };
   };
 
+  const updateAssignee = async (row: FeedbackBoardRow, assigneeUserId: string) => {
+    if (row.source !== "app_feedback") return;
+    const client = getSupabase();
+    if (!client) {
+      toastError("Supabase is not configured.");
+      return;
+    }
+    const person = assigneeUserId
+      ? assignees.find((a) => a.id === assigneeUserId) ?? null
+      : null;
+    setStatusBusyId(row.id);
+    const { data, error } = await client
+      .from("app_feedback")
+      .update({
+        assigned_to_user_id: person?.id ?? null,
+        assigned_to_name: person?.name ?? null,
+        assigned_to_email: person?.email ?? null,
+      })
+      .eq("id", row.id)
+      .select("*")
+      .single();
+    setStatusBusyId(null);
+    if (error) {
+      const msg = error.message || "Could not update assignee.";
+      toastError(
+        /assigned_to_/i.test(msg)
+          ? "Assignee columns are missing. Run supabase/app_feedback_assignee.sql in Supabase, then retry."
+          : msg
+      );
+      return;
+    }
+    const updated: FeedbackBoardRow = { ...(data as AppFeedback), source: "app_feedback" };
+    setRows((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
+    toastSuccess(
+      person ? `Assigned to ${person.name}.` : "Cleared assignee."
+    );
+  };
+
   const createProductiveList = async (row: FeedbackBoardRow) => {
     if (row.category !== "new_solution") return;
     setStatusBusyId(row.id);
@@ -529,6 +615,7 @@ export function FeedbackView() {
                       <th scope="col">Title</th>
                       <th scope="col">Category</th>
                       <th scope="col">Requester</th>
+                      <th scope="col">Assigned to</th>
                       <th scope="col">Stage</th>
                       <th scope="col">Priority</th>
                       <th scope="col">Date</th>
@@ -542,6 +629,8 @@ export function FeedbackView() {
                         row.related_name?.trim() ||
                         row.impact?.trim() ||
                         "";
+                      const canAssignRow = row.source === "app_feedback";
+                      const assignBusy = statusBusyId === row.id;
                       return (
                         <tr
                           key={`${row.source}:${row.id}`}
@@ -579,6 +668,30 @@ export function FeedbackView() {
                             </span>
                           </td>
                           <td className="solution-requests__requester">{row.requested_by_name}</td>
+                          <td
+                            className="app-feedback__assignee-cell"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            {canAssignRow ? (
+                              <select
+                                className="app-feedback__assignee-select"
+                                aria-label={`Assign ${row.title}`}
+                                value={row.assigned_to_user_id ?? ""}
+                                disabled={assignBusy}
+                                onChange={(e) => void updateAssignee(row, e.target.value)}
+                              >
+                                <option value="">Unassigned</option>
+                                {assignees.map((person) => (
+                                  <option key={person.id} value={person.id}>
+                                    {person.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="solution-requests__requester">—</span>
+                            )}
+                          </td>
                           <td>
                             <span className={`solution-requests__status is-${row.status}`}>
                               {appFeedbackStatusLabel(row.status)}
@@ -607,10 +720,12 @@ export function FeedbackView() {
             deleting={deletingId === selected.id}
             canManageStatus={canManageStatus}
             canDelete={canDeleteFeedback(selected, user, canManageStatus)}
+            assignees={assignees}
             onClose={() => setSelectedId(null)}
             onStatus={(status) => void updateStatus(selected.id, status)}
             onDelete={() => void deleteFeedback(selected)}
             onCreateProductive={() => void createProductiveList(selected)}
+            onAssign={(assigneeUserId) => void updateAssignee(selected, assigneeUserId)}
           />
         ) : null}
       </div>
@@ -639,22 +754,29 @@ function FeedbackInspector({
   deleting,
   canManageStatus,
   canDelete,
+  assignees,
   onClose,
   onStatus,
   onDelete,
   onCreateProductive,
+  onAssign,
 }: {
   row: FeedbackBoardRow;
   busy: boolean;
   deleting: boolean;
   canManageStatus: boolean;
   canDelete: boolean;
+  assignees: AssigneeOption[];
   onClose: () => void;
   onStatus: (status: AppFeedbackStatus) => void;
   onDelete: () => void;
   onCreateProductive: () => void;
+  onAssign: (assigneeUserId: string) => void;
 }) {
-  const fields = inspectorFields(row);
+  const canAssign = row.source === "app_feedback";
+  const fields = inspectorFields(row).filter((field) =>
+    canAssign ? field.label !== "Assigned to" : true
+  );
   const locked = busy || deleting;
   const isNewSolution = row.category === "new_solution";
   const hasProductive = Boolean(row.productive_task_list_id && row.productive_task_list_url);
@@ -703,6 +825,29 @@ function FeedbackInspector({
           </dd>
         </div>
       </dl>
+      {canAssign ? (
+        <div className="catalog-inspector__body" style={{ paddingBottom: 0 }}>
+          <section className="catalog-inspector__section">
+            <h3 className="catalog-inspector__section-title">Assigned to</h3>
+            <label className="solution-request-modal__field" style={{ margin: 0 }}>
+              <select
+                className="roadmap-input app-feedback__assignee-select"
+                value={row.assigned_to_user_id ?? ""}
+                disabled={locked}
+                onChange={(e) => onAssign(e.target.value)}
+                style={{ maxWidth: "100%" }}
+              >
+                <option value="">Unassigned</option>
+                {assignees.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+        </div>
+      ) : null}
       <div className="catalog-inspector__body">
         {fields.map((field) => (
           <section key={field.label} className="catalog-inspector__section">

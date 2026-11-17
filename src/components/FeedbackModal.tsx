@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   APP_FEEDBACK_AREAS,
   APP_FEEDBACK_CATEGORIES,
@@ -15,6 +15,15 @@ import {
   type AppFeedbackFormInput,
   type AppFeedbackPriority,
 } from "../lib/appFeedback";
+import { getSupabase } from "../lib/supabase";
+import type { ProfileRow } from "../types";
+
+type AssigneeOption = {
+  id: string;
+  label: string;
+  name: string;
+  email: string;
+};
 
 type Props = {
   open: boolean;
@@ -25,6 +34,13 @@ type Props = {
   onCancel: () => void;
   onConfirm: (form: AppFeedbackFormInput) => void;
 };
+
+function profileAssigneeOption(row: ProfileRow): AssigneeOption {
+  const name = row.full_name?.trim() || "";
+  const email = row.email?.trim() || "";
+  const label = name && email ? `${name} · ${email}` : name || email || row.id;
+  return { id: row.id, label, name: name || email || "Teammate", email };
+}
 
 export function FeedbackModal({
   open,
@@ -40,6 +56,8 @@ export function FeedbackModal({
     emptyAppFeedbackForm(defaultName, defaultEmail, initialCategory)
   );
   const [error, setError] = useState<string | null>(null);
+  const [assignees, setAssignees] = useState<AssigneeOption[]>([]);
+  const [assigneesLoading, setAssigneesLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +73,43 @@ export function FeedbackModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, busy, onCancel]);
+
+  useEffect(() => {
+    if (!open) return;
+    const client = getSupabase();
+    if (!client) {
+      setAssignees([]);
+      return;
+    }
+    let cancelled = false;
+    setAssigneesLoading(true);
+    void client
+      .from("profiles")
+      .select("id, full_name, email, is_admin")
+      .order("full_name", { ascending: true })
+      .then(({ data, error: loadError }) => {
+        if (cancelled) return;
+        setAssigneesLoading(false);
+        if (loadError) {
+          console.warn("[feedback] could not load assignees", loadError.message);
+          setAssignees([]);
+          return;
+        }
+        const rows = ((data ?? []) as ProfileRow[])
+          .map(profileAssigneeOption)
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+        setAssignees(rows);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const assigneeById = useMemo(() => {
+    const map = new Map<string, AssigneeOption>();
+    for (const row of assignees) map.set(row.id, row);
+    return map;
+  }, [assignees]);
 
   if (!open) return null;
 
@@ -212,6 +267,33 @@ export function FeedbackModal({
                   {APP_FEEDBACK_PRIORITIES.map((p) => (
                     <option key={p} value={p}>
                       {appFeedbackPriorityLabel(p)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="solution-request-modal__field">
+                <span className="solution-request-modal__label">Assign to</span>
+                <select
+                  className="roadmap-input"
+                  value={form.assignedToUserId}
+                  disabled={busy || assigneesLoading}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const person = id ? assigneeById.get(id) : undefined;
+                    setForm((prev) => ({
+                      ...prev,
+                      assignedToUserId: id,
+                      assignedToName: person?.name ?? "",
+                      assignedToEmail: person?.email ?? "",
+                    }));
+                  }}
+                >
+                  <option value="">
+                    {assigneesLoading ? "Loading teammates…" : "Unassigned"}
+                  </option>
+                  {assignees.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.label}
                     </option>
                   ))}
                 </select>

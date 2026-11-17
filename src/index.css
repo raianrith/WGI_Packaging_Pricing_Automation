@@ -29984,16 +29984,81 @@ html[data-theme="dark"] .app-new-solution-request.is-active {
   color: var(--muted);
 }
 
+.app-feedback__table th:nth-child(1),
+.app-feedback__table td:nth-child(1) {
+  width: 30%;
+}
+
 .app-feedback__table th:nth-child(2),
 .app-feedback__table td:nth-child(2) {
-  width: 7.5rem;
+  width: 7rem;
   white-space: nowrap;
 }
 
+.app-feedback__table th:nth-child(3),
+.app-feedback__table td:nth-child(3) {
+  width: 8.5rem;
+}
+
+.app-feedback__table th:nth-child(4),
+.app-feedback__table td:nth-child(4) {
+  width: 10.5rem;
+}
+
+.app-feedback__table th:nth-child(5),
+.app-feedback__table td:nth-child(5),
 .app-feedback__table th:nth-child(6),
 .app-feedback__table td:nth-child(6) {
+  width: 6.5rem;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.app-feedback__table th:nth-child(7),
+.app-feedback__table td:nth-child(7) {
   width: 5.5rem;
   white-space: nowrap;
+  text-align: right;
+}
+
+.app-feedback__assignee-cell {
+  vertical-align: middle;
+}
+
+.app-feedback__assignee-select {
+  width: 100%;
+  max-width: 10.5rem;
+  appearance: none;
+  margin: 0;
+  padding: 0.35rem 1.5rem 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%) calc(100% - 12px) calc(50% - 2px) / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 7px) calc(50% - 2px) / 5px 5px no-repeat,
+    #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.app-feedback__assignee-select:hover:not(:disabled),
+.app-feedback__assignee-select:focus-visible {
+  border-color: rgba(255, 103, 0, 0.45);
+  outline: none;
+}
+
+.app-feedback__assignee-select:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+html[data-theme="dark"] .app-feedback__assignee-select {
+  background-color: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
 }
 
 .solution-requests-inspector__status {

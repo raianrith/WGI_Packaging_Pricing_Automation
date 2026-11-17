@@ -56,6 +56,9 @@ export type AppFeedback = {
   requested_by_name: string;
   requested_by_email: string;
   requested_by_user_id: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_to_name?: string | null;
+  assigned_to_email?: string | null;
   status_updated_by_email: string | null;
   status_updated_at: string | null;
   productive_task_list_id?: string | null;
@@ -86,6 +89,9 @@ export type AppFeedbackFormInput = {
   additionalNotes: string;
   requestedByName: string;
   requestedByEmail: string;
+  assignedToUserId: string;
+  assignedToName: string;
+  assignedToEmail: string;
 };
 
 export const APP_FEEDBACK_STATUSES: AppFeedbackStatus[] = [
@@ -285,6 +291,9 @@ export function emptyAppFeedbackForm(
     additionalNotes: "",
     requestedByName,
     requestedByEmail,
+    assignedToUserId: "",
+    assignedToName: "",
+    assignedToEmail: "",
   };
 }
 
@@ -311,6 +320,9 @@ export function normalizeAppFeedbackForm(input: AppFeedbackFormInput): AppFeedba
     additionalNotes: input.additionalNotes.trim(),
     requestedByName: input.requestedByName.trim(),
     requestedByEmail: input.requestedByEmail.trim(),
+    assignedToUserId: input.assignedToUserId.trim(),
+    assignedToName: input.assignedToName.trim(),
+    assignedToEmail: input.assignedToEmail.trim(),
   };
 }
 
@@ -395,7 +407,24 @@ export function appFeedbackInsertRow(input: AppFeedbackFormInput, userId: string
     requested_by_name: n.requestedByName,
     requested_by_email: n.requestedByEmail,
     requested_by_user_id: userId,
+    assigned_to_user_id: n.assignedToUserId || null,
+    assigned_to_name: n.assignedToUserId ? n.assignedToName || null : null,
+    assigned_to_email: n.assignedToUserId ? n.assignedToEmail || null : null,
   };
+}
+
+export function appFeedbackAssigneeLabel(row: {
+  assigned_to_name?: string | null;
+  assigned_to_email?: string | null;
+  assigned_to_user_id?: string | null;
+}): string {
+  const name = row.assigned_to_name?.trim() ?? "";
+  const email = row.assigned_to_email?.trim() ?? "";
+  if (name && email) return `${name} · ${email}`;
+  if (name) return name;
+  if (email) return email;
+  if (row.assigned_to_user_id) return "Assigned";
+  return "Unassigned";
 }
 
 export function formatAppFeedbackDate(iso: string | null | undefined): string {

@@ -401,8 +401,9 @@ export function buildCatalogDirectoryRows(
       };
     });
 
+  // Include Package Builder instances (package_category matches a template name) alongside
+  // classic preset packages so Catalog shows the same OG-* packages as proposal reuse.
   const packageRows: CatalogDirectoryRow[] = [...data.packages]
-    .filter((pkg) => !isConfigurablePackage(pkg, packageTypeNameSet))
     .sort((a, b) => sortId(a.package_id, b.package_id))
     .map((pkg) => {
       const links = data.packageTiers.filter((r) => r.package_id === pkg.package_id);
@@ -425,12 +426,16 @@ export function buildCatalogDirectoryRows(
         (sum, link) => sum + (link.quantity != null && link.quantity > 0 ? link.quantity : 1),
         0
       );
-      const meta =
+      const fromBuilder = isConfigurablePackage(pkg, packageTypeNameSet);
+      const metaParts = [
         tierLineCount === 0
           ? "No tiers"
           : tierLineCount === 1
             ? "1 tier"
-            : `${tierLineCount} tiers`;
+            : `${tierLineCount} tiers`,
+        fromBuilder && pkg.package_category?.trim() ? pkg.package_category.trim() : "",
+      ].filter(Boolean);
+      const meta = metaParts.join(" · ");
 
       return {
         id: `package:${pkg.package_id}`,

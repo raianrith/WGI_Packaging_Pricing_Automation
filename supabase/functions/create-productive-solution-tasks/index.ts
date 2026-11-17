@@ -5,6 +5,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
  *
  * Secrets (Supabase Dashboard → Edge Functions → Secrets):
  *   PRODUCTIVE_API_TOKEN — Personal access token (never put this in Vite env)
+ *   SLACK_WEBHOOK_URL — same Incoming Webhook as notify-solution-request
  *
  * Optional overrides (defaults target Weidert’s WGI DNA project):
  *   PRODUCTIVE_ORG_ID
@@ -16,6 +17,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
  *   PRODUCTIVE_ASSIGNEE_LAURA
  *   PRODUCTIVE_ASSIGNEE_JO
  *   PRODUCTIVE_ASSIGNEE_NICOLE
+ *   SLACK_USER_ID_CHELSEA — Slack member ID for a real @mention (e.g. U0123ABC)
+ *   SLACK_USER_ID_NICOLE
  */
 
 const PRODUCTIVE_API = "https://api.productive.io/api/v2";
@@ -27,6 +30,13 @@ const PRODUCTIVE_WORKFLOW_STATUS_ID = Number(
   Deno.env.get("PRODUCTIVE_WORKFLOW_STATUS_ID")?.trim() || "160919",
 );
 const PRODUCTIVE_APP_SLUG = Deno.env.get("PRODUCTIVE_APP_SLUG")?.trim() || "47945-weidert-group";
+const SLACK_WEBHOOK_URL = Deno.env.get("SLACK_WEBHOOK_URL")?.trim() ?? "";
+const SLACK_USER_ID_CHELSEA =
+  Deno.env.get("SLACK_USER_ID_CHELSEA")?.trim() || "U019MGFFC31";
+const SLACK_USER_ID_NICOLE =
+  Deno.env.get("SLACK_USER_ID_NICOLE")?.trim() || "U03RL79N8";
+const CHELSEA_EMAIL = "cdrusch@weidert.com";
+const NICOLE_EMAIL = "nmertes@weidert.com";
 
 const ASSIGNEE = {
   chelsea: Number(Deno.env.get("PRODUCTIVE_ASSIGNEE_CHELSEA")?.trim() || "1072559"),
@@ -151,8 +161,18 @@ function snapshotFromUnknown(raw: unknown): RequestSnapshot {
   };
 }
 
+function projectTasksUrl(): string {
+  return `https://app.productive.io/${PRODUCTIVE_APP_SLUG}/projects/${PRODUCTIVE_PROJECT_ID}/tasks`;
+}
+
+function taskUrl(taskId: string): string {
+  return `https://app.productive.io/${PRODUCTIVE_APP_SLUG}/tasks/${taskId}`;
+}
+
+/** Productive opens task lists via the project Tasks tab + base64 filter (not /task-lists/:id). */
 function listUrl(taskListId: string): string {
-  return `https://app.productive.io/${PRODUCTIVE_APP_SLUG}/projects/${PRODUCTIVE_PROJECT_ID}/task-lists/${taskListId}`;
+  const filter = btoa(String(taskListId).trim());
+  return `${projectTasksUrl()}?filter=${encodeURIComponent(filter)}`;
 }
 
 type TaskListSource = "solution_request" | "app_feedback";
@@ -213,13 +233,20 @@ async function productive(method: string, path: string, body?: unknown) {
   }
   if (!res.ok) {
     const errors = asRecord(parsed).errors;
-    const first = Array.isArray(errors) ? asRecord(errors[0]) : {};
-    const detail =
-      str(first.detail) || str(first.title) || (typeof parsed === "string" ? parsed.slice(0, 400) : `HTTP ${res.status}`);
-    const pointer = str(asRecord(first.source).pointer);
-    const attr = pointer.replace(/^\/data\/attributes\//, "");
-    const labeled = attr ? `${detail} (${attr})` : detail;
-    throw new Error(labeled || `Productive ${method} ${path} failed (${res.status})`);
+    const list = Array.isArray(errors) ? errors.map((e) => asRecord(e)) : [];
+    const parts = list.map((first) => {
+      const detail =
+        str(first.detail) || str(first.title) || (typeof parsed === "string" ? parsed.slice(0, 400) : `HTTP ${res.status}`);
+      const pointer = str(asRecord(first.source).pointer);
+      const attr = pointer
+        .replace(/^\/?data\/attributes\//, "")
+        .replace(/^\/?data\/relationships\//, "");
+      return attr ? `${detail} (${attr})` : detail;
+    }).filter(Boolean);
+    throw new Error(
+      parts.join("; ") ||
+        (typeof parsed === "string" ? parsed.slice(0, 400) : `Productive ${method} ${path} failed (${res.status})`),
+    );
   }
   return asRecord(parsed);
 }
@@ -231,34 +258,34 @@ function idsFromListPayload(payload: Record<string, unknown>): number[] {
     .filter((id) => Number.isFinite(id) && id > 0);
 }
 
-async function listFolderIds(projectId: number): Promise<number[]> {
+/** Boards and folders are the same Productive objects (UI calls them folders). */
+async function listBoardIds(projectId: number): Promise<number[]> {
   const seen = new Set<number>();
   const add = (ids: number[]) => {
     for (const id of ids) seen.add(id);
   };
   try {
-    const folders = await productive(
+    const boards = await productive(
       "GET",
-      `/folders?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
+      `/boards?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
     );
-    add(idsFromListPayload(folders));
+    add(idsFromListPayload(boards));
   } catch (err) {
     console.warn(
-      "[create-productive-solution-tasks] folder lookup failed",
+      "[create-productive-solution-tasks] board lookup failed",
       err instanceof Error ? err.message : String(err),
     );
   }
-  // Boards are the same objects as folders in Productive's API.
   if (seen.size === 0) {
     try {
-      const boards = await productive(
+      const folders = await productive(
         "GET",
-        `/boards?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
+        `/folders?filter[project_id]=${projectId}&filter[status]=1&page[size]=50`,
       );
-      add(idsFromListPayload(boards));
+      add(idsFromListPayload(folders));
     } catch (err) {
       console.warn(
-        "[create-productive-solution-tasks] board lookup failed",
+        "[create-productive-solution-tasks] folder lookup failed",
         err instanceof Error ? err.message : String(err),
       );
     }
@@ -266,42 +293,91 @@ async function listFolderIds(projectId: number): Promise<number[]> {
   return [...seen];
 }
 
-async function ensureFolderId(projectId: number): Promise<number[]> {
+async function ensureBoardIds(projectId: number): Promise<number[]> {
   const preferred = PRODUCTIVE_FOLDER_ID > 0 ? PRODUCTIVE_FOLDER_ID : 0;
-  const existing = await listFolderIds(projectId);
+  const existing = await listBoardIds(projectId);
   const ordered = [
     ...(preferred && existing.includes(preferred) ? [preferred] : []),
     ...existing.filter((id) => id !== preferred),
   ];
   if (ordered.length) return ordered;
 
-  const created = await productive("POST", "/folders", {
-    data: {
-      type: "folders",
-      attributes: {
-        name: "Solutions Directory",
-        project_id: projectId,
+  // Prefer /boards create; fall back to /folders (alias).
+  let createdId = 0;
+  try {
+    const created = await productive("POST", "/boards", {
+      data: {
+        type: "boards",
+        attributes: { name: "Solutions Directory" },
+        relationships: {
+          project: { data: { type: "projects", id: String(projectId) } },
+        },
       },
-    },
-  });
-  const createdId = Number(str(asRecord(created.data).id));
+    });
+    createdId = Number(str(asRecord(created.data).id));
+  } catch (boardErr) {
+    console.warn(
+      "[create-productive-solution-tasks] board create failed, trying folders",
+      boardErr instanceof Error ? boardErr.message : String(boardErr),
+    );
+    const created = await productive("POST", "/folders", {
+      data: {
+        type: "folders",
+        attributes: {
+          name: "Solutions Directory",
+          project_id: projectId,
+        },
+      },
+    });
+    createdId = Number(str(asRecord(created.data).id));
+  }
   if (!Number.isFinite(createdId) || createdId <= 0) {
-    throw new Error(`Could not create a Productive folder in project ${projectId}.`);
+    throw new Error(`Could not create a Productive board/folder in project ${projectId}.`);
   }
   return [createdId];
 }
 
-async function createTaskList(listName: string, projectId: number, folderId: number) {
-  return productive("POST", "/task_lists", {
-    data: {
-      type: "task_lists",
-      attributes: {
-        name: listName,
-        project_id: projectId,
-        folder_id: folderId,
+/** Productive accepts board via relationships (preferred) or board_id/folder_id attributes. */
+async function createTaskList(listName: string, projectId: number, boardId: number) {
+  try {
+    return await productive("POST", "/task_lists", {
+      data: {
+        type: "task_lists",
+        attributes: { name: listName },
+        relationships: {
+          project: { data: { type: "projects", id: String(projectId) } },
+          board: { data: { type: "boards", id: String(boardId) } },
+        },
       },
-    },
-  });
+    });
+  } catch (relErr) {
+    // Fallback for tenants that still expect attribute-style ids.
+    try {
+      return await productive("POST", "/task_lists", {
+        data: {
+          type: "task_lists",
+          attributes: {
+            name: listName,
+            project_id: projectId,
+            board_id: boardId,
+          },
+        },
+      });
+    } catch {
+      return await productive("POST", "/task_lists", {
+        data: {
+          type: "task_lists",
+          attributes: {
+            name: listName,
+            project_id: projectId,
+            folder_id: boardId,
+          },
+        },
+      }).catch(() => {
+        throw relErr;
+      });
+    }
+  }
 }
 
 async function loadRequest(
@@ -346,6 +422,93 @@ async function persistTaskList(
   });
 }
 
+function slackMention(userId: string, fallbackLabel: string): string {
+  const id = userId.trim();
+  if (id) return `<@${id.replace(/^<@/, "").replace(/>$/, "")}>`;
+  return fallbackLabel;
+}
+
+/** Same Slack channel as new solution requests (SLACK_WEBHOOK_URL). Best-effort. */
+async function notifySlackTaskListCreated(args: {
+  snap: RequestSnapshot;
+  requestId: string;
+  source: TaskListSource;
+  taskListUrl: string;
+  firstTaskUrl?: string;
+  appUrl: string;
+  taskCount: number;
+  taskErrors?: string[];
+}): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  if (!SLACK_WEBHOOK_URL || !SLACK_WEBHOOK_URL.startsWith("https://hooks.slack.com/")) {
+    return { ok: false, skipped: true, error: "SLACK_WEBHOOK_URL is not set" };
+  }
+
+  const chelsea = slackMention(SLACK_USER_ID_CHELSEA, `Chelsea (${CHELSEA_EMAIL})`);
+  const nicole = slackMention(SLACK_USER_ID_NICOLE, `Nicole (${NICOLE_EMAIL})`);
+  const feedbackPath = args.source === "app_feedback" ? "/feedback" : "/solution-requests";
+  const openApp = args.appUrl ? `${args.appUrl.replace(/\/$/, "")}${feedbackPath}` : "";
+  const requester = [args.snap.requestedByName, args.snap.requestedByEmail].filter(Boolean).join(" · ");
+
+  const lines = [
+    `${chelsea} ${nicole} — a Productive task list was created for this new solution request.`,
+    `*Solution:* ${args.snap.solutionName}`,
+    requester ? `*Requested by:* ${requester}` : "",
+    `*Priority:* ${args.snap.priority || "medium"}`,
+    args.requestId ? `*Request ID:* \`${args.requestId}\`` : "",
+    `*<${args.taskListUrl}|Open Productive task list>*`,
+    args.firstTaskUrl ? `*<${args.firstTaskUrl}|Open first task>*` : "",
+    openApp
+      ? `*<${openApp}|Open in ${args.source === "app_feedback" ? "Feedback" : "Solution Requests"}>*`
+      : "",
+    args.taskCount ? `*Tasks created:* ${args.taskCount}` : "",
+  ].filter(Boolean);
+
+  try {
+    const slackRes = await fetch(SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: `Productive tasks ready: ${args.snap.solutionName} — ${chelsea} ${nicole}`,
+        blocks: [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Productive task list created",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: lines.join("\n"),
+            },
+          },
+          ...(args.taskErrors?.length
+            ? [
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: `*Some tasks failed:*\n${args.taskErrors.slice(0, 5).join("\n")}`,
+                  },
+                },
+              ]
+            : []),
+        ],
+      }),
+    });
+    if (!slackRes.ok) {
+      const errText = await slackRes.text().catch(() => "");
+      return { ok: false, error: `Slack webhook failed (${slackRes.status}): ${errText.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -380,7 +543,11 @@ Deno.serve(async (req) => {
   const existingUrl = str(dbRow?.productive_task_list_url);
 
   if (existingId) {
-    const url = existingUrl || listUrl(existingId);
+    // Always rebuild — older links used /task-lists/:id which Productive does not route.
+    const url = listUrl(existingId);
+    if (requestId && url !== existingUrl) {
+      await persistTaskList(requestId, source, existingId, url);
+    }
     return json(200, {
       ok: true,
       skipped: true,
@@ -393,25 +560,28 @@ Deno.serve(async (req) => {
   const listName = (snap.solutionName || str(dbRow?.title) || "Untitled solution").slice(0, 120);
 
   try {
-    const folderCandidates = await ensureFolderId(PRODUCTIVE_PROJECT_ID);
+    const boardCandidates = await ensureBoardIds(PRODUCTIVE_PROJECT_ID);
     let createdList: Record<string, unknown> | null = null;
     let folderId = 0;
     const folderErrors: string[] = [];
-    for (const candidate of folderCandidates) {
+    for (const candidate of boardCandidates) {
       try {
         createdList = await createTaskList(listName, PRODUCTIVE_PROJECT_ID, candidate);
         folderId = candidate;
         break;
       } catch (err) {
         folderErrors.push(
-          `folder ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
+          `board ${candidate}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
     if (!createdList) {
       throw new Error(
-        folderErrors[0] ||
+        [
           `Could not create a Productive task list in project ${PRODUCTIVE_PROJECT_ID}.`,
+          `Tried boards: ${boardCandidates.join(", ") || "(none)"}.`,
+          ...folderErrors.slice(0, 3),
+        ].join(" "),
       );
     }
     const listData = asRecord(createdList.data);
@@ -445,7 +615,22 @@ Deno.serve(async (req) => {
     }
 
     const url = listUrl(taskListId);
+    const firstTaskUrl = taskIds[0] ? taskUrl(taskIds[0]) : "";
     await persistTaskList(requestId, source, taskListId, url);
+
+    const slack = await notifySlackTaskListCreated({
+      snap,
+      requestId,
+      source,
+      taskListUrl: url,
+      firstTaskUrl: firstTaskUrl || undefined,
+      appUrl,
+      taskCount: taskIds.length,
+      taskErrors: taskErrors.length ? taskErrors : undefined,
+    });
+    if (!slack.ok && !slack.skipped) {
+      console.warn("[create-productive-solution-tasks] slack notify failed", slack.error);
+    }
 
     return json(200, {
       ok: true,
@@ -455,6 +640,8 @@ Deno.serve(async (req) => {
       folderId,
       taskIds,
       taskErrors: taskErrors.length ? taskErrors : undefined,
+      slackNotified: Boolean(slack.ok),
+      slackError: slack.ok || slack.skipped ? undefined : slack.error,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -479,6 +479,9 @@ type LegacySolutionRequestRow = {
   review_notes: string | null;
   status_updated_by_email: string | null;
   status_updated_at: string | null;
+  assigned_to_user_id?: string | null;
+  assigned_to_name?: string | null;
+  assigned_to_email?: string | null;
   productive_task_list_id?: string | null;
   productive_task_list_url?: string | null;
   created_at: string;
@@ -533,6 +536,9 @@ export function mapSolutionRequestToFeedbackBoardRow(
     requested_by_name: row.requested_by_name,
     requested_by_email: row.requested_by_email,
     requested_by_user_id: row.requested_by_user_id,
+    assigned_to_user_id: row.assigned_to_user_id ?? null,
+    assigned_to_name: row.assigned_to_name ?? null,
+    assigned_to_email: row.assigned_to_email ?? null,
     status_updated_by_email: row.status_updated_by_email,
     status_updated_at: row.status_updated_at,
     productive_task_list_id: row.productive_task_list_id ?? null,

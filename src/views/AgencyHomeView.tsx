@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   AGENCY_HOME_DESCRIPTION,
@@ -8,7 +8,17 @@ import {
 } from "../branding";
 import { GlobalKpiStrip } from "../components/GlobalKpiStrip";
 import { useAuth } from "../context/AuthContext";
+import {
+  appFeedbackCategoryShort,
+  appFeedbackPriorityLabel,
+  appFeedbackStatusLabel,
+  formatAppFeedbackDate,
+  mapSolutionRequestToFeedbackBoardRow,
+  type AppFeedback,
+  type FeedbackBoardRow,
+} from "../lib/appFeedback";
 import { greetingFirstName } from "../lib/displayName";
+import { getSupabase } from "../lib/supabase";
 
 type PrimaryCard = {
   to: string;
@@ -88,10 +98,79 @@ const PRIMARY: PrimaryCard[] = [
   },
 ];
 
+function assignedSortRank(status: FeedbackBoardRow["status"]): number {
+  switch (status) {
+    case "in_progress":
+      return 0;
+    case "reviewing":
+      return 1;
+    case "pending":
+      return 2;
+    case "deferred":
+      return 3;
+    case "resolved":
+      return 4;
+    default:
+      return 5;
+  }
+}
+
 export function AgencyHomeView() {
-  const { isAdmin, profileLoading, displayName } = useAuth();
+  const { user, isAdmin, profileLoading, displayName } = useAuth();
   const name = greetingFirstName(displayName);
   const greeting = name ? `${greetingWord()}, ${name}` : greetingWord();
+  const [assigned, setAssigned] = useState<FeedbackBoardRow[]>([]);
+  const [assignedLoading, setAssignedLoading] = useState(false);
+
+  const loadAssigned = useCallback(async () => {
+    const client = getSupabase();
+    const userId = user?.id;
+    if (!client || !userId) {
+      setAssigned([]);
+      setAssignedLoading(false);
+      return;
+    }
+    setAssignedLoading(true);
+    const [feedbackRes, legacyRes] = await Promise.all([
+      client
+        .from("app_feedback")
+        .select("*")
+        .eq("assigned_to_user_id", userId)
+        .neq("status", "resolved")
+        .order("updated_at", { ascending: false }),
+      client
+        .from("solution_requests")
+        .select("*")
+        .eq("assigned_to_user_id", userId)
+        .neq("status", "not_approved")
+        .order("updated_at", { ascending: false }),
+    ]);
+    const feedbackRows: FeedbackBoardRow[] = feedbackRes.error
+      ? []
+      : ((feedbackRes.data ?? []) as AppFeedback[]).map((row) => ({
+          ...row,
+          source: "app_feedback" as const,
+        }));
+    const legacyRows: FeedbackBoardRow[] = legacyRes.error
+      ? []
+      : ((legacyRes.data ?? []) as Parameters<typeof mapSolutionRequestToFeedbackBoardRow>[0][])
+          .map(mapSolutionRequestToFeedbackBoardRow)
+          .filter((row) => row.status !== "resolved" && row.status !== "deferred");
+    if (feedbackRes.error && /assigned_to_/i.test(feedbackRes.error.message)) {
+      console.warn("[home] assignee columns missing — run supabase/app_feedback_assignee.sql");
+    }
+    const merged = [...feedbackRows, ...legacyRows].sort((a, b) => {
+      const rank = assignedSortRank(a.status) - assignedSortRank(b.status);
+      if (rank !== 0) return rank;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+    setAssigned(merged);
+    setAssignedLoading(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadAssigned();
+  }, [loadAssigned]);
 
   const jumps: JumpLink[] = [
     { to: "/solutions", label: "Catalog", hint: "Solutions and packages in one table" },
@@ -103,6 +182,8 @@ export function AgencyHomeView() {
     jumps.push({ to: "/admin", label: "Admin", hint: "Edit vault data, templates, and settings" });
   }
 
+  const showAssigned = assignedLoading || assigned.length > 0;
+
   return (
     <div className="app-home">
       <div className="app-home__glow" aria-hidden />
@@ -113,6 +194,53 @@ export function AgencyHomeView() {
       </header>
 
       <GlobalKpiStrip variant="home" />
+
+      {showAssigned ? (
+        <section className="app-home__assigned" aria-label="Assigned to you">
+          <div className="app-home__assigned-head">
+            <h2 className="app-home__jumps-title">Assigned to you</h2>
+            {!assignedLoading && assigned.length > 0 ? (
+              <Link className="app-home__assigned-all" to="/feedback">
+                Open Feedback
+              </Link>
+            ) : null}
+          </div>
+          {assignedLoading ? (
+            <p className="app-home__assigned-empty">Loading your assignments…</p>
+          ) : (
+            <ul className="app-home__assigned-list">
+              {assigned.map((row) => (
+                <li key={`${row.source}:${row.id}`}>
+                  <Link className="app-home__assigned-item" to={`/feedback?id=${encodeURIComponent(row.id)}`}>
+                    <span className="app-home__assigned-main">
+                      <span className="app-home__assigned-title">
+                        {row.title}
+                        {row.source === "solution_request" ? (
+                          <span className="app-home__assigned-legacy"> Legacy</span>
+                        ) : null}
+                      </span>
+                      <span className="app-home__assigned-meta">
+                        From {row.requested_by_name}
+                        {" · "}
+                        {formatAppFeedbackDate(row.updated_at || row.created_at)}
+                      </span>
+                    </span>
+                    <span className="app-home__assigned-tags">
+                      <span className="app-home__assigned-chip">{appFeedbackCategoryShort(row.category)}</span>
+                      <span className="app-home__assigned-chip app-home__assigned-chip--status">
+                        {appFeedbackStatusLabel(row.status)}
+                      </span>
+                      <span className="app-home__assigned-chip app-home__assigned-chip--priority">
+                        {appFeedbackPriorityLabel(row.priority)}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <section className="app-home__primary" aria-label="Start here">
         {PRIMARY.map((card) => (

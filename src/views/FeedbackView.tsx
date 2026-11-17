@@ -209,6 +209,19 @@ export function FeedbackView() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
+  useEffect(() => {
+    const focusId = searchParams.get("id")?.trim();
+    if (!focusId || loading) return;
+    if (!rows.some((r) => r.id === focusId)) return;
+    setStatusFilter("all");
+    setCategoryFilter("all");
+    setQuery("");
+    setSelectedId(focusId);
+    const next = new URLSearchParams(searchParams);
+    next.delete("id");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, loading, rows]);
+
   const load = useCallback(async () => {
     const client = getSupabase();
     if (!client) {
@@ -415,7 +428,6 @@ export function FeedbackView() {
   };
 
   const updateAssignee = async (row: FeedbackBoardRow, assigneeUserId: string) => {
-    if (row.source !== "app_feedback") return;
     const client = getSupabase();
     if (!client) {
       toastError("Supabase is not configured.");
@@ -424,17 +436,14 @@ export function FeedbackView() {
     const person = assigneeUserId
       ? assignees.find((a) => a.id === assigneeUserId) ?? null
       : null;
+    const patch = {
+      assigned_to_user_id: person?.id ?? null,
+      assigned_to_name: person?.name ?? null,
+      assigned_to_email: person?.email ?? null,
+    };
     setStatusBusyId(row.id);
-    const { data, error } = await client
-      .from("app_feedback")
-      .update({
-        assigned_to_user_id: person?.id ?? null,
-        assigned_to_name: person?.name ?? null,
-        assigned_to_email: person?.email ?? null,
-      })
-      .eq("id", row.id)
-      .select("*")
-      .single();
+    const table = row.source === "solution_request" ? "solution_requests" : "app_feedback";
+    const { data, error } = await client.from(table).update(patch).eq("id", row.id).select("*").single();
     setStatusBusyId(null);
     if (error) {
       const msg = error.message || "Could not update assignee.";
@@ -445,11 +454,14 @@ export function FeedbackView() {
       );
       return;
     }
-    const updated: FeedbackBoardRow = { ...(data as AppFeedback), source: "app_feedback" };
+    const updated: FeedbackBoardRow =
+      row.source === "solution_request"
+        ? mapSolutionRequestToFeedbackBoardRow(
+            data as Parameters<typeof mapSolutionRequestToFeedbackBoardRow>[0]
+          )
+        : { ...(data as AppFeedback), source: "app_feedback" };
     setRows((prev) => prev.map((r) => (r.id === row.id ? updated : r)));
-    toastSuccess(
-      person ? `Assigned to ${person.name}.` : "Cleared assignee."
-    );
+    toastSuccess(person ? `Assigned to ${person.name}.` : "Cleared assignee.");
   };
 
   const createProductiveList = async (row: FeedbackBoardRow) => {
@@ -629,7 +641,6 @@ export function FeedbackView() {
                         row.related_name?.trim() ||
                         row.impact?.trim() ||
                         "";
-                      const canAssignRow = row.source === "app_feedback";
                       const assignBusy = statusBusyId === row.id;
                       return (
                         <tr
@@ -673,24 +684,20 @@ export function FeedbackView() {
                             onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => e.stopPropagation()}
                           >
-                            {canAssignRow ? (
-                              <select
-                                className="app-feedback__assignee-select"
-                                aria-label={`Assign ${row.title}`}
-                                value={row.assigned_to_user_id ?? ""}
-                                disabled={assignBusy}
-                                onChange={(e) => void updateAssignee(row, e.target.value)}
-                              >
-                                <option value="">Unassigned</option>
-                                {assignees.map((person) => (
-                                  <option key={person.id} value={person.id}>
-                                    {person.name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className="solution-requests__requester">—</span>
-                            )}
+                            <select
+                              className="app-feedback__assignee-select"
+                              aria-label={`Assign ${row.title}`}
+                              value={row.assigned_to_user_id ?? ""}
+                              disabled={assignBusy}
+                              onChange={(e) => void updateAssignee(row, e.target.value)}
+                            >
+                              <option value="">Unassigned</option>
+                              {assignees.map((person) => (
+                                <option key={person.id} value={person.id}>
+                                  {person.name}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td>
                             <span className={`solution-requests__status is-${row.status}`}>
@@ -773,10 +780,7 @@ function FeedbackInspector({
   onCreateProductive: () => void;
   onAssign: (assigneeUserId: string) => void;
 }) {
-  const canAssign = row.source === "app_feedback";
-  const fields = inspectorFields(row).filter((field) =>
-    canAssign ? field.label !== "Assigned to" : true
-  );
+  const fields = inspectorFields(row).filter((field) => field.label !== "Assigned to");
   const locked = busy || deleting;
   const isNewSolution = row.category === "new_solution";
   const hasProductive = Boolean(row.productive_task_list_id && row.productive_task_list_url);
@@ -825,29 +829,27 @@ function FeedbackInspector({
           </dd>
         </div>
       </dl>
-      {canAssign ? (
-        <div className="catalog-inspector__body" style={{ paddingBottom: 0 }}>
-          <section className="catalog-inspector__section">
-            <h3 className="catalog-inspector__section-title">Assigned to</h3>
-            <label className="solution-request-modal__field" style={{ margin: 0 }}>
-              <select
-                className="roadmap-input app-feedback__assignee-select"
-                value={row.assigned_to_user_id ?? ""}
-                disabled={locked}
-                onChange={(e) => onAssign(e.target.value)}
-                style={{ maxWidth: "100%" }}
-              >
-                <option value="">Unassigned</option>
-                {assignees.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
-        </div>
-      ) : null}
+      <div className="catalog-inspector__body" style={{ paddingBottom: 0 }}>
+        <section className="catalog-inspector__section">
+          <h3 className="catalog-inspector__section-title">Assigned to</h3>
+          <label className="solution-request-modal__field" style={{ margin: 0 }}>
+            <select
+              className="roadmap-input app-feedback__assignee-select"
+              value={row.assigned_to_user_id ?? ""}
+              disabled={locked}
+              onChange={(e) => onAssign(e.target.value)}
+              style={{ maxWidth: "100%" }}
+            >
+              <option value="">Unassigned</option>
+              {assignees.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      </div>
       <div className="catalog-inspector__body">
         {fields.map((field) => (
           <section key={field.label} className="catalog-inspector__section">

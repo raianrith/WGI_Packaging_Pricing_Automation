@@ -10362,6 +10362,138 @@ html[data-theme="dark"] .admin-context-bar {
   }
 }
 
+.app-home__assigned {
+  margin: 0 0 1.75rem;
+  animation: home-fade-up 0.55s ease 0.09s both;
+}
+
+.app-home__assigned-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.app-home__assigned-head .app-home__jumps-title {
+  margin: 0;
+}
+
+.app-home__assigned-all {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.app-home__assigned-all:hover {
+  text-decoration: underline;
+}
+
+.app-home__assigned-empty {
+  margin: 0;
+  padding: 0.85rem 1.05rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  border-radius: var(--home-radius-sm);
+  background: rgba(255, 252, 248, 0.55);
+  border: 1px solid rgba(17, 39, 33, 0.06);
+}
+
+.app-home__assigned-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.app-home__assigned-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.05rem;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--home-radius-sm);
+  border: 1px solid rgba(17, 39, 33, 0.08);
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 252, 248, 0.78);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.app-home__assigned-item:hover {
+  transform: translateX(2px);
+  border-color: rgba(255, 103, 0, 0.22);
+  background: rgba(255, 253, 250, 0.98);
+}
+
+.app-home__assigned-item:focus-visible {
+  outline: 2px solid rgba(255, 103, 0, 0.45);
+  outline-offset: 2px;
+}
+
+.app-home__assigned-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.app-home__assigned-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--suede);
+}
+
+.app-home__assigned-legacy {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(17, 39, 33, 0.45);
+}
+
+.app-home__assigned-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.app-home__assigned-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.app-home__assigned-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  color: rgba(17, 39, 33, 0.72);
+  background: rgba(17, 39, 33, 0.06);
+}
+
+.app-home__assigned-chip--status {
+  color: #8a3b00;
+  background: rgba(255, 103, 0, 0.12);
+}
+
+.app-home__assigned-chip--priority {
+  color: rgba(17, 39, 33, 0.55);
+  background: transparent;
+  border: 1px solid rgba(17, 39, 33, 0.12);
+}
+
 .app-home__primary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -10535,6 +10667,15 @@ html[data-theme="dark"] .admin-context-bar {
   .app-home__card {
     min-height: 0;
   }
+
+  .app-home__assigned-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-home__assigned-tags {
+    justify-content: flex-start;
+  }
 }
 
 html[data-theme="dark"] .app-shell--home {
@@ -10575,6 +10716,40 @@ html[data-theme="dark"] .app-home .global-kpi-strip--home .global-kpi-strip__tit
 html[data-theme="dark"] .app-home .global-kpi-strip--home .global-kpi-card__label,
 html[data-theme="dark"] .app-home__jumps-title {
   color: rgba(220, 232, 227, 0.55);
+}
+
+html[data-theme="dark"] .app-home__assigned-empty,
+html[data-theme="dark"] .app-home__assigned-item {
+  background: rgba(18, 32, 28, 0.9);
+  border-color: rgba(220, 232, 227, 0.1);
+}
+
+html[data-theme="dark"] .app-home__assigned-item:hover {
+  border-color: rgba(255, 103, 0, 0.4);
+  background: #173028;
+}
+
+html[data-theme="dark"] .app-home__assigned-title {
+  color: var(--suede);
+}
+
+html[data-theme="dark"] .app-home__assigned-legacy {
+  color: rgba(220, 232, 227, 0.45);
+}
+
+html[data-theme="dark"] .app-home__assigned-chip {
+  color: rgba(220, 232, 227, 0.78);
+  background: rgba(220, 232, 227, 0.08);
+}
+
+html[data-theme="dark"] .app-home__assigned-chip--status {
+  color: #ffb27a;
+  background: rgba(255, 103, 0, 0.16);
+}
+
+html[data-theme="dark"] .app-home__assigned-chip--priority {
+  color: rgba(220, 232, 227, 0.55);
+  border-color: rgba(220, 232, 227, 0.16);
 }
 
 html[data-theme="dark"] .app-home__card,

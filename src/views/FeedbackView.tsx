@@ -627,7 +627,7 @@ export function FeedbackView() {
                       <th scope="col">Title</th>
                       <th scope="col">Category</th>
                       <th scope="col">Requester</th>
-                      <th scope="col">Assigned to</th>
+                      <th scope="col">Assignee</th>
                       <th scope="col">Stage</th>
                       <th scope="col">Priority</th>
                       <th scope="col">Date</th>

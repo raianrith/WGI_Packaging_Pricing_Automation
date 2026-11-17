@@ -30159,49 +30159,65 @@ html[data-theme="dark"] .app-new-solution-request.is-active {
   color: var(--muted);
 }
 
+/* Beat catalog directory column widths (nth-child 2–5) on this shared table. */
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(1),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(1),
 .app-feedback__table th:nth-child(1),
 .app-feedback__table td:nth-child(1) {
-  width: auto;
+  width: 28%;
 }
 
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(2),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(2),
 .app-feedback__table th:nth-child(2),
 .app-feedback__table td:nth-child(2) {
-  width: 7.25rem;
+  width: 8.5rem;
   white-space: nowrap;
 }
 
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(3),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(3),
 .app-feedback__table th:nth-child(3),
 .app-feedback__table td:nth-child(3) {
-  width: 8.25rem;
-}
-
-.app-feedback__table th:nth-child(4),
-.app-feedback__table td:nth-child(4) {
-  width: 12.75rem;
-  min-width: 12.75rem;
+  width: 8.5rem;
   white-space: nowrap;
 }
 
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(4),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(4),
+.app-feedback__table th:nth-child(4),
+.app-feedback__table td:nth-child(4) {
+  width: 11.5rem;
+  min-width: 11.5rem;
+  white-space: nowrap;
+}
+
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(5),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(5),
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(6),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(6),
 .app-feedback__table th:nth-child(5),
 .app-feedback__table td:nth-child(5),
 .app-feedback__table th:nth-child(6),
 .app-feedback__table td:nth-child(6) {
-  width: 6.75rem;
+  width: 7rem;
   white-space: nowrap;
   text-align: left;
 }
 
+.agency-playbook-browser--catalog .app-feedback__table th:nth-child(7),
+.agency-playbook-browser--catalog .app-feedback__table td:nth-child(7),
 .app-feedback__table th:nth-child(7),
 .app-feedback__table td:nth-child(7) {
-  width: 5.5rem;
+  width: 5.25rem;
   white-space: nowrap;
   text-align: right;
 }
 
 .app-feedback__assignee-cell {
   vertical-align: middle;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
+  padding-left: 0.65rem;
+  padding-right: 0.65rem;
 }
 
 .app-feedback__assignee-select {
